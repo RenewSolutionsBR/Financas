@@ -39,6 +39,9 @@ export function validateAccount(acc, todas) {
         else if (isAdicional(pai)) erros.push('Um cartão adicional não pode ser titular de outro adicional.');
       }
     }
+    if (acc.cartaoPaiId && acc.contaPagadoraId) {
+      erros.push('Um cartão adicional não tem conta pagadora própria: quem paga é a conta do cartão titular.');
+    }
     if (acc.contaPagadoraId) {
       const conta = outras.find((a) => a.id === acc.contaPagadoraId);
       if (!conta) erros.push('A conta pagadora informada não existe.');
@@ -58,31 +61,50 @@ export function suggestMatchers(acc) {
 }
 
 export function plasticosDoTitular(titularId, todas) {
-  const ids = [titularId];
-  for (const a of todas || []) if (a.cartaoPaiId === titularId) ids.push(a.id);
+  const lista = todas || [];
+  // Se vier o id de um adicional, resolve para o titular antes: devolver so o
+  // proprio adicional seria um resultado incompleto com cara de valido, e os
+  // gastos dos irmaos ficariam de fora da conciliacao sem ninguem notar.
+  const alvo = lista.find((a) => a.id === titularId);
+  const raizId = alvo && alvo.cartaoPaiId ? alvo.cartaoPaiId : titularId;
+  const ids = [raizId];
+  for (const a of lista) if (a.cartaoPaiId === raizId) ids.push(a.id);
   return ids;
 }
 
 export function contaPagadoraEfetiva(acc, todas) {
   if (!acc || acc.tipo !== TIPO_CARTAO) return null;
-  if (acc.contaPagadoraId) return acc.contaPagadoraId;
-  if (!acc.cartaoPaiId) return null;
-  const pai = (todas || []).find((a) => a.id === acc.cartaoPaiId);
-  return pai ? pai.contaPagadoraId || null : null;
+  // O pai vem primeiro de proposito: um adicional nao tem conta pagadora
+  // propria, e um cadastro malformado com os dois campos preenchidos nao pode
+  // fazer a conciliacao confrontar o debito contra a conta errada.
+  if (acc.cartaoPaiId) {
+    const pai = (todas || []).find((a) => a.id === acc.cartaoPaiId);
+    return pai ? pai.contaPagadoraId || null : null;
+  }
+  return acc.contaPagadoraId || null;
 }
 
 export function contaQueCasaDescricao(descricao, todas) {
   const alvo = normalizeDescricao(descricao);
   for (const a of todas || []) {
     for (const m of a.matchers || []) {
-      if (m && alvo.includes(normalizeDescricao(m))) return a;
+      if (m && casaMatcher(alvo, normalizeDescricao(m))) return a;
     }
   }
   return null;
 }
 
+// Casamento por substring, mas sem deixar um matcher terminado em digito casar
+// dentro de um numero maior: sem a ancora, o matcher "FINAL 151" casava com a
+// descricao de um cartao final 1511, e o pagamento iria para o cartao errado.
+function casaMatcher(alvo, matcher) {
+  if (!matcher) return false;
+  const escapado = matcher.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`(?<![0-9])${escapado}(?![0-9])`).test(alvo);
+}
+
 export function novaConta(dados) {
-  return { id: uid('acc'), tipo: TIPO_CONTA, ativo: true, matchers: [], ...dados };
+  return { id: uid('acc'), tipo: TIPO_CONTA, ativo: true, ...dados };
 }
 
 export function novoCartao(dados) {

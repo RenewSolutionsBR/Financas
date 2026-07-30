@@ -89,3 +89,42 @@ describe('accounts: construtores', () => {
     assertEqual(novoCartao({ nome: 'Y', final: '3333' }).tipo, TIPO_CARTAO);
   });
 });
+
+describe('accounts: casos-limite que a suite nao cobria', () => {
+  it('rejeita adicional com conta pagadora propria', () => {
+    const erros = validateAccount({ ...ADICIONAL, contaPagadoraId: 'acc_cc' }, TODAS);
+    assert(erros.some((e) => /pagadora/i.test(e)));
+  });
+
+  it('conta pagadora do adicional vem do titular mesmo se o campo proprio estiver preenchido', () => {
+    const malformado = { ...ADICIONAL, contaPagadoraId: 'acc_outra' };
+    assertEqual(contaPagadoraEfetiva(malformado, TODAS), 'acc_cc');
+  });
+
+  it('conta pagadora e null quando o titular referenciado nao existe', () => {
+    assertEqual(contaPagadoraEfetiva({ ...ADICIONAL, cartaoPaiId: 'acc_sumiu' }, TODAS), null);
+  });
+
+  it('matcher nao casa dentro de um numero maior', () => {
+    const cartoes = [{ id: 'c151', tipo: TIPO_CARTAO, final: '0151', matchers: ['FINAL 151'] }];
+    assertEqual(contaQueCasaDescricao('DEBITO AUT. FATURA CARTAO FINAL 1511', cartoes), null);
+    assertEqual(contaQueCasaDescricao('DEBITO AUT. FATURA CARTAO FINAL 151', cartoes).id, 'c151');
+  });
+
+  it('plasticosDoTitular resolve para o titular quando recebe id de adicional', () => {
+    assertDeepEqual(plasticosDoTitular('acc_a', TODAS).sort(), ['acc_a', 'acc_t']);
+  });
+
+  it('contaQueCasaDescricao tolera descricao nula', () => {
+    assertEqual(contaQueCasaDescricao(null, TODAS), null);
+  });
+
+  it('o ciclo novoCartao -> matchers sugeridos -> casamento fecha', () => {
+    const cartao = novoCartao({ nome: 'Teste', bandeira: 'visa', final: '8421' });
+    assertEqual(contaQueCasaDescricao('DEBITO AUT.  FATURA CARTAO VISA    FINAL 8421', [cartao]).id, cartao.id);
+  });
+
+  it('novaConta nao carrega matchers, que e campo de cartao', () => {
+    assertEqual(novaConta({ nome: 'C' }).matchers, undefined);
+  });
+});
