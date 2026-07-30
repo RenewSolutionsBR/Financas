@@ -1,5 +1,7 @@
 // Lista central de módulos de teste. Os dois runners importam daqui, porque
 // nem o navegador nem o Node conseguem descobrir arquivos por glob sem build.
+
+// Testes de lógica pura: rodam nos dois alvos.
 export const TEST_MODULES = [
   './harness.test.js',
   './money.test.js',
@@ -7,4 +9,9 @@ export const TEST_MODULES = [
   './text.test.js',
   './ids.test.js',
   './migration.test.js',
+];
+
+// Testes que dependem de IndexedDB ou DOM: só no navegador.
+export const BROWSER_ONLY_MODULES = [
+  './storage.browser.test.js',
 ];

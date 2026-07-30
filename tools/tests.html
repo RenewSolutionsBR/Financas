@@ -18,9 +18,11 @@
   <div id="lista"></div>
   <script type="module">
     import { runAll } from '../tests/harness.js';
-    import { TEST_MODULES } from '../tests/index.js';
+    import { TEST_MODULES, BROWSER_ONLY_MODULES } from '../tests/index.js';
 
-    for (const mod of TEST_MODULES) await import(`../tests/${mod.replace('./', '')}`);
+    for (const mod of [...TEST_MODULES, ...BROWSER_ONLY_MODULES]) {
+      await import(`../tests/${mod.replace('./', '')}`);
+    }
 
     const { total, passed, failed, results } = await runAll();
     document.getElementById('resumo').textContent =
