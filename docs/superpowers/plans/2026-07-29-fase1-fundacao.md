@@ -2861,6 +2861,7 @@ Copie `styles.css` de `../../Cartão de Credito/gastos-app/styles.css` como pont
 
 **Files:**
 - Create: `index.html`, `styles.css`, `src/ui/components.js`, `src/ui/tabs.js`, `src/app.js`
+- Create: `manifest.webmanifest` e `sw.js` em versão mínima. O `index.html` os referencia, e sem eles há 404 real no console de qualquer usuário — não só do verificador. O `sw.js` desta tarefa **não pode ter listener de `fetch`**: é um marcador inerte até a Tarefa 15 pôr o service worker de verdade, e um placeholder que cacheasse algo deixaria conteúdo velho grudado no aparelho.
 
 **Interfaces:**
 - Consumes: todos os módulos de `domain/`
@@ -2936,7 +2937,12 @@ export function el(tag, attrs, filhos) {
     else if (v !== null && v !== undefined && v !== false) node.setAttribute(k, v);
   }
   for (const filho of [].concat(filhos || [])) {
-    if (filho) node.appendChild(typeof filho === 'string' ? document.createTextNode(filho) : filho);
+    // Comparacao explicita em vez de truthy: um filho 0 e legitimo e frequente
+    // num app de dinheiro ("R$ 0,00", "0 lancamentos"), e o teste de truthy o
+    // descartava calado. false continua sendo filtrado de proposito, porque e
+    // o resultado do padrao `condicao && el(...)`.
+    if (filho === null || filho === undefined || filho === false) continue;
+    node.appendChild(typeof filho === 'object' ? filho : document.createTextNode(String(filho)));
   }
   return node;
 }
@@ -3072,7 +3078,9 @@ Copie o `styles.css` do app anterior e mova as cores para variáveis, acrescenta
   --papel: #f4efe4;
   --tinta: #2b2622;
   --tinta-fraca: #6b6259;
-  --latao: #a8802c;
+  /* Escurecido para passar em AA contra --papel: a variavel existia sem uso
+     e reprovava em contraste, o que so apareceria quando alguem a usasse. */
+  --latao: #8a6620;
   --linha: #d9cfbc;
   --erro: #b3261e;
   --ok: #0a7d32;
