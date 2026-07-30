@@ -38,6 +38,11 @@ function openDB() {
       'Abertura do banco bloqueada por outra aba deste app. Feche as outras abas e recarregue.'
     ));
   });
+  // Uma abertura que falhou nao pode ficar cacheada: sem isso, toda chamada
+  // seguinte rejeitava com o mesmo erro ate a pagina ser recarregada, e fechar
+  // a aba que bloqueava - que e o que a propria mensagem manda fazer - nao
+  // adiantava nada. Com o reset, a proxima chamada tenta abrir de novo.
+  dbPromise.catch(() => { dbPromise = null; });
   return dbPromise;
 }
 

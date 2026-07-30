@@ -25,8 +25,11 @@ describe('storage', () => {
     await storage.remove('categories', 'teste_b');
   });
 
-  it('putMany com lista vazia não falha', async () => {
+  it('putMany ignora lista vazia, nula ou ausente sem quebrar', async () => {
+    // O guard existe pelos dois ultimos casos: sem ele, .map lanca TypeError.
     await storage.putMany('categories', []);
+    await storage.putMany('categories', null);
+    await storage.putMany('categories', undefined);
   });
 
   it('busca por índice', async () => {
