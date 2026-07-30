@@ -5,7 +5,10 @@
   --papel: #f4efe4;
   --tinta: #2b2622;
   --tinta-fraca: #6b6259;
-  --latao: #a8802c;
+  /* Escurecido de #a8802c para passar em AA contra --papel: a variavel existia
+     sem uso e reprovava em contraste, o que so apareceria quando alguem a
+     usasse como cor de texto. */
+  --latao: #8a6620;
   --linha: #d9cfbc;
   --erro: #b3261e;
   --ok: #0a7d32;
@@ -99,6 +102,7 @@ body {
   background: var(--tinta);
   color: var(--papel);
   border-color: var(--tinta);
+  border-bottom: 2px solid var(--latao);
 }
 
 main {

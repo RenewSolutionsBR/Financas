@@ -9,7 +9,12 @@ export function el(tag, attrs, filhos) {
     else if (v !== null && v !== undefined && v !== false) node.setAttribute(k, v);
   }
   for (const filho of [].concat(filhos || [])) {
-    if (filho) node.appendChild(typeof filho === 'string' ? document.createTextNode(filho) : filho);
+    // Comparacao explicita em vez de truthy: um filho 0 e legitimo e frequente
+    // num app de dinheiro ("R$ 0,00", "0 lancamentos"), e o teste de truthy o
+    // descartava calado. false continua sendo filtrado de proposito, porque e
+    // o resultado do padrao `condicao && el(...)`.
+    if (filho === null || filho === undefined || filho === false) continue;
+    node.appendChild(typeof filho === 'object' ? filho : document.createTextNode(String(filho)));
   }
   return node;
 }
@@ -30,7 +35,24 @@ export function abrirModal({ titulo, corpo, acoes }) {
   return new Promise((resolve) => {
     const raiz = document.getElementById('modalRaiz');
     const fechar = (valor) => { raiz.innerHTML = ''; document.removeEventListener('keydown', aoTeclar); resolve(valor); };
-    const aoTeclar = (ev) => { if (ev.key === 'Escape') fechar(null); };
+    const aoTeclar = (ev) => {
+      if (ev.key === 'Escape') { fechar(null); return; }
+      if (ev.key !== 'Tab') return;
+      // Prende o foco dentro do modal: sem isso, Tab levava para o conteudo de
+      // fundo enquanto o modal ainda bloqueava a tela, e numa confirmacao
+      // destrutiva o usuario podia acionar algo atras dele.
+      const focaveis = raiz.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+      if (!focaveis.length) return;
+      const primeiro = focaveis[0];
+      const ultimo = focaveis[focaveis.length - 1];
+      if (ev.shiftKey && document.activeElement === primeiro) {
+        ev.preventDefault();
+        ultimo.focus();
+      } else if (!ev.shiftKey && document.activeElement === ultimo) {
+        ev.preventDefault();
+        primeiro.focus();
+      }
+    };
     document.addEventListener('keydown', aoTeclar);
 
     const botoes = (acoes || [{ id: 'ok', rotulo: 'OK' }]).map((a) =>
