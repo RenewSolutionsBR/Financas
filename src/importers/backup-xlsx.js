@@ -22,7 +22,13 @@ const STORES_EXPORTAVEIS = STORES.map((s) => s.nome);
 const MARCA_JSON = '@json:';
 
 function serializarValor(v) {
-  if (v === null || v === undefined) return '';
+  // undefined vira célula vazia e some na volta, que é o certo: o campo não
+  // existia. Mas null e string vazia são valores de verdade, e precisam voltar
+  // como null e string vazia — por isso viajam marcados, e não como célula
+  // vazia (célula vazia é indistinguível de "campo ausente").
+  if (v === undefined) return '';
+  if (v === null) return MARCA_JSON + 'null';
+  if (v === '') return MARCA_JSON + '""';
   if (typeof v === 'object') return MARCA_JSON + JSON.stringify(v);
   if (typeof v === 'boolean') return MARCA_JSON + JSON.stringify(v);
   return v;
@@ -95,7 +101,11 @@ export function sheetsToDataset(sheets) {
       return registro;
     });
   }
-  return { versao: versao || SCHEMA_VERSION_BACKUP, avisos, dataset };
+  // Devolve o que foi detectado, sem inventar versão: com `|| SCHEMA_VERSION_BACKUP`
+  // aqui, uma planilha qualquer virava "backup v2 vazio" e a guarda de
+  // importarBackup nunca disparava — o usuário via "restaurado" tendo
+  // selecionado o arquivo errado.
+  return { versao, avisos, dataset };
 }
 
 export function detectBackupVersion(nomesDeAbas) {
@@ -112,8 +122,15 @@ export async function exportarBackup() {
   for (const store of STORES_EXPORTAVEIS) dataset[store] = await storage.getAll(store);
   const sheets = datasetToSheets(dataset);
   const wb = XLSX.utils.book_new();
+  const usados = new Set();
   for (const [nome, linhas] of Object.entries(sheets)) {
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(linhas), nome.slice(0, 31));
+    const aba = nome.slice(0, 31);
+    // O formato xlsx limita nome de aba a 31 caracteres. Se dois stores
+    // truncarem para o mesmo nome, o SheetJS lança um erro obscuro e o backup
+    // inteiro falha — melhor parar aqui, dizendo qual é o problema.
+    if (usados.has(aba)) throw new Error(`Dois stores geram o mesmo nome de aba ("${aba}"). Renomeie um deles.`);
+    usados.add(aba);
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(linhas), aba);
   }
   const saida = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
   await storage.setMeta('lastBackupAt', Date.now());

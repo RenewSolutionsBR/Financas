@@ -5,6 +5,9 @@ const DATASET = {
   transactions: [
     { id: 'tx_1', data: '2026-06-10', descricao: 'Compra', valor: 23.5, categoria: 'casa', natureza: 'despesa', formaPagamentoId: 'pm_pix', contaId: 'acc_1', previsto: false },
     { id: 'tx_2', data: '2026-06-23', descricao: 'Parcelada', valor: 100, categoria: 'casa', natureza: 'despesa', formaPagamentoId: 'pm_credito', contaId: 'acc_2', previsto: false, parcelaKey: 'PARCELADA|2026-01-15|3', parcela_atual: 2, parcela_total: 3, conciliadoAutomaticamente: true, origemRef: { statementId: 'acc_2|fatura|2026-06-30', linhaId: 'ab12cd34' } },
+    { id: 'tx_3', data: '2026-06-25', descricao: '', valor: 0, categoria: 'casa',
+      natureza: 'despesa', formaPagamentoId: 'pm_dinheiro', contaId: null, previsto: false,
+      observacaoLivre: '[1,2]', outraObservacao: '{"a":1}' },
   ],
   accounts: [{ id: 'acc_1', tipo: 'conta', nome: 'Conta', agencia: '0001', numero: '1234', matchers: [] }],
   paymentMethods: [{ id: 'pm_pix', nome: 'Pix', tipo: 'pix', conciliaCom: 'extrato', padroesExtrato: ['PIX ENVIADO'], ordem: 1, ativo: true }],
@@ -25,6 +28,12 @@ describe('backup: identificação', () => {
 
   it('devolve null para planilha que não é backup', () => {
     assertEqual(detectBackupVersion(['Plan1']), null);
+  });
+
+  it('planilha que não é backup não vira backup vazio', () => {
+    const { versao, dataset } = sheetsToDataset({ Plan1: [{ produto: 'Arroz', preco: 20 }] });
+    assertEqual(versao, null, 'planilha aleatória foi aceita como backup');
+    assertDeepEqual(dataset.transactions, []);
   });
 });
 
@@ -61,6 +70,23 @@ describe('backup: ciclo completo', () => {
   it('dataset vazio produz backup válido e vazio', () => {
     const { dataset } = sheetsToDataset(datasetToSheets({}));
     assertDeepEqual(dataset.transactions, []);
+  });
+
+  it('null e string vazia voltam como null e string vazia, não como ausência', () => {
+    const { dataset } = sheetsToDataset(datasetToSheets(DATASET));
+    const t3 = dataset.transactions.find((t) => t.id === 'tx_3');
+    assertEqual(t3.descricao, '', 'string vazia virou ausência');
+    assertEqual('contaId' in t3, true, 'campo null sumiu do registro');
+    assertEqual(t3.contaId, null, 'null não voltou como null');
+    assertEqual(t3.valor, 0);
+    assertEqual(t3.previsto, false);
+  });
+
+  it('texto que parece JSON continua sendo texto', () => {
+    const { dataset } = sheetsToDataset(datasetToSheets(DATASET));
+    const t3 = dataset.transactions.find((t) => t.id === 'tx_3');
+    assertEqual(t3.observacaoLivre, '[1,2]');
+    assertEqual(t3.outraObservacao, '{"a":1}');
   });
 });
 
