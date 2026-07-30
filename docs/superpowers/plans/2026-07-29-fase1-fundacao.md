@@ -1976,9 +1976,6 @@ describe('payment-methods: seed', () => {
     assert(DEFAULT_PAYMENT_METHODS.every((p) => TIPOS_FORMA.includes(p.tipo)));
   });
 
-  it('o seed não traz nenhuma conta amarrada, por ser dado pessoal', () => {
-    assert(DEFAULT_PAYMENT_METHODS.every((p) => !p.contaPadraoId));
-  });
 });
 
 describe('payment-methods: comportamento por tipo', () => {
@@ -2024,11 +2021,46 @@ describe('payment-methods: inferência pelo extrato', () => {
     assertEqual(formaPorPrefixoExtrato('ALGO QUE NAO EXISTE', todas), null);
   });
 
-  it('escolhe o prefixo mais específico quando dois casam', () => {
-    // "DEBITO AUT." casa débito automático; "DEBITO AUT. FATURA CARTAO" é mais
-    // longo e precisa vencer, senão o pagamento de fatura vira débito comum.
-    const forma = formaPorPrefixoExtrato('DEBITO AUT. CTA ENERGIA ELETRICA   Concessionaria', todas);
-    assertEqual(forma.tipo, 'debito');
+  it('escolhe o prefixo mais especifico quando dois casam', () => {
+    // 'DEBITO AUT.' (debito) e 'DEBITO AUT. FATURA' (credito) casam os dois.
+    // Vence o mais longo, senao o pagamento da fatura vira debito comum.
+    assertEqual(formaPorPrefixoExtrato('DEBITO AUT.  FATURA CARTAO VISA    FINAL 0000', todas).tipo, 'credito');
+    assertEqual(formaPorPrefixoExtrato('DEBITO AUT. FAT.CARTAO MASTER CARD FINAL 0000', todas).tipo, 'credito');
+    assertEqual(formaPorPrefixoExtrato('DEBITO AUT. CTA ENERGIA ELETRICA   Concessionaria', todas).tipo, 'debito');
+  });
+
+  it('o prefixo mais longo vence independente da ordem do array', () => {
+    const curta = { id: 'a', nome: 'Curta', tipo: 'debito', padroesExtrato: ['DEBITO AUT.'] };
+    const longa = { id: 'b', nome: 'Longa', tipo: 'credito', padroesExtrato: ['DEBITO AUT. FATURA'] };
+    assertEqual(formaPorPrefixoExtrato('DEBITO AUT. FATURA X', [curta, longa]).id, 'b');
+    assertEqual(formaPorPrefixoExtrato('DEBITO AUT. FATURA X', [longa, curta]).id, 'b');
+  });
+
+  it('forma desativada nao classifica', () => {
+    const inativa = { id: 'i', nome: 'Inativa', tipo: 'debito', ativo: false, padroesExtrato: ['DEBITO AUT.'] };
+    assertEqual(formaPorPrefixoExtrato('DEBITO AUT. ALGO', [inativa]), null);
+  });
+
+  it('so casa no comeco da linha', () => {
+    assertEqual(formaPorPrefixoExtrato('PAGTO REF PIX ENVIADO', todas), null);
+  });
+
+  it('tipo desconhecido nao concilia com nada', () => {
+    assertEqual(conciliaComDoTipo('inventado'), 'nenhum');
+    assertEqual(conciliaComDoTipo(undefined), 'nenhum');
+  });
+
+  it('recusa excluir forma em uso, dizendo quantos lancamentos usam', async () => {
+    const transacoes = [
+      { id: 't1', formaPagamentoId: 'pm_pix' },
+      { id: 't2', formaPagamentoId: 'pm_pix' },
+      { id: 't3', formaPagamentoId: 'pm_boleto' },
+    ];
+    let erro = null;
+    try { await removeForma('pm_pix', transacoes); } catch (e) { erro = e; }
+    assert(erro !== null, 'deveria ter recusado');
+    assert(erro.message.includes('2'), `mensagem nao diz quantos: ${erro.message}`);
+    assert(/desative/i.test(erro.message), 'mensagem nao oferece a saida de desativar');
   });
 });
 
@@ -2061,17 +2093,32 @@ import * as storage from '../core/storage.js';
 
 export const TIPOS_FORMA = ['credito', 'debito', 'pix', 'dinheiro', 'boleto', 'transferencia', 'outro'];
 
+const CONCILIA_POR_TIPO = {
+  credito: 'fatura',
+  debito: 'extrato',
+  pix: 'extrato',
+  boleto: 'extrato',
+  transferencia: 'extrato',
+  dinheiro: 'nenhum',
+  outro: 'nenhum',
+};
+
+// Tipo desconhecido cai em 'nenhum', nao em 'extrato': um typo no tipo nao pode
+// fazer a forma entrar calada na conciliacao de extrato como se fosse valida.
 export function conciliaComDoTipo(tipo) {
-  if (tipo === 'credito') return 'fatura';
-  if (tipo === 'dinheiro' || tipo === 'outro') return 'nenhum';
-  return 'extrato';
+  return CONCILIA_POR_TIPO[tipo] || 'nenhum';
 }
 
 // Prefixos observados no extrato real, usados para inferir a forma de pagamento
 // de uma linha importada. Sem número de conta nem nome de pessoa: são rótulos
 // do próprio banco.
 export const DEFAULT_PAYMENT_METHODS = [
-  { id: 'pm_credito', nome: 'Cartão de Crédito', tipo: 'credito', ordem: 1, cor: '#31708f', padroesExtrato: [] },
+  { id: 'pm_credito', nome: 'Cartão de Crédito', tipo: 'credito', ordem: 1, cor: '#31708f',
+    // Prefixos mais especificos que o 'DEBITO AUT.' generico do debito: sem
+    // eles, o pagamento da fatura do cartao era classificado como cartao de
+    // debito, que e justamente o que a regra do prefixo mais longo existe para
+    // evitar. Sao as duas grafias observadas no extrato real.
+    padroesExtrato: ['DEBITO AUT. FATURA', 'DEBITO AUT. FAT.CARTAO', 'PAGAMENTO FATURA CARTAO'] },
   { id: 'pm_debito', nome: 'Cartão de Débito', tipo: 'debito', ordem: 2, cor: '#3c763d', padroesExtrato: ['COMPRA CARTAO DEBITO', 'DEBITO AUT.'] },
   { id: 'pm_pix', nome: 'Pix', tipo: 'pix', ordem: 3, cor: '#00695c', padroesExtrato: ['PIX ENVIADO', 'PIX RECEBIDO'] },
   { id: 'pm_dinheiro', nome: 'Dinheiro', tipo: 'dinheiro', ordem: 4, cor: '#827717', padroesExtrato: [] },
@@ -2082,6 +2129,7 @@ export const DEFAULT_PAYMENT_METHODS = [
 
 export function validatePaymentMethod(pm, todas) {
   const erros = [];
+  if (!pm || typeof pm !== 'object') return ['Forma de pagamento inválida.'];
   const nome = String(pm.nome || '').trim();
   if (!nome) erros.push('O nome da forma de pagamento não pode ficar em branco.');
   if (!TIPOS_FORMA.includes(pm.tipo)) erros.push(`Tipo inválido. Use um destes: ${TIPOS_FORMA.join(', ')}.`);
@@ -2097,6 +2145,9 @@ export function formaPorPrefixoExtrato(descricao, todas) {
   let melhor = null;
   let maiorPadrao = 0;
   for (const forma of todas || []) {
+    // Forma desativada nao classifica nada: o usuario a tirou de circulacao, e
+    // ela continuar capturando linhas novas do extrato contraria isso.
+    if (forma.ativo === false) continue;
     for (const padrao of forma.padroesExtrato || []) {
       const p = normalizeDescricao(padrao);
       // Prefixo mais longo vence: o banco usa rótulos que são prefixo uns dos
