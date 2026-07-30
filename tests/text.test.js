@@ -13,4 +13,15 @@ describe('text', () => {
     assertEqual(escapeHtml('a & b'), 'a &amp; b');
     assertEqual(escapeHtml('aspas " e \''), 'aspas &quot; e &#39;');
   });
+
+  it('normalizeDescricao colapsa tabulacao e quebra de linha', () => {
+    assertEqual(normalizeDescricao('cafe\tcom\nleite'), 'CAFE COM LEITE');
+  });
+
+  it('escapeHtml escapa o E comercial antes dos sinais de menor e maior', () => {
+    // Na ordem errada, "<" viraria "&lt;" e o "&" seria reescapado depois,
+    // produzindo "&amp;lt;".
+    assertEqual(escapeHtml('&amp;'), '&amp;amp;');
+    assertEqual(escapeHtml('<a href="x">'), '&lt;a href=&quot;x&quot;&gt;');
+  });
 });

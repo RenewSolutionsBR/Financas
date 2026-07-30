@@ -600,6 +600,15 @@ describe('ids', () => {
 
   it('stableHash não confunde concatenações ambíguas', () => {
     assert(stableHash(['ab', 'c']) !== stableHash(['a', 'bc']));
+    // O caso que realmente exercita o separador: as partes contêm espaço, e a
+    // fronteira entre elas se desloca. Descrição de extrato tem espaço em quase
+    // toda linha ("PIX ENVIADO", "ENEL ENERGIA"), então um separador que seja
+    // espaço colide aqui — e uma linha seria descartada como duplicata de outra.
+    assert(stableHash(['a b', 'c']) !== stableHash(['a', 'b c']));
+    assert(
+      stableHash(['acc1', '2026-06-30', '-95.83', 'PIX ENVIADO', 'JOAO', 3]) !==
+      stableHash(['acc1', '2026-06-30', '-95.83', 'PIX', 'ENVIADO JOAO', 3])
+    );
   });
 });
 ```
@@ -649,9 +658,16 @@ export function slugId(s) {
   return String(s === null || s === undefined ? '' : s).replace(/[^a-zA-Z0-9]/g, '_');
 }
 
+// O separador precisa ser um caractere que nunca aparece dentro de uma
+// descricao de extrato. Fica definido por String.fromCharCode(0) em vez de
+// literal na string: o caractere NUL e invisivel no editor, e ja foi trocado
+// por espaco por engano tanto pelo implementador quanto por quem escreveu
+// este plano. Com espaco, ['a b','c'] e ['a','b c'] geram o mesmo hash, e uma
+// linha de extrato seria descartada como duplicata de outra.
+const SEPARADOR_PARTES = String.fromCharCode(0);
+
 export function stableHash(partes) {
-  // O separador   impede que ['ab','c'] e ['a','bc'] colidam.
-  const texto = partes.map((p) => String(p)).join(' ');
+  const texto = partes.map((p) => String(p)).join(SEPARADOR_PARTES);
   let h = 0x811c9dc5;
   for (let i = 0; i < texto.length; i++) {
     h ^= texto.charCodeAt(i);

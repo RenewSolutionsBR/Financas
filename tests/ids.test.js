@@ -23,7 +23,21 @@ describe('ids', () => {
     assert(a !== c);
   });
 
-  it('stableHash não confunde concatenações ambíguas', () => {
+  it('stableHash nao colide quando as partes contem espaco', () => {
+    // O caso que o separador precisa cobrir: a fronteira entre duas partes se
+    // desloca, mas a concatenacao dos textos fica igual. Descricao de extrato
+    // tem espaco em quase toda linha ("PIX ENVIADO", "ENEL ENERGIA").
+    assert(stableHash(['a b', 'c']) !== stableHash(['a', 'b c']));
+    assert(
+      stableHash(['acc1', '2026-06-30', '-95.83', 'PIX ENVIADO', 'JOAO', 3]) !==
+      stableHash(['acc1', '2026-06-30', '-95.83', 'PIX', 'ENVIADO JOAO', 3])
+    );
     assert(stableHash(['ab', 'c']) !== stableHash(['a', 'bc']));
+  });
+
+  it('stableHash aceita partes que nao sao string', () => {
+    assertEqual(typeof stableHash([1, 2, 3]), 'string');
+    assertEqual(stableHash([]).length, 8);
+    assert(stableHash([null, undefined, 'x']) !== stableHash(['', '', 'x']));
   });
 });
