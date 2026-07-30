@@ -1,0 +1,89 @@
+// Lançamentos. A regra de ouro do sistema mora aqui: gasto é despesa não
+// prevista, e só. Receita, transferência entre contas próprias e pagamento de
+// fatura são registrados e exibíveis, mas nunca somam como gasto — é o que
+// impede o extrato e a fatura do cartão de contarem o mesmo dinheiro duas vezes.
+
+import { uid } from '../core/ids.js';
+import { isValidISO, monthKey } from '../core/dates.js';
+import { round2 } from '../core/money.js';
+import * as storage from '../core/storage.js';
+
+export const NATUREZAS = ['despesa', 'receita', 'transferencia', 'pagamento_fatura'];
+
+export function contaComoGasto(t) {
+  return t.natureza === 'despesa' && !t.previsto;
+}
+
+export function validateTransaction(t) {
+  const erros = [];
+  if (!String(t.descricao || '').trim()) erros.push('A descrição não pode ficar em branco.');
+  if (!isValidISO(t.data)) erros.push('Informe uma data válida.');
+  if (!t.categoria) erros.push('Escolha uma categoria.');
+  if (!t.formaPagamentoId) erros.push('Escolha a forma de pagamento.');
+  if (!NATUREZAS.includes(t.natureza)) erros.push(`Natureza inválida. Use uma destas: ${NATUREZAS.join(', ')}.`);
+  const valor = Number(t.valor);
+  if (!Number.isFinite(valor) || valor <= 0) {
+    erros.push('O valor precisa ser maior que zero. O sentido do lançamento vem da natureza, não do sinal.');
+  }
+  return erros;
+}
+
+export function sumDespesas(transactions) {
+  return round2((transactions || []).reduce((s, t) => (contaComoGasto(t) ? s + Number(t.valor || 0) : s), 0));
+}
+
+export function filterTransactions(transactions, filtros) {
+  const f = filtros || {};
+  // Uma lista vazia significa "não filtrar por isso", e não "não trazer nada":
+  // é o estado inicial de um seletor de múltipla escolha.
+  const listaAtiva = (v) => Array.isArray(v) && v.length > 0;
+  return (transactions || []).filter((t) => {
+    if (f.mes && monthKey(t.data) !== f.mes) return false;
+    if (f.ano && String(t.data || '').slice(0, 4) !== String(f.ano)) return false;
+    if (listaAtiva(f.formas) && !f.formas.includes(t.formaPagamentoId)) return false;
+    if (listaAtiva(f.contas) && !f.contas.includes(t.contaId)) return false;
+    if (listaAtiva(f.categorias) && !f.categorias.includes(t.categoria)) return false;
+    if (listaAtiva(f.naturezas) && !f.naturezas.includes(t.natureza)) return false;
+    if (f.somenteAuto && !t.classificadoAutomaticamente) return false;
+    if (f.somenteGastos && !contaComoGasto(t)) return false;
+    return true;
+  });
+}
+
+export function totaisPorForma(transactions) {
+  const mapa = new Map();
+  for (const t of transactions || []) {
+    if (!contaComoGasto(t)) continue;
+    mapa.set(t.formaPagamentoId, round2((mapa.get(t.formaPagamentoId) || 0) + Number(t.valor || 0)));
+  }
+  return mapa;
+}
+
+export function novaTransaction(dados) {
+  return {
+    id: uid('tx'),
+    natureza: 'despesa',
+    origem: 'manual',
+    previsto: false,
+    ...dados,
+    valor: Math.abs(Number((dados && dados.valor) || 0)),
+  };
+}
+
+// --- Persistência ---
+
+export async function listTransactions() {
+  return storage.getAll('transactions');
+}
+
+export async function saveTransaction(t) {
+  return storage.put('transactions', t);
+}
+
+export async function saveTransactions(lista) {
+  return storage.putMany('transactions', lista);
+}
+
+export async function removeTransaction(id) {
+  return storage.remove('transactions', id);
+}
