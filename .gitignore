@@ -1,0 +1,22 @@
+# Repositório PÚBLICO — nenhum documento financeiro pode entrar aqui.
+# Extratos, faturas e backups ficam fora do projeto, em ../Extratos e ../Faturas.
+*.pdf
+*.xls
+*.xlsx
+*.csv
+*.ofx
+*.ofc
+*.qif
+
+# Fixtures de teste são anonimizadas e versionadas explicitamente
+!tests/fixtures/*.json
+
+# Windows / OneDrive
+desktop.ini
+Thumbs.db
+.DS_Store
+
+# Editores
+.vscode/
+.idea/
+*.swp
