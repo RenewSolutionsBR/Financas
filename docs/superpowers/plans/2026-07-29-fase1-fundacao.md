@@ -2278,15 +2278,33 @@ describe('transactions: o que conta como gasto', () => {
     assert(!contaComoGasto(t({ previsto: true })));
   });
 
-  it('soma apenas o que conta como gasto', () => {
+  it('soma apenas o que conta como gasto, sem residuo de ponto flutuante', () => {
     const lista = [
-      t({ id: 'a', valor: 100 }),
-      t({ id: 'b', valor: 50, natureza: 'receita' }),
-      t({ id: 'c', valor: 30, natureza: 'pagamento_fatura' }),
-      t({ id: 'd', valor: 20, previsto: true }),
-      t({ id: 'e', valor: 5.5 }),
+      t({ id: 'a', valor: 0.1 }),
+      t({ id: 'b', valor: 0.29 }),
+      t({ id: 'c', valor: 23.45 }),
+      t({ id: 'd', valor: 7781.06 }),
+      t({ id: 'e', valor: 50, natureza: 'receita' }),
+      t({ id: 'f', valor: 30, natureza: 'pagamento_fatura' }),
+      t({ id: 'g', valor: 20, natureza: 'transferencia' }),
+      t({ id: 'h', valor: 99, previsto: true }),
     ];
-    assertEqual(sumDespesas(lista), 105.5);
+    // Sem round2 a soma nativa daria 7804.900000000001. Os valores importam:
+    // 0.1 + 0.2 + 23.45 + 7781.06 soma EXATO em ponto flutuante, e um teste com
+    // eles passaria mesmo sem round2 - foi preciso trocar 0.2 por 0.29.
+    assertEqual(sumDespesas(lista), 7804.9);
+  });
+
+  it('cem centavos somam exatamente um real', () => {
+    // Sem round2 isto daria 1.0000000000000007.
+    const centavos = Array.from({ length: 100 }, (_, i) => t({ id: 'c' + i, valor: 0.01 }));
+    assertEqual(sumDespesas(centavos), 1);
+  });
+
+  it('um valor ilegivel nao contamina o total', () => {
+    const lista = [t({ id: 'a', valor: 10 }), t({ id: 'b', valor: 'abc' }), t({ id: 'c', valor: 5 })];
+    // Perder um registro e ruim; zerar o mes inteiro em silencio e pior.
+    assertEqual(sumDespesas(lista), 15);
   });
 
   it('soma de lista vazia é zero', () => {
@@ -2418,6 +2436,7 @@ export function contaComoGasto(t) {
 
 export function validateTransaction(t) {
   const erros = [];
+  if (!t || typeof t !== 'object') return ['Lançamento inválido.'];
   if (!String(t.descricao || '').trim()) erros.push('A descrição não pode ficar em branco.');
   if (!isValidISO(t.data)) erros.push('Informe uma data válida.');
   if (!t.categoria) erros.push('Escolha uma categoria.');
@@ -2431,7 +2450,17 @@ export function validateTransaction(t) {
 }
 
 export function sumDespesas(transactions) {
-  return round2((transactions || []).reduce((s, t) => (contaComoGasto(t) ? s + Number(t.valor || 0) : s), 0));
+  let total = 0;
+  for (const t of transactions || []) {
+    if (!contaComoGasto(t)) continue;
+    const valor = Number(t.valor);
+    // Um valor ilegivel e ignorado em vez de contaminar a soma: sem isso, um
+    // unico registro corrompido tornava o total NaN, e fmtBRL exibia NaN como
+    // "R$ 0,00" - o mes inteiro aparecia zerado sem nenhum sinal de erro.
+    if (!Number.isFinite(valor)) continue;
+    total += valor;
+  }
+  return round2(total);
 }
 
 export function filterTransactions(transactions, filtros) {
@@ -2452,11 +2481,18 @@ export function filterTransactions(transactions, filtros) {
   });
 }
 
+// Chave para lancamento sem forma de pagamento: a tela precisa de um rotulo, e
+// a chave literal `undefined` no Map nao rotula nada.
+export const SEM_FORMA = 'sem_forma';
+
 export function totaisPorForma(transactions) {
   const mapa = new Map();
   for (const t of transactions || []) {
     if (!contaComoGasto(t)) continue;
-    mapa.set(t.formaPagamentoId, round2((mapa.get(t.formaPagamentoId) || 0) + Number(t.valor || 0)));
+    const valor = Number(t.valor);
+    if (!Number.isFinite(valor)) continue;
+    const chave = t.formaPagamentoId || SEM_FORMA;
+    mapa.set(chave, round2((mapa.get(chave) || 0) + valor));
   }
   return mapa;
 }
