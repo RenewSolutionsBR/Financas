@@ -118,7 +118,7 @@ Chave `id`.
 | `bandeira`, `final` | só quando `tipo === 'cartao'` |
 | `diaVencimento` | dia nominal de vencimento da fatura (cartão) |
 | `contaPagadoraId` | cartão → `accounts.id` da conta que o debita |
-| `matchers` | array de padrões que identificam a conta/cartão na descrição do extrato (ex.: `FINAL 0000`) |
+| `matchers` | array de padrões que identificam a conta/cartão na descrição do extrato (ex.: `FINAL 0000`). Ao cadastrar um cartão, o app **sugere** o matcher a partir de `bandeira` e `final`; a lista é editável, porque a grafia varia entre bancos |
 | `mapeamentoImportacao` | mapeamento de colunas salvo para o importador genérico |
 | `cor`, `ativo` | apresentação e desativação sem exclusão |
 
@@ -179,7 +179,7 @@ Chave `id` = `${contaId}|${tipo}|${referencia}`.
 | `tipoMatch` | `'exato'` \| `'contem'` \| `'regex'` |
 | `escopo` | `'fatura'` \| `'extrato'` \| `'ambos'` |
 | `contaId` | opcional, restringe a regra a uma conta/cartão |
-| `categoriaId` | categoria aplicada |
+| `categoriaId` | categoria aplicada. **Opcional**: uma regra pode existir só para fixar natureza ou forma de pagamento (ex.: marcar uma contraparte recorrente como transferência), sem opinar sobre categoria |
 | `formaPagamentoId`, `naturezaSugerida` | opcionais, aplicados junto |
 | `origem` | `'aprendida'` (nasceu de uma edição do usuário) \| `'manual'` (criada na tela de Regras) |
 | `acertos`, `criadoEm`, `ultimoUsoEm`, `ativa` | auditoria |
@@ -187,7 +187,12 @@ Chave `id` = `${contaId}|${tipo}|${referencia}`.
 ### 5.6 `categories` e `meta`
 
 Inalterados. `categories` mantém `a_classificar` com id fixo e ganha no seed "Tarifas e
-impostos bancários". `meta` ganha `schemaVersion` e `onboardingConcluido`.
+impostos bancários". `meta` ganha `schemaVersion`, `onboardingConcluido` e
+**`apelidosTitular`** — lista de nomes pelos quais o próprio usuário aparece como
+contraparte no extrato (a mesma pessoa aparece com grafias diferentes conforme o banco
+emissor). É editável em Cadastros e alimenta a detecção de transferência entre contas
+próprias descrita em 7.2. Como é dado pessoal, nasce vazia no código e é preenchida no
+assistente de primeira execução.
 
 ### 5.7 Migração v1 → v2
 
@@ -294,7 +299,7 @@ impede a dupla contagem:
 | Condição na linha | `natureza` | Efeito |
 |---|---|---|
 | descrição casa um `matcher` de conta do tipo cartão, em lançamento de débito | `pagamento_fatura` | fora do total; vincula ao `statements` de fatura daquele cartão com vencimento mais próximo da data, e confronta a soma da fatura com o valor debitado |
-| contraparte casa o titular ou outra conta cadastrada | `transferencia` | fora do total |
+| contraparte casa um `apelidosTitular` ou outra conta cadastrada | `transferencia` | fora do total |
 | `sinal === 'credito'` | `receita` | fora do total, mas registrada |
 | demais débitos | `despesa` | conta no total |
 
