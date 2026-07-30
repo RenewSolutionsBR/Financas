@@ -1,0 +1,217 @@
+/* Tema "livro contábil" (papel/tinta/latão), herdado do protótipo anterior.
+   Todas as cores vivem em variáveis para que o bloco de tema escuro abaixo
+   baste para reverter a paleta inteira. */
+:root {
+  --papel: #f4efe4;
+  --tinta: #2b2622;
+  --tinta-fraca: #6b6259;
+  --latao: #a8802c;
+  --linha: #d9cfbc;
+  --erro: #b3261e;
+  --ok: #0a7d32;
+
+  --font-display: Georgia, 'Iowan Old Style', 'Palatino Linotype', serif;
+  --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'SF Mono', 'Cascadia Code', 'Roboto Mono', Consolas, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --papel: #1c1a17;
+    --tinta: #ebe4d8;
+    --tinta-fraca: #a09688;
+    --latao: #d3a850;
+    --linha: #3a352e;
+    --erro: #f2b8b5;
+    --ok: #7ddb9c;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--papel);
+  color: var(--tinta);
+  font-family: var(--font-body);
+  padding-bottom: 40px;
+}
+
+/* Cabeçalho + navegação de abas ficam centralizados numa coluna estreita,
+   como o restante do conteúdo, mesmo sendo filhos diretos do body. */
+.cabecalho, .tabbar, main {
+  max-width: 560px;
+  margin: 0 auto;
+}
+
+.cabecalho {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 20px 14px;
+  border-bottom: 1px dashed var(--linha);
+}
+
+.cabecalho h1 {
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--tinta);
+  margin: 0;
+}
+
+.status {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--tinta-fraca);
+  text-align: right;
+  min-height: 1em;
+}
+
+/* São cinco abas: em telas estreitas elas não cabem lado a lado, então a
+   barra rola horizontalmente em vez de espremer o texto. */
+.tabbar {
+  display: flex;
+  gap: 6px;
+  padding: 14px 20px 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.tabbar::-webkit-scrollbar { display: none; }
+
+.tab-btn {
+  flex: 0 0 auto;
+  padding: 8px 14px;
+  border-radius: 4px;
+  border: 1px solid var(--linha);
+  background: var(--papel);
+  color: var(--tinta-fraca);
+  font-weight: 600;
+  font-size: 0.74rem;
+  cursor: pointer;
+  font-family: var(--font-body);
+  white-space: nowrap;
+}
+.tab-btn.active {
+  background: var(--tinta);
+  color: var(--papel);
+  border-color: var(--tinta);
+}
+
+main {
+  padding: 0 20px;
+}
+
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+
+.vazio {
+  text-align: center;
+  color: var(--tinta-fraca);
+  padding: 40px 10px;
+  font-size: 0.9rem;
+}
+
+/* Controles de formulário genéricos: qualquer tela futura herda uma base
+   legível nos dois temas sem precisar redeclarar cor de fundo/borda. */
+input, select, textarea, button {
+  font-family: var(--font-body);
+  color: var(--tinta);
+}
+input, select, textarea {
+  background: var(--papel);
+  border: 1px solid var(--linha);
+  border-radius: 4px;
+  padding: 9px 10px;
+  font-size: 0.95rem;
+}
+button { cursor: pointer; }
+
+/* Modal genérico usado por abrirModal/confirmar. */
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 24px 12px;
+  z-index: 100;
+  overflow-y: auto;
+}
+
+.modal {
+  background: var(--papel);
+  color: var(--tinta);
+  border: 1px solid var(--linha);
+  border-radius: 8px;
+  width: 100%;
+  max-width: 420px;
+  padding: 20px;
+}
+.modal h2 {
+  margin: 0 0 10px;
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  color: var(--tinta);
+}
+.modal p { color: var(--tinta); line-height: 1.5; }
+
+.modal-acoes {
+  display: flex;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.btn {
+  flex: 1;
+  padding: 11px;
+  border-radius: 4px;
+  border: 1px solid var(--linha);
+  background: var(--papel);
+  color: var(--tinta);
+  font-size: 0.9rem;
+  font-weight: 600;
+  font-family: var(--font-body);
+}
+/* Última ação do grupo é a principal — convenção usada por abrirModal, que
+   sempre lista a ação afirmativa por último. */
+.modal-acoes .btn:last-child {
+  background: var(--tinta);
+  color: var(--papel);
+  border-color: var(--tinta);
+}
+.btn.btn-perigo {
+  background: var(--erro);
+  color: var(--papel);
+  border-color: var(--erro);
+}
+
+/* Toasts empilham no rodapé da tela. */
+#toastRaiz {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 0 16px;
+  z-index: 200;
+  pointer-events: none;
+}
+.toast {
+  background: var(--tinta);
+  color: var(--papel);
+  padding: 10px 16px;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  max-width: 420px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+.toast.erro { background: var(--erro); color: var(--papel); }
+.toast.ok { background: var(--ok); color: var(--papel); }
