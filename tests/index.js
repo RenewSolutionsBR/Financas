@@ -19,4 +19,5 @@ export const TEST_MODULES = [
 // Testes que dependem de IndexedDB ou DOM: só no navegador.
 export const BROWSER_ONLY_MODULES = [
   './storage.browser.test.js',
+  './backup.browser.test.js',
 ];

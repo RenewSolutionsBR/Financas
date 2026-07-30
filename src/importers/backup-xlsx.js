@@ -29,6 +29,11 @@ function serializarValor(v) {
   if (v === undefined) return '';
   if (v === null) return MARCA_JSON + 'null';
   if (v === '') return MARCA_JSON + '""';
+  // Uma string que por acaso começa com o próprio marcador também viaja
+  // marcada, senão voltaria como o valor que o marcador representa: um
+  // usuário que digitasse "@json:null" numa descrição veria virar null na
+  // restauração.
+  if (typeof v === 'string' && v.startsWith(MARCA_JSON)) return MARCA_JSON + JSON.stringify(v);
   if (typeof v === 'object') return MARCA_JSON + JSON.stringify(v);
   if (typeof v === 'boolean') return MARCA_JSON + JSON.stringify(v);
   return v;

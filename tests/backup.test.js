@@ -88,6 +88,14 @@ describe('backup: ciclo completo', () => {
     assertEqual(t3.observacaoLivre, '[1,2]');
     assertEqual(t3.outraObservacao, '{"a":1}');
   });
+
+  it('texto que comeca com o proprio marcador continua sendo texto', () => {
+    const ds = { transactions: [{ id: 'tx_m', descricao: '@json:null', obs: '@json:true', obs2: '@json:{"a":1}' }] };
+    const { dataset } = sheetsToDataset(datasetToSheets(ds));
+    assertEqual(dataset.transactions[0].descricao, '@json:null');
+    assertEqual(dataset.transactions[0].obs, '@json:true');
+    assertEqual(dataset.transactions[0].obs2, '@json:{"a":1}');
+  });
 });
 
 describe('backup: caminho degradado do formato anterior', () => {

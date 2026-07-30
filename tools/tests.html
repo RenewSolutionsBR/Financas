@@ -16,6 +16,10 @@
   <h1>Testes</h1>
   <div id="resumo">rodando…</div>
   <div id="lista"></div>
+  <!-- Carregado como global XLSX, do mesmo jeito que index.html fará: os
+       testes de backup.browser.test.js exercitam o ciclo real de exportar/
+       importar contra o SheetJS de verdade, não só contra objetos JS. -->
+  <script src="../vendor/xlsx.full.min.js"></script>
   <script type="module">
     import { runAll } from '../tests/harness.js';
     import { TEST_MODULES, BROWSER_ONLY_MODULES } from '../tests/index.js';
