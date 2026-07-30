@@ -4,4 +4,6 @@ export const TEST_MODULES = [
   './harness.test.js',
   './money.test.js',
   './dates.test.js',
+  './text.test.js',
+  './ids.test.js',
 ];
