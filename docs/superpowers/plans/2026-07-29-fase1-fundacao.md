@@ -16,7 +16,8 @@
 - **Repositório é PÚBLICO.** Nenhum dado pessoal em código, seed, teste ou fixture: sem número de conta, agência, final de cartão real, nome de pessoa ou valor real. Fixtures são anonimizadas.
 - **Datas em ISO (`YYYY-MM-DD`) internamente.** Formatação `DD/MM/AAAA` existe apenas na camada `ui/`. Nenhum módulo de `core/` ou `domain/` devolve data formatada.
 - **Valores monetários sempre positivos** em `transactions.valor`. O sentido vem de `natureza`.
-- **Módulos de `domain/` e `core/` (exceto `storage.js`) não podem importar `storage.js` nem tocar em `document`/`window`.** É o que permite rodar os testes fora do navegador.
+- **Nenhum módulo pode tocar `indexedDB`, `document` ou `window` no momento da importação.** Só `storage.js` chama `indexedDB`, e sempre dentro de funções, nunca no corpo do módulo. Módulos de `domain/` podem importar `storage.js` para as funções de persistência; o que não podem é ter efeito colateral na importação. É essa regra — e não a proibição de importar — que mantém os testes rodando no Node.
+- **Regras puras e persistência ficam separadas dentro do arquivo**, com as funções de persistência agrupadas ao final, sob um comentário `// --- Persistência ---`. Nenhuma função pura pode chamar `storage`.
 - **Nenhum arquivo deve passar de ~250 linhas.** Se passar, é sinal de que tem mais de uma responsabilidade.
 - **Toda categoria é buscada por id, nunca por nome.** O id fixo `a_classificar` é contrato.
 - **Idioma:** identificadores em português quando nomeiam conceito de negócio (`natureza`, `formaPagamentoId`), inglês para termos técnicos consagrados (`id`, `index`, `hash`). Comentários e mensagens de UI em português.
@@ -2763,14 +2764,11 @@ import { initTabs } from './ui/tabs.js';
 import { toast } from './ui/components.js';
 import { seedCategoriasIfEmpty } from './domain/categories.js';
 import { seedFormasIfEmpty } from './domain/payment-methods.js';
-import { renderCadastros } from './ui/cadastros.js';
-import { renderLancamentos } from './ui/lancamentos.js';
-import { talvezOferecerOnboarding } from './ui/onboarding.js';
 
-const RENDERIZADORES = {
-  Lancamentos: renderLancamentos,
-  Cadastros: renderCadastros,
-};
+// As telas entram nas tarefas 12 a 14. Cada uma acrescenta o próprio import e
+// a própria linha em RENDERIZADORES ao ser criada — nada de import comentado
+// esperando por um arquivo que ainda não existe.
+const RENDERIZADORES = {};
 
 async function renderizar(aba) {
   const fn = RENDERIZADORES[aba];
@@ -2783,7 +2781,6 @@ async function boot() {
     await seedFormasIfEmpty();
     initTabs(renderizar);
     await renderizar('Lancamentos');
-    await talvezOferecerOnboarding();
     registrarServiceWorker();
     if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
   } catch (e) {
@@ -2846,7 +2843,7 @@ python -m http.server 8000
 
 Abra `http://localhost:8000/`. Confirme, nesta ordem:
 1. As cinco abas aparecem e trocam ao toque.
-2. O console não tem erro (exceto os módulos ainda não criados nas tarefas 12–14, que serão resolvidos ao final delas — até lá, comente as importações correspondentes em `app.js`).
+2. O console não tem **nenhum** erro. As abas de conteúdo ainda estão vazias, e é isso que se espera nesta tarefa.
 3. Em tela de 360px de largura a tabbar rola sem quebrar o layout.
 4. Alternando o tema do sistema entre claro e escuro, o texto continua legível.
 
@@ -2865,17 +2862,31 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 ---
 
-### Task 12: `ui/cadastros.js` — Contas & Cartões, Formas e Categorias
+### Task 12: aba Cadastros — Contas & Cartões, Formas, Categorias e Backup
 
-Três seções numa aba. Toda validação vem de `domain/`: esta camada só coleta o formulário, chama `validate*`, e mostra os erros devolvidos. Nenhuma regra é reimplementada aqui.
+Quatro seções numa aba. Toda validação vem de `domain/`: esta camada só coleta o formulário, chama `validate*`, e mostra os erros devolvidos. Nenhuma regra é reimplementada aqui.
+
+**Um arquivo por seção.** O código abaixo está agrupado por seção com comentários `// --- Nome ---`; cada grupo vira um arquivo próprio, em torno de 80 linhas, e as seções não se conhecem entre si. `cadastros.js` fica sendo só a montagem da aba.
 
 **Files:**
-- Create: `src/ui/cadastros.js`
-- Modify: `styles.css` (classes `.cadastro-secao`, `.lista-cadastro`, `.erro-form`)
+- Create: `src/ui/cadastros.js` — monta a aba chamando as quatro seções e expõe `renderCadastros()`
+- Create: `src/ui/cadastros-contas.js` — exporta `secaoContas(aoMudar)`
+- Create: `src/ui/cadastros-formas.js` — exporta `secaoFormas(aoMudar)`
+- Create: `src/ui/cadastros-categorias.js` — exporta `secaoCategorias(aoMudar)`
+- Create: `src/ui/cadastros-backup.js` — exporta `secaoBackup(aoMudar)`
+- Create: `src/ui/cadastros-comuns.js` — `secao(titulo, filhos)`, `campo(rotulo, controle)`, `mostrarErros(erros)`, usados por mais de uma seção
+- Modify: `styles.css` (classes `.cadastro-secao`, `.lista-cadastro`, `.erro-form`, `.chip-cor`)
+
+Cada seção recebe `aoMudar` — a função a chamar depois de salvar ou excluir — em vez de importar `renderCadastros`, o que criaria ciclo de importação entre a aba e suas seções. `cadastros.js` passa a própria `renderCadastros` como esse callback.
+
+O código a seguir é o conteúdo completo das seções; distribua cada grupo no seu arquivo, trocando as chamadas diretas a `renderCadastros()` por `aoMudar()`.
 
 **Interfaces:**
 - Consumes: `domain/accounts.js`, `domain/payment-methods.js`, `domain/categories.js`, `domain/transactions.js` (`listTransactions`, para o guarda de exclusão), `ui/components.js`, `importers/backup-xlsx.js`
-- Produces: `renderCadastros() -> Promise<void>`
+- Produces:
+  - `cadastros.js`: `renderCadastros() -> Promise<void>`
+  - cada `cadastros-*.js`: `secao<Nome>(aoMudar) -> Promise<HTMLElement>`
+  - `cadastros-comuns.js`: `secao(titulo, filhos) -> HTMLElement`, `campo(rotulo, controle) -> HTMLElement`, `mostrarErros(erros) -> void`
 
 - [ ] **Step 1: Implementar `src/ui/cadastros.js`**
 
@@ -2897,28 +2908,34 @@ import {
 import { listTransactions } from '../domain/transactions.js';
 import { exportarBackup, importarBackup } from '../importers/backup-xlsx.js';
 
+// Conteúdo de cadastros.js: só a montagem da aba.
 export async function renderCadastros() {
   const painel = document.getElementById('tabCadastros');
   painel.innerHTML = '';
   painel.append(
-    await secaoContas(),
-    await secaoFormas(),
-    await secaoCategorias(),
-    secaoBackup()
+    await secaoContas(renderCadastros),
+    await secaoFormas(renderCadastros),
+    await secaoCategorias(renderCadastros),
+    secaoBackup(renderCadastros)
   );
 }
 
-function secao(titulo, filhos) {
+// Conteúdo de cadastros-comuns.js.
+export function secao(titulo, filhos) {
   return el('section', { class: 'cadastro-secao' }, [el('h2', { text: titulo }), ...filhos]);
 }
 
-function mostrarErros(erros) {
+export function campo(rotulo, controle) {
+  return el('label', { class: 'campo' }, [el('span', { text: rotulo }), controle]);
+}
+
+export function mostrarErros(erros) {
   toast(erros.join(' '), 'erro');
 }
 
 // --- Contas e cartões ---
 
-async function secaoContas() {
+export async function secaoContas(aoMudar) {
   const todas = await listAccounts();
   const lista = el('div', { class: 'lista-cadastro' },
     todas.map((a) => el('div', { class: 'item-cadastro' }, [
@@ -3019,7 +3036,7 @@ async function excluirConta(acc) {
 
 // --- Formas de pagamento ---
 
-async function secaoFormas() {
+export async function secaoFormas(aoMudar) {
   const todas = await listFormas();
   const lista = el('div', { class: 'lista-cadastro' },
     todas.map((p) => el('div', { class: 'item-cadastro' }, [
@@ -3091,7 +3108,7 @@ async function excluirForma(pm) {
 
 // --- Categorias ---
 
-async function secaoCategorias() {
+export async function secaoCategorias(aoMudar) {
   const todas = await listCategorias();
   const lista = el('div', { class: 'lista-cadastro' },
     todas.map((c) => el('div', { class: 'item-cadastro' }, [
@@ -3147,7 +3164,7 @@ async function excluirCategoria(cat) {
 
 // --- Backup ---
 
-function secaoBackup() {
+export function secaoBackup(aoMudar) {
   const inputArquivo = el('input', { type: 'file', accept: '.xlsx', class: 'oculto' });
   inputArquivo.addEventListener('change', async (ev) => {
     const arquivo = ev.target.files[0];
@@ -3214,7 +3231,17 @@ async function baixarBackup() {
 }
 ```
 
-- [ ] **Step 2: Verificar no navegador**
+- [ ] **Step 2: Ligar a tela em `src/app.js`**
+
+```js
+import { renderCadastros } from './ui/cadastros.js';
+
+const RENDERIZADORES = {
+  Cadastros: renderCadastros,
+};
+```
+
+- [ ] **Step 3: Verificar no navegador**
 
 Com `python -m http.server 8000` rodando, abra a aba Cadastros e confirme:
 1. As formas de pagamento e categorias do seed aparecem listadas.
@@ -3431,7 +3458,20 @@ async function excluir(t) {
 }
 ```
 
-- [ ] **Step 2: Verificar no navegador**
+- [ ] **Step 2: Ligar a tela em `src/app.js`**
+
+Acrescente ao que já existe (não substitua a linha de Cadastros):
+
+```js
+import { renderLancamentos } from './ui/lancamentos.js';
+
+const RENDERIZADORES = {
+  Lancamentos: renderLancamentos,
+  Cadastros: renderCadastros,
+};
+```
+
+- [ ] **Step 3: Verificar no navegador**
 
 1. Lançar um gasto com Pix; conferir que aparece na lista e entra no total do período.
 2. Lançar um recebimento (natureza "Recebimento"); conferir que aparece na lista mas **não** muda o total de gastos.
@@ -3612,9 +3652,17 @@ export async function migrarDoAppAnterior() {
 }
 ```
 
-- [ ] **Step 2: Ligar o botão em Cadastros**
+- [ ] **Step 2: Ligar o assistente em `src/app.js` e o botão em Cadastros**
 
-Em `src/ui/cadastros.js`, importe `migrarDoAppAnterior` e acrescente na seção Backup:
+Em `src/app.js`, dentro de `boot()`, logo após `await renderizar('Lancamentos')`:
+
+```js
+import { talvezOferecerOnboarding } from './ui/onboarding.js';
+// ...
+await talvezOferecerOnboarding();
+```
+
+Em `src/ui/cadastros-backup.js`, importe `migrarDoAppAnterior` e acrescente ao bloco de ações:
 
 ```js
 el('button', { class: 'btn', text: 'Migrar dados do app anterior', onclick: migrarDoAppAnterior }),
@@ -3697,6 +3745,9 @@ const PRECACHE = [
   './src/domain/payment-methods.js', './src/domain/transactions.js',
   './src/importers/backup-xlsx.js', './src/importers/legacy-idb.js',
   './src/ui/components.js', './src/ui/tabs.js', './src/ui/cadastros.js',
+  './src/ui/cadastros-contas.js', './src/ui/cadastros-formas.js',
+  './src/ui/cadastros-categorias.js', './src/ui/cadastros-backup.js',
+  './src/ui/cadastros-comuns.js',
   './src/ui/lancamentos.js', './src/ui/onboarding.js',
   './vendor/xlsx.full.min.js',
   './icons/icon-192.png', './icons/icon-512.png',
