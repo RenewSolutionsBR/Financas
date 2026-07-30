@@ -11,6 +11,7 @@ export const TEST_MODULES = [
   './migration.test.js',
   './categories.test.js',
   './accounts.test.js',
+  './payment-methods.test.js',
 ];
 
 // Testes que dependem de IndexedDB ou DOM: só no navegador.
