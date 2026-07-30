@@ -1,7 +1,7 @@
 import { describe, it, assert, assertEqual } from './harness.js';
 import {
-  CATEGORIA_A_CLASSIFICAR, DEFAULT_CATEGORIES,
-  validateCategoria, garantirAClassificar, novaCategoria,
+  CATEGORIA_A_CLASSIFICAR, DEFAULT_CATEGORIES, PALETA,
+  validateCategoria, garantirAClassificar, novaCategoria, removeCategoria,
 } from '../src/domain/categories.js';
 
 describe('categories', () => {
@@ -46,9 +46,38 @@ describe('categories', () => {
     assertEqual(resultado[0].nome, 'Outro nome');
   });
 
-  it('novaCategoria gera id único e escolhe cor da paleta', () => {
-    const c = novaCategoria('Pets', null, []);
-    assert(c.id.startsWith('cat_'));
-    assert(/^#[0-9a-f]{6}$/i.test(c.cor));
+  it('garantirAClassificar não vaza referência ao objeto de DEFAULT_CATEGORIES', () => {
+    // Copia o objeto em vez de empurrar a mesma referência.
+    const resultado = garantirAClassificar([]);
+    const aClassificar = resultado.find((c) => c.id === CATEGORIA_A_CLASSIFICAR);
+    aClassificar.nome = 'MUTADO';
+    // DEFAULT_CATEGORIES deve continuar inalterado.
+    const original = DEFAULT_CATEGORIES.find((c) => c.id === CATEGORIA_A_CLASSIFICAR);
+    assertEqual(original.nome, 'A Classificar');
+  });
+
+  it('recusa excluir a categoria A Classificar, explicando por que', async () => {
+    // O throw acontece antes de qualquer chamada a storage, entao roda no Node.
+    let erro = null;
+    try {
+      await removeCategoria(CATEGORIA_A_CLASSIFICAR);
+    } catch (e) {
+      erro = e;
+    }
+    assert(erro !== null, 'deveria ter recusado a exclusao');
+    // A mensagem precisa explicar o motivo, nao so recusar.
+    assert(/destino/i.test(erro.message), `mensagem nao explica o motivo: ${erro.message}`);
+  });
+
+  it('novaCategoria escolhe cor livre da paleta em vez de repetir', () => {
+    const existentes = [{ id: 'a', nome: 'A', cor: PALETA[0] }, { id: 'b', nome: 'B', cor: PALETA[1] }];
+    assertEqual(novaCategoria('C', null, existentes).cor, PALETA[2]);
+  });
+
+  it('novaCategoria gera ids diferentes em chamadas seguidas', () => {
+    const a = novaCategoria('X', null, []);
+    const b = novaCategoria('Y', null, []);
+    assert(a.id !== b.id);
+    assert(a.id.startsWith('cat_'));
   });
 });

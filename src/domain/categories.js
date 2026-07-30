@@ -28,6 +28,7 @@ export const DEFAULT_CATEGORIES = [
 
 export function validateCategoria(cat, todas) {
   const erros = [];
+  if (!cat || typeof cat !== 'object') return ['Categoria inválida.'];
   const nome = String(cat.nome || '').trim();
   if (!nome) erros.push('O nome da categoria não pode ficar em branco.');
   const repetida = (todas || []).some(
@@ -40,16 +41,24 @@ export function validateCategoria(cat, todas) {
 export function garantirAClassificar(todas) {
   const lista = [...(todas || [])];
   if (!lista.some((c) => c.id === CATEGORIA_A_CLASSIFICAR)) {
-    lista.push(DEFAULT_CATEGORIES.find((c) => c.id === CATEGORIA_A_CLASSIFICAR));
+    // Copia em vez de empurrar o objeto do proprio DEFAULT_CATEGORIES: as telas
+    // recebem esta lista e podem editar um item no lugar, e isso vazaria para a
+    // constante do modulo, contaminando todo seed seguinte da sessao.
+    lista.push({ ...DEFAULT_CATEGORIES.find((c) => c.id === CATEGORIA_A_CLASSIFICAR) });
   }
   return lista;
 }
 
 export function novaCategoria(nome, cor, todas) {
+  const lista = todas || [];
+  const usadas = new Set(lista.map((c) => c.cor));
+  // Primeira cor livre da paleta, em vez de indexar pelo tamanho da lista: sem
+  // isso, duas chamadas seguidas sobre a mesma lista devolviam a mesma cor.
+  const corLivre = PALETA.find((c) => !usadas.has(c)) || PALETA[lista.length % PALETA.length];
   return {
     id: uid('cat'),
     nome: String(nome || '').trim(),
-    cor: cor || PALETA[(todas || []).length % PALETA.length],
+    cor: cor || corLivre,
   };
 }
 
@@ -75,7 +84,7 @@ export async function seedCategoriasIfEmpty() {
   if (existentes.length) {
     // Instalação antiga sem a categoria fixa: acrescenta sem tocar no resto.
     if (!existentes.some((c) => c.id === CATEGORIA_A_CLASSIFICAR)) {
-      await storage.put('categories', DEFAULT_CATEGORIES.find((c) => c.id === CATEGORIA_A_CLASSIFICAR));
+      await storage.put('categories', { ...DEFAULT_CATEGORIES.find((c) => c.id === CATEGORIA_A_CLASSIFICAR) });
     }
     return false;
   }
