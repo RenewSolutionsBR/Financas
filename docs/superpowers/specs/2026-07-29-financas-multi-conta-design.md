@@ -83,7 +83,8 @@ O repositório é **público**. Portanto:
 │   │   │   ├── santander-cartao-pdf.js   fatura Visa e Mastercard
 │   │   │   ├── santander-extrato-xls.js
 │   │   │   ├── generic-table.js     CSV/XLS com mapeamento de colunas
-│   │   │   └── backup-xlsx.js       backup/restore + conversor do schema v1
+│   │   │   ├── backup-xlsx.js       backup/restore completo do schema v2
+│   │   │   └── legacy-idb.js        leitura do banco do app anterior (mesma origem)
 │   │   └── ui/
 │   │       ├── components.js tabs.js
 │   │       └── lancamentos.js conciliacao.js cadastros.js parcelas.js dashboard.js
@@ -103,7 +104,11 @@ dashboard. A divisão em `core/`, `domain/`, `importers/` e `ui/` existe para qu
 arquivo tenha um propósito único e possa ser lido e testado isoladamente. Nenhum módulo de
 `domain/` importa de `ui/`; `ui/` orquestra, `domain/` decide, `core/` serve os dois.
 
-## 5. Modelo de dados (IndexedDB `livro-de-gastos`, schema v2)
+## 5. Modelo de dados (IndexedDB `financas`, schema v2)
+
+O banco tem nome novo, distinto do `livro-de-gastos` usado pelo app anterior. Isso é o que
+permite ler o banco antigo sem alterá-lo (ver 5.7) e manter o app anterior funcionando como
+retaguarda durante a transição.
 
 ### 5.1 `accounts` — contas e cartões
 
@@ -217,17 +222,41 @@ assistente de primeira execução.
 
 ### 5.7 Migração v1 → v2
 
-Executada no `openDB` por `db-schema.js` e também pelo importador de backup:
+**O backup `.xlsx` do app atual é parcial e não serve como caminho principal.** Sua planilha
+`Backup_Lancamentos` grava apenas `id, descricao, valor, data, categoria, previsto,
+parcelaKey`: perde `parcela_atual`, `parcela_total`, `conciliadoAutomaticamente`,
+`origemManual` e `grupo_parcela`, e o store `faturas` não é exportado de forma alguma.
+Migrar por ele descartaria todas as faturas importadas e a metainformação da cadeia de
+parcelas.
 
-- `expenses` → `transactions` com `natureza:'despesa'`, `origem:'manual'`, forma "Cartão de
-  Crédito" e `contaId` do cartão escolhido no assistente de migração.
-- `faturas` → `statements` com `tipo:'fatura'` e o mesmo `contaId`.
-- Ids preservados literalmente (`seed_*`, `confirmed_*`), para que a cadeia de parcelas de
-  09/2025 a 06/2026 continue conciliando.
+**Caminho principal: leitura direta do IndexedDB da mesma origem.** Os dois apps são
+publicados sob `https://renewsolutionsbr.github.io` — o caminho difere (`/Cartao_Credito/` e
+`/Financas/`), mas a origem é a mesma, e IndexedDB é isolado por origem, não por caminho.
+O app novo, portanto, enxerga o banco `livro-de-gastos` do app antigo.
 
-O caminho recomendado ao usuário é: app atual → "Backup completo (.xlsx)" → app novo →
-"Importar backup", porque as duas instalações têm origens diferentes e não compartilham
-IndexedDB.
+Regras dessa leitura:
+
+- O app novo usa um banco **de nome diferente** (`financas`). Ele abre `livro-de-gastos`
+  **sem informar versão**, o que o conecta à versão existente sem disparar
+  `onupgradeneeded` — o banco antigo é lido, nunca alterado. O app anterior continua
+  íntegro e utilizável como retaguarda.
+- A conversão é integral: `expenses` → `transactions`, `faturas` → `statements`,
+  `categories` e `meta` copiados. Nenhum campo se perde, porque nada passa por planilha.
+- `expenses` recebem `natureza: 'despesa'`, `origem: 'manual'`, a forma de pagamento
+  "Cartão de Crédito" e o `contaId` do cartão indicado pelo usuário no assistente.
+- Ids são preservados literalmente (`seed_*`, `confirmed_*`), para que a cadeia de parcelas
+  de 09/2025 a 06/2026 continue conciliando.
+- A migração é idempotente e não destrutiva: rodar de novo não duplica (os ids são os
+  mesmos) e nunca apaga nada do banco de origem.
+
+**Caminho alternativo: backup `.xlsx`.** Continua existindo para quem instalar o app num
+aparelho ou navegador que nunca teve o app anterior. Nesse caso o app avisa explicitamente
+que faturas e metainformação de parcela não vêm no arquivo, e recomenda reimportar os PDFs
+de fatura em seguida.
+
+**Backup do app novo é completo.** O `backup-xlsx.js` exporta todos os stores, incluindo
+`statements`, `accounts`, `paymentMethods` e `classificationRules`, com um cabeçalho de
+`schemaVersion` — a limitação encontrada na v1 não se repete.
 
 ## 6. Contrato de importação
 
@@ -505,7 +534,21 @@ atual.
 
 Runner próprio em `tools/tests.html`: carrega os módulos como ES modules, executa os
 arquivos de `tests/` e imprime o resultado na página. Zero dependências, zero build, roda
-inclusive no celular. Cobertura pretendida:
+inclusive no celular.
+
+**Dois alvos, os mesmos arquivos de teste.** Os mesmos `tests/*.test.js` também rodam por
+linha de comando com `node tools/run-tests.mjs`, porque Node executa ES modules nativamente.
+Isso não adiciona nenhuma dependência ao app — o Node não é usado para build, empacotamento
+nem execução, apenas como um segundo executor dos mesmos arquivos. A razão é prática: sem um
+comando verificável, cada alteração de lógica dependeria de abrir o navegador e conferir a
+olho, o que não é verificação.
+
+A divisão decorrente é: **lógica pura em módulos que não importam IndexedDB nem DOM**
+(rodam nos dois alvos), e uma camada fina de persistência e UI por cima (testada no
+navegador). Isso é o mesmo princípio de fronteiras da seção 4 — `domain/` decide, `core/`
+serve, `ui/` orquestra — agora com uma consequência verificável.
+
+Cobertura pretendida:
 
 - `parcelas.test.js` — casos já validados em produção: parcela 1 exige `+ lançar`; parcela
   maior que 1 auto-confirma mesmo sem previsão candidata; namespace de id separado impede
@@ -528,7 +571,10 @@ inclusive no celular. Cobertura pretendida:
   Mastercard em coluna única), incluindo separação por plástico titular/adicional, seções
   `Despesas` e `Pagamento e Demais Créditos`, e leitura do bloco `Período das compras`;
   pontuação de `detectar`.
-- `migration.test.js` — conversão v1 → v2 preservando ids e cadeia de parcelas.
+- `migration.test.js` — conversão v1 → v2 preservando ids, `parcela_atual`/`parcela_total`,
+  `conciliadoAutomaticamente` e `origemManual`; conversão de `faturas` em `statements`;
+  idempotência (rodar duas vezes não duplica); e o caminho degradado do backup `.xlsx`
+  parcial, que deve avisar sobre o que não veio no arquivo.
 
 ## 11. Pendências do app atual endereçadas
 
