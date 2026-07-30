@@ -43,4 +43,18 @@ describe('dates', () => {
   it('todayISO devolve ISO válido', () => {
     assert(isValidISO(todayISO()));
   });
+
+  it('isValidISO respeita ano bissexto, inclusive a regra de seculo', () => {
+    assert(!isValidISO('2026-02-29'));
+    assert(isValidISO('2024-02-29'));
+    assert(isValidISO('2000-02-29'));
+    assert(!isValidISO('1900-02-29'));
+  });
+
+  it('addMonthsClamped funciona com n negativo e cruzando ano', () => {
+    assertEqual(addMonthsClamped('2026-03-31', -1), '2026-02-28');
+    assertEqual(addMonthsClamped('2026-12-31', 2), '2027-02-28');
+    assertEqual(addMonthsClamped('2026-01-31', 13), '2027-02-28');
+    assertEqual(addMonthsClamped('2026-01-15', -13), '2024-12-15');
+  });
 });
