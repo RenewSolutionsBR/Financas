@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Testes — Livro de Gastos</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 1rem; }
+    .ok { color: #0a7d32; }
+    .falhou { color: #b3261e; font-weight: 600; }
+    .erro { color: #b3261e; margin: 0 0 .5rem 1.5rem; font-family: monospace; white-space: pre-wrap; }
+    #resumo { font-size: 1.2rem; font-weight: 600; margin-bottom: 1rem; }
+  </style>
+</head>
+<body>
+  <h1>Testes</h1>
+  <div id="resumo">rodando…</div>
+  <div id="lista"></div>
+  <script type="module">
+    import { runAll } from '../tests/harness.js';
+    import { TEST_MODULES } from '../tests/index.js';
+
+    for (const mod of TEST_MODULES) await import(`../tests/${mod.replace('./', '')}`);
+
+    const { total, passed, failed, results } = await runAll();
+    document.getElementById('resumo').textContent =
+      `${passed}/${total} passaram${failed ? `, ${failed} falharam` : ''}`;
+    document.getElementById('resumo').className = failed ? 'falhou' : 'ok';
+
+    const lista = document.getElementById('lista');
+    for (const r of results) {
+      const linha = document.createElement('div');
+      linha.className = r.ok ? 'ok' : 'falhou';
+      linha.textContent = `${r.ok ? '✓' : '✗'} ${r.suite} > ${r.teste}`;
+      lista.appendChild(linha);
+      if (!r.ok) {
+        const erro = document.createElement('div');
+        erro.className = 'erro';
+        erro.textContent = r.erro;
+        lista.appendChild(erro);
+      }
+    }
+  </script>
+</body>
+</html>
