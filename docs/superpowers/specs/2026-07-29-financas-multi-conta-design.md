@@ -80,7 +80,7 @@ O repositório é **público**. Portanto:
 │   │   │   └── reconcile-bank.js    conciliação de extrato
 │   │   ├── importers/
 │   │   │   ├── registry.js          registro de adaptadores + detecção de formato
-│   │   │   ├── santander-visa-pdf.js
+│   │   │   ├── santander-cartao-pdf.js   fatura Visa e Mastercard
 │   │   │   ├── santander-extrato-xls.js
 │   │   │   ├── generic-table.js     CSV/XLS com mapeamento de colunas
 │   │   │   └── backup-xlsx.js       backup/restore + conversor do schema v1
@@ -118,9 +118,30 @@ Chave `id`.
 | `bandeira`, `final` | só quando `tipo === 'cartao'` |
 | `diaVencimento` | dia nominal de vencimento da fatura (cartão) |
 | `contaPagadoraId` | cartão → `accounts.id` da conta que o debita |
+| `cartaoPaiId` | cartão **adicional** → `accounts.id` do cartão titular. Ver 5.1.1 |
 | `matchers` | array de padrões que identificam a conta/cartão na descrição do extrato (ex.: `FINAL 0000`). Ao cadastrar um cartão, o app **sugere** o matcher a partir de `bandeira` e `final`; a lista é editável, porque a grafia varia entre bancos |
 | `mapeamentoImportacao` | mapeamento de colunas salvo para o importador genérico |
 | `cor`, `ativo` | apresentação e desativação sem exclusão |
+
+#### 5.1.1 Cartão titular e cartão adicional
+
+Uma fatura Santander contém os lançamentos de **mais de um plástico**: o do titular e os
+adicionais, estes marcados com `@` antes do nome no PDF. Cada plástico tem seu próprio
+bloco de despesas e seu próprio `VALOR TOTAL`, mas o banco debita **um único valor
+consolidado** na conta corrente.
+
+O modelo reflete exatamente isso:
+
+- Cada plástico é um registro em `accounts` com `tipo: 'cartao'`. O adicional aponta para o
+  titular por `cartaoPaiId`.
+- O `statements` da fatura pertence sempre ao **cartão titular** — é ele que tem vencimento,
+  data de corte e débito em conta.
+- Cada `transactions` gerado carrega em `contaId` o plástico **de onde o gasto realmente
+  saiu** (titular ou adicional), o que permite filtrar e somar por plástico no Dashboard.
+- A conciliação com o extrato usa sempre o titular, porque é o valor consolidado que aparece
+  na conta corrente.
+- Só o cartão titular tem `contaPagadoraId`; num adicional esse campo fica vazio, e a conta
+  pagadora efetiva é a do pai.
 
 ### 5.2 `paymentMethods` — formas de pagamento
 
@@ -224,6 +245,9 @@ conciliação e a UI nunca sabem de qual banco a linha veio:
   documento,           // nº do documento, quando houver
   tipoDetectado,       // prefixo classificador do extrato, quando houver
   parcela_atual, parcela_total,  // só fatura
+  cartaoFinal,         // só fatura: de qual plástico saiu o gasto (titular ou adicional)
+  secao,               // só fatura: 'despesas' | 'pagamentos_creditos'
+  valorUSD,            // só fatura: coluna US$, quando diferente de zero
   saldo,               // só extrato
   raw                  // linha bruta, para depuração
 }
@@ -253,10 +277,9 @@ conciliação, domínio ou UI.
 
 | Adaptador | Fonte | Observação |
 |---|---|---|
-| `santander-visa-pdf` | fatura Visa em PDF | é o `pdf-parser.js` atual, movido sem alteração de lógica |
-| `santander-extrato-xls` | extrato de conta corrente `.xls` | novo — formato descrito abaixo |
+| `santander-cartao-pdf` | fatura Visa **e** Mastercard em PDF | é o `pdf-parser.js` atual, estendido — ver 6.4 |
+| `santander-extrato-xls` | extrato de conta corrente `.xls` | novo — formato descrito em 6.3 |
 | `generic-table` | CSV/XLS de qualquer banco | mapeamento de colunas definido pelo usuário e salvo em `accounts.mapeamentoImportacao` |
-| fatura Mastercard | — | **bloqueado**: falta arquivo de exemplo. Atendido pelo `generic-table` até lá |
 
 ### 6.3 Formato do extrato Santander
 
@@ -280,16 +303,75 @@ Validação de integridade análoga ao checksum da fatura: `saldoInicial + Σcr�
 Σdébitos = saldoFinal`. Divergência bloqueia a confirmação salvo marcação explícita de
 "importar mesmo assim".
 
+### 6.4 Formato da fatura Santander (Visa e Mastercard)
+
+A comparação entre as faturas Visa (`1234…0000`) e Mastercard (`5678…0000`) mostrou que os
+dois documentos têm a **mesma estrutura lógica**, diferindo apenas no layout físico: a Visa
+é diagramada em duas colunas por página, a Mastercard em coluna única. Por isso não há dois
+parsers, e sim um adaptador (`santander-cartao-pdf`) que já resolve colunas dinamicamente
+pelo histograma de posição X — a Mastercard é o caso degenerado de uma coluna só.
+
+**A ordem de trabalho é: primeiro rodar o parser atual contra as faturas Mastercard no
+harness e medir onde ele falha; só então tratar as diferenças reais.** Escrever um segundo
+parser antes dessa medição seria trabalho especulativo.
+
+Estrutura comum aos dois documentos:
+
+- Marcador de início `Detalhamento da Fatura`; bounds verticais até `Juros e Custo Efetivo
+  Total`, como já implementado.
+- Um bloco por plástico, iniciado por `NOME - BBBB XXXX XXXX FFFF`. O **cartão adicional** é
+  prefixado por `@`. O `FFFF` alimenta `cartaoFinal` na linha normalizada.
+- Dentro de cada bloco, seções `Pagamento e Demais Créditos` e `Despesas`, cada uma
+  encerrada por `VALOR TOTAL`. A seção alimenta o campo `secao`.
+- Colunas: `Compra · Data · Descrição · Parcela · R$ · US$`. A coluna `Parcela` traz `NN/NN`
+  (ex.: `09/09`) quando é compra parcelada, e fica vazia nas avulsas.
+- Página 1 traz a frase de corte (`compras … realizadas até DD/MM`) e o bloco `Período das
+  compras` com quatro faixas `DD/MM/AA a DD/MM/AA`.
+- Bloco `Resumo da Fatura`: `Saldo Anterior`, `(+) Total Despesas/Débitos no Brasil`, `(+) …
+  no Exterior`, `(-) Total de pagamentos`, `(-) Total de créditos`, `(=) Saldo Desta
+  Fatura` — permite um checksum mais forte que a simples soma de linhas por seção.
+
+**Período de compras impresso.** As quatro faixas do bloco `Período das compras` dão o
+início e o fim da janela diretamente, sem estimativa. Os rótulos `Esta Fatura` e `Fatura
+Aberta` impressos ao lado **não são confiáveis** para parear com a faixa correta (o
+alinhamento visual não corresponde à ordem lógica). A regra é: escolher a faixa cujo **fim
+coincide com o `dataCorte`** já extraído da frase da página 1. Isso identifica a faixa sem
+ambiguidade e, de quebra, valida uma extração contra a outra — se nenhuma faixa terminar no
+`dataCorte`, o parser emite aviso e o app cai no encadeamento descrito em 7.1.
+
+**Seção `Pagamento e Demais Créditos`.** Contém o pagamento da fatura anterior
+(`DEB AUTOM DE FATURA EM C/`, valor negativo). Linhas desta seção nunca são despesa: recebem
+`natureza: 'pagamento_fatura'` (ou `receita`, para estornos e créditos diversos) e ficam
+fora de qualquer total de gasto. Ver 7.3.
+
 ## 7. Conciliação
 
 ### 7.1 Fatura (`reconcile-card.js`)
 
-Fluxo atual preservado integralmente: preview com checksum, quatro baldes (conciliado
-automático, conciliado manual, só na fatura, só no app), auto-confirmação de parcelas por
-identidade, janela por `dataCorte` encadeada, pool alargado em 3 dias.
+Fluxo atual preservado: preview com checksum, quatro baldes (conciliado automático,
+conciliado manual, só na fatura, só no app), auto-confirmação de parcelas por identidade,
+pool alargado em `POOL_SLACK_DAYS = 3`. Três mudanças:
 
-Única mudança: o pool de candidatos passa a ser **filtrado pelo `contaId` do cartão**, o
-que permite vários cartões conviverem sem confundir lançamentos entre si.
+**a) Isolamento por cartão.** O pool de candidatos passa a ser filtrado pelo cartão titular
+da fatura e seus adicionais (`contaId ∈ {titular} ∪ {adicionais}`), o que permite Visa e
+Mastercard conviverem sem confundir lançamentos entre si.
+
+**b) Janela vinda do documento.** `getReconciliationWindow` passa a ter três níveis, nesta
+ordem de precedência:
+
+1. **Período de compras impresso no PDF** (6.4) — a faixa cujo fim coincide com o
+   `dataCorte`. Fonte primária: dá início e fim exatos, sem inferência.
+2. **Encadeamento por `dataCorte`** com a fatura anterior — o comportamento atual, mantido
+   como fallback para faturas sem o bloco de períodos (ex.: importadas via planilha).
+3. **Estimativa de 35 dias** antes do corte — último recurso, inalterado.
+
+A precedência é deliberada: o nível 1 é estritamente mais preciso que o 2 (não depende de a
+fatura anterior ter sido importada) e elimina o único ponto onde a janela era adivinhada. O
+nível 2 continua existindo porque nem toda fatura traz o bloco, e porque é lógica validada
+em produção com dez faturas reais — não se remove o que funciona, se antecede.
+
+**c) Natureza por seção.** Linhas da seção `Pagamento e Demais Créditos` não entram como
+despesa (ver 7.3).
 
 ### 7.2 Extrato (`reconcile-bank.js`)
 
@@ -323,6 +405,31 @@ lançamentos à mão), o extrato traz dezenas de linhas que nunca existiram no a
 automático de concessionárias, boletos, IOF, tarifas. Sem lançamento em lote o fluxo é
 impraticável. Cada linha selecionada já chega com categoria sugerida pela memória de
 classificação e forma de pagamento inferida de `tipoDetectado` via `padroesExtrato`.
+
+### 7.3 O pagamento de fatura aparece nas duas fontes
+
+Um mesmo pagamento de fatura é documentado três vezes:
+
+| Onde | Como aparece | Papel |
+|---|---|---|
+| Extrato da conta | `DEBITO AUT. FAT.CARTAO MASTER CARD FINAL 0000`, débito | o dinheiro efetivamente saindo da conta |
+| Fatura **seguinte** do cartão | `DEB AUTOM DE FATURA EM C/`, crédito, seção `Pagamento e Demais Créditos` | quitação do saldo anterior |
+| Fatura **paga** | soma das compras da fatura anterior | a dívida que foi quitada |
+
+Verificado nos documentos reais: o extrato registra `04/05 … MASTER CARD FINAL 0000
+−123,01` e a fatura de 01/06 registra `04/05 DEB AUTOM DE FATURA EM C/ −123,01`. Mesmo
+evento, duas fontes.
+
+**Regra de registro único:** o lançamento canônico é o do **extrato**, porque é ali que o
+dinheiro sai da conta e é o único dos três que representa uma movimentação de caixa. A linha
+correspondente da fatura **não cria** um segundo lançamento — ela é casada com o existente
+(valor idêntico e data a até 2 dias) e serve como confirmação. Se o extrato daquele período
+ainda não tiver sido importado, a linha da fatura cria o lançamento com
+`natureza: 'pagamento_fatura'`; quando o extrato chegar depois, o casamento por valor e data
+o encontra e apenas complementa `origemRef`, sem duplicar.
+
+Nenhuma das três representações entra em qualquer total de gasto: o gasto real são as
+compras detalhadas, já registradas individualmente.
 
 ## 8. Memória de classificação (`classification.js`)
 
@@ -404,15 +511,23 @@ inclusive no celular. Cobertura pretendida:
   maior que 1 auto-confirma mesmo sem previsão candidata; namespace de id separado impede
   que a regeneração de previsões apague uma confirmação; `addMonths` preserva o dia sem
   estourar o mês.
-- `reconcile-card.test.js` — janela por `dataCorte` encadeada, `POOL_SLACK_DAYS`, balde "só
-  no app" restrito à janela oficial, isolamento entre cartões diferentes.
+- `reconcile-card.test.js` — os três níveis de precedência da janela (período impresso,
+  encadeamento, estimativa) e o aviso quando nenhuma faixa termina no `dataCorte`;
+  `POOL_SLACK_DAYS`; balde "só no app" restrito à janela oficial; isolamento entre cartões
+  diferentes; inclusão dos adicionais no pool do titular.
 - `reconcile-bank.test.js` — atribuição de natureza nos quatro casos, casamento por
   valor/data/conta, idempotência do hash em reimportação sobreposta, confronto fatura ×
   débito.
+- `pagamento-fatura.test.js` — a regra de registro único de 7.3 nas duas ordens de
+  importação: extrato antes da fatura, e fatura antes do extrato. Em ambas, exatamente um
+  lançamento, com `origemRef` completo e fora dos totais de gasto.
 - `classification.test.js` — canonicalização (cada uma das 6 etapas), precedência das cinco
   categorias de regra, aprendizado sobrescrevendo regra anterior.
-- `importers.test.js` — parser do extrato contra fixture anonimizada, parser da fatura
-  contra fixture de texto já extraído, pontuação de `detectar`.
+- `importers.test.js` — parser do extrato contra fixture anonimizada; parser de fatura
+  contra fixtures de texto já extraído das **duas** diagramações (Visa em duas colunas,
+  Mastercard em coluna única), incluindo separação por plástico titular/adicional, seções
+  `Despesas` e `Pagamento e Demais Créditos`, e leitura do bloco `Período das compras`;
+  pontuação de `detectar`.
 - `migration.test.js` — conversão v1 → v2 preservando ids e cadeia de parcelas.
 
 ## 11. Pendências do app atual endereçadas
@@ -435,10 +550,13 @@ Categorias), assistente de primeira execução, aba Lançamentos com forma de pa
 conta, importação do backup do app anterior, PWA publicada no Pages. Ao fim desta fase o
 app já é utilizável em produção pelo usuário.
 
-**Fase 2 — Importação, conciliação e memória.** Registro de adaptadores,
-`santander-visa-pdf` migrado, `santander-extrato-xls` novo, `generic-table`,
-`reconcile-card` multi-cartão, `reconcile-bank` completo com natureza automática e vínculo
-fatura × débito, `+ lançar em lote`, `classification.js` e a tela de Regras.
+**Fase 2 — Importação, conciliação e memória.** Registro de adaptadores;
+`santander-cartao-pdf` (parser atual migrado, medido contra as faturas Mastercard e
+estendido onde falhar, com leitura de plástico titular/adicional, seções e período de
+compras impresso); `santander-extrato-xls` novo; `generic-table`; `reconcile-card`
+multi-cartão com a janela de três níveis; `reconcile-bank` completo com natureza automática
+e vínculo fatura × débito; regra de registro único do pagamento de fatura;
+`+ lançar em lote`; `classification.js` e a tela de Regras.
 
 **Fase 3 — Dashboard, acabamento e documentação.** Filtros e tiles por forma e conta,
 revisão visual dos gráficos, responsividade e dark mode, suíte de testes completa,
@@ -449,7 +567,13 @@ entrega ao usuário.
 
 ## 13. Itens dependentes do usuário
 
-1. **PDF da fatura Mastercard (final 0000)** — necessário para o adaptador dedicado. Até
-   lá, o cartão é atendido pelo importador genérico.
+1. **Uma fatura Mastercard com compra parcelada em várias vezes.** As três faturas
+   fornecidas (05, 06 e 07/2026) não contêm nenhuma, então a grafia da coluna `Parcela` na
+   diagramação Mastercard não pôde ser confirmada — só se sabe como a Visa a imprime
+   (`NN/NN`). O parser trata a coluna de forma tolerante (`NN/NN`, vazio) e emite aviso ao
+   encontrar um formato desconhecido, mas a confirmação depende de um documento real. Não
+   bloqueia nada: faturas sem parcelamento são processadas normalmente.
 2. **Confirmação do cadastro inicial** de contas e cartões no assistente de primeira
-   execução (os dados não podem vir no código, por ser repositório público).
+   execução (os dados não podem vir no código, por ser repositório público). São quatro
+   plásticos identificados nos documentos: Visa titular e adicional, Mastercard titular e
+   adicional, todos ligados à mesma conta corrente.
