@@ -6,4 +6,5 @@ export const TEST_MODULES = [
   './dates.test.js',
   './text.test.js',
   './ids.test.js',
+  './migration.test.js',
 ];
