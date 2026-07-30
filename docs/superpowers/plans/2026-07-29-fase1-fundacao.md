@@ -1330,7 +1330,7 @@ Padrão que as três tarefas de domínio seguintes repetem: **regras puras expor
   - `PALETA` — array de cores hex
   - `DEFAULT_CATEGORIES` — array de `{ id, nome, cor }`
   - `validateCategoria(cat, todas) -> string[]`
-  - `garantirACLassificar(todas) -> Categoria[]` (devolve a lista com a categoria fixa presente)
+  - `garantirAClassificar(todas) -> Categoria[]` (devolve a lista com a categoria fixa presente)
   - `novaCategoria(nome, cor, todas) -> Categoria`
   - `listCategorias()`, `saveCategoria(c)`, `removeCategoria(id)`, `seedCategoriasIfEmpty()`
 
@@ -1342,7 +1342,7 @@ Crie `tests/categories.test.js`:
 import { describe, it, assert, assertEqual } from './harness.js';
 import {
   CATEGORIA_A_CLASSIFICAR, DEFAULT_CATEGORIES,
-  validateCategoria, garantirACLassificar, novaCategoria,
+  validateCategoria, garantirAClassificar, novaCategoria,
 } from '../src/domain/categories.js';
 
 describe('categories', () => {
@@ -1373,15 +1373,15 @@ describe('categories', () => {
     assertEqual(validateCategoria({ id: 'casa', nome: 'Casa' }, todas).length, 0);
   });
 
-  it('garantirACLassificar acrescenta a categoria fixa quando falta', () => {
-    const resultado = garantirACLassificar([{ id: 'casa', nome: 'Casa', cor: '#111' }]);
+  it('garantirAClassificar acrescenta a categoria fixa quando falta', () => {
+    const resultado = garantirAClassificar([{ id: 'casa', nome: 'Casa', cor: '#111' }]);
     assert(resultado.some((c) => c.id === CATEGORIA_A_CLASSIFICAR));
     assertEqual(resultado.length, 2);
   });
 
-  it('garantirACLassificar não duplica quando já existe', () => {
+  it('garantirAClassificar não duplica quando já existe', () => {
     const entrada = [{ id: CATEGORIA_A_CLASSIFICAR, nome: 'Outro nome', cor: '#111' }];
-    const resultado = garantirACLassificar(entrada);
+    const resultado = garantirAClassificar(entrada);
     assertEqual(resultado.length, 1);
     // Respeita o rename feito pelo usuário: só o id é contrato, o nome não.
     assertEqual(resultado[0].nome, 'Outro nome');
@@ -1444,7 +1444,7 @@ export function validateCategoria(cat, todas) {
   return erros;
 }
 
-export function garantirACLassificar(todas) {
+export function garantirAClassificar(todas) {
   const lista = [...(todas || [])];
   if (!lista.some((c) => c.id === CATEGORIA_A_CLASSIFICAR)) {
     lista.push(DEFAULT_CATEGORIES.find((c) => c.id === CATEGORIA_A_CLASSIFICAR));
@@ -1463,7 +1463,7 @@ export function novaCategoria(nome, cor, todas) {
 // --- Persistência ---
 
 export async function listCategorias() {
-  return garantirACLassificar(await storage.getAll('categories'));
+  return garantirAClassificar(await storage.getAll('categories'));
 }
 
 export async function saveCategoria(c) {
@@ -2303,3 +2303,1494 @@ trazer nada: e o estado inicial de um seletor de multipla escolha.
 
 Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 ```
+
+---
+
+### Task 10: `importers/backup-xlsx.js` — backup completo
+
+O backup do app anterior perdia faturas e metainformação de parcela (spec 5.7). Este exporta **todos os stores**, e é o teste desta tarefa que garante que a limitação não se repita: um ciclo exportar→importar precisa devolver exatamente o mesmo conjunto de dados.
+
+**Files:**
+- Create: `src/importers/backup-xlsx.js`
+- Create: `tests/backup.test.js`
+- Modify: `tests/index.js`
+
+**Interfaces:**
+- Consumes: `core/db-schema.js` (`STORES`, `migrateV1ToV2`), `core/storage.js`, `src/version.js`; `XLSX` global (vendor)
+- Produces:
+  - `SCHEMA_VERSION_BACKUP = 2`
+  - `datasetToSheets(dataset) -> { [nomeAba]: object[] }`
+  - `sheetsToDataset(sheets) -> { dataset, versao, avisos }`
+  - `detectBackupVersion(nomesDeAbas) -> 1|2|null`
+  - `exportarBackup() -> Promise<Blob>`
+  - `importarBackup(arrayBuffer, opcoes) -> Promise<{ contagens, avisos }>`
+
+- [ ] **Step 1: Escrever os testes que falham**
+
+Crie `tests/backup.test.js`:
+
+```js
+import { describe, it, assert, assertEqual, assertDeepEqual } from './harness.js';
+import { datasetToSheets, sheetsToDataset, detectBackupVersion, SCHEMA_VERSION_BACKUP } from '../src/importers/backup-xlsx.js';
+
+const DATASET = {
+  transactions: [
+    { id: 'tx_1', data: '2026-06-10', descricao: 'Compra', valor: 23.5, categoria: 'casa', natureza: 'despesa', formaPagamentoId: 'pm_pix', contaId: 'acc_1', previsto: false },
+    { id: 'tx_2', data: '2026-06-23', descricao: 'Parcelada', valor: 100, categoria: 'casa', natureza: 'despesa', formaPagamentoId: 'pm_credito', contaId: 'acc_2', previsto: false, parcelaKey: 'PARCELADA|2026-01-15|3', parcela_atual: 2, parcela_total: 3, conciliadoAutomaticamente: true, origemRef: { statementId: 'acc_2|fatura|2026-06-30', linhaId: 'ab12cd34' } },
+  ],
+  accounts: [{ id: 'acc_1', tipo: 'conta', nome: 'Conta', agencia: '0001', numero: '1234', matchers: [] }],
+  paymentMethods: [{ id: 'pm_pix', nome: 'Pix', tipo: 'pix', conciliaCom: 'extrato', padroesExtrato: ['PIX ENVIADO'], ordem: 1, ativo: true }],
+  categories: [{ id: 'casa', nome: 'Casa', cor: '#111111' }],
+  statements: [{ id: 'acc_2|fatura|2026-06-30', tipo: 'fatura', contaId: 'acc_2', vencimento: '2026-06-30', dataCorte: '2026-06-23', rows: [{ tipo: 'despesa', data: '2026-06-10', descricao: 'Compra', valor: 23.5 }] }],
+  classificationRules: [{ id: 'r_1', padrao: 'PADARIA', tipoMatch: 'exato', escopo: 'extrato', categoriaId: 'casa', origem: 'aprendida', acertos: 3, ativa: true }],
+  meta: [{ key: 'lastBackupAt', value: 1750000000000 }],
+};
+
+describe('backup: identificação', () => {
+  it('reconhece o backup do app anterior pelas abas', () => {
+    assertEqual(detectBackupVersion(['Backup_Lancamentos', 'Backup_Categorias']), 1);
+  });
+
+  it('reconhece o backup novo', () => {
+    assertEqual(detectBackupVersion(Object.keys(datasetToSheets(DATASET))), 2);
+  });
+
+  it('devolve null para planilha que não é backup', () => {
+    assertEqual(detectBackupVersion(['Plan1']), null);
+  });
+});
+
+describe('backup: ciclo completo', () => {
+  // Este é o teste que impede a limitação do backup anterior de voltar.
+  it('exportar e importar devolve exatamente os mesmos dados', () => {
+    const sheets = datasetToSheets(DATASET);
+    const { dataset, versao } = sheetsToDataset(sheets);
+    assertEqual(versao, SCHEMA_VERSION_BACKUP);
+    for (const store of Object.keys(DATASET)) {
+      assertDeepEqual(dataset[store], DATASET[store], `store ${store} não sobreviveu ao ciclo`);
+    }
+  });
+
+  it('preserva campos aninhados: rows da fatura e origemRef', () => {
+    const { dataset } = sheetsToDataset(datasetToSheets(DATASET));
+    assertEqual(dataset.statements[0].rows.length, 1);
+    assertEqual(dataset.statements[0].rows[0].valor, 23.5);
+    assertEqual(dataset.transactions[1].origemRef.linhaId, 'ab12cd34');
+  });
+
+  it('preserva booleanos e não os transforma em texto', () => {
+    const { dataset } = sheetsToDataset(datasetToSheets(DATASET));
+    assertEqual(dataset.transactions[1].conciliadoAutomaticamente, true);
+    assertEqual(dataset.transactions[0].previsto, false);
+  });
+
+  it('grava a versão do schema numa aba própria', () => {
+    const sheets = datasetToSheets(DATASET);
+    assert(sheets._backup_info);
+    assert(sheets._backup_info.some((r) => r.chave === 'schemaVersion' && Number(r.valor) === SCHEMA_VERSION_BACKUP));
+  });
+
+  it('dataset vazio produz backup válido e vazio', () => {
+    const { dataset } = sheetsToDataset(datasetToSheets({}));
+    assertDeepEqual(dataset.transactions, []);
+  });
+});
+
+describe('backup: caminho degradado do formato anterior', () => {
+  it('avisa que faturas não vêm no backup do app anterior', () => {
+    const sheets = {
+      Backup_Lancamentos: [{ id: 'e_1', descricao: 'X', valor: 10, data: '2026-06-01', categoria: 'casa', previsto: 0, parcelaKey: '' }],
+      Backup_Categorias: [{ id: 'casa', nome: 'Casa', cor: '#111' }],
+    };
+    const { versao, avisos } = sheetsToDataset(sheets);
+    assertEqual(versao, 1);
+    assert(avisos.some((a) => /fatura/i.test(a)));
+  });
+});
+```
+
+Adicione `'./backup.test.js'` a `TEST_MODULES`.
+
+- [ ] **Step 2: Rodar e confirmar que falha**
+
+Run: `node tools/run-tests.mjs`
+Expected: FAIL — `Cannot find module '../src/importers/backup-xlsx.js'`.
+
+- [ ] **Step 3: Implementar `src/importers/backup-xlsx.js`**
+
+Uma célula de planilha só guarda escalar. Campos aninhados (`statements.rows`, `origemRef`, `matchers`) viram JSON numa célula e voltam a ser objeto na leitura — por isso os testes de ciclo completo importam tanto.
+
+```js
+// Backup completo do app. Ao contrário do backup do app anterior, exporta
+// TODOS os stores, inclusive statements: um ciclo exportar→importar precisa
+// devolver exatamente o mesmo conjunto de dados, e o teste de ciclo garante
+// que essa limitação não volte.
+
+import { STORES, migrateV1ToV2 } from '../core/db-schema.js';
+import { APP_VERSION } from '../version.js';
+import * as storage from '../core/storage.js';
+
+export const SCHEMA_VERSION_BACKUP = 2;
+
+const ABA_INFO = '_backup_info';
+const STORES_EXPORTAVEIS = STORES.map((s) => s.nome);
+
+// Prefixo que marca um valor serializado como JSON. Sem ele, não dá para
+// distinguir a string "[1,2]" digitada pelo usuário de um array de verdade.
+const MARCA_JSON = '@json:';
+
+function serializarValor(v) {
+  if (v === null || v === undefined) return '';
+  if (typeof v === 'object') return MARCA_JSON + JSON.stringify(v);
+  if (typeof v === 'boolean') return MARCA_JSON + JSON.stringify(v);
+  return v;
+}
+
+function desserializarValor(v) {
+  if (typeof v === 'string' && v.startsWith(MARCA_JSON)) {
+    try {
+      return JSON.parse(v.slice(MARCA_JSON.length));
+    } catch (e) {
+      return v;
+    }
+  }
+  return v === '' ? undefined : v;
+}
+
+export function datasetToSheets(dataset) {
+  const sheets = {
+    [ABA_INFO]: [
+      { chave: 'schemaVersion', valor: SCHEMA_VERSION_BACKUP },
+      { chave: 'appVersion', valor: APP_VERSION },
+      { chave: 'exportadoEm', valor: new Date().toISOString() },
+    ],
+  };
+  for (const store of STORES_EXPORTAVEIS) {
+    sheets[store] = ((dataset && dataset[store]) || []).map((registro) => {
+      const linha = {};
+      for (const [k, v] of Object.entries(registro)) linha[k] = serializarValor(v);
+      return linha;
+    });
+  }
+  return sheets;
+}
+
+export function sheetsToDataset(sheets) {
+  const nomes = Object.keys(sheets || {});
+  const versao = detectBackupVersion(nomes);
+  const avisos = [];
+
+  if (versao === 1) {
+    const expenses = (sheets.Backup_Lancamentos || []).map((r) => ({
+      id: r.id != null ? String(r.id) : null,
+      descricao: r.descricao || '',
+      valor: Number(r.valor) || 0,
+      data: typeof r.data === 'string' ? r.data.slice(0, 10) : r.data,
+      categoria: r.categoria || 'a_classificar',
+      previsto: !!Number(r.previsto),
+      parcelaKey: r.parcelaKey || undefined,
+    }));
+    avisos.push(
+      'Este é um backup do app anterior. Ele não contém as faturas importadas nem os ' +
+      'campos de parcela (número da parcela, marca de conciliação automática). Depois de ' +
+      'restaurar, reimporte os PDFs das faturas para recuperar essa parte.'
+    );
+    return {
+      versao: 1,
+      avisos,
+      dataset: { expenses, categories: sheets.Backup_Categorias || [], faturas: [], meta: [] },
+    };
+  }
+
+  const dataset = {};
+  for (const store of STORES_EXPORTAVEIS) {
+    dataset[store] = (sheets[store] || []).map((linha) => {
+      const registro = {};
+      for (const [k, v] of Object.entries(linha)) {
+        const valor = desserializarValor(v);
+        if (valor !== undefined) registro[k] = valor;
+      }
+      return registro;
+    });
+  }
+  return { versao: versao || SCHEMA_VERSION_BACKUP, avisos, dataset };
+}
+
+export function detectBackupVersion(nomesDeAbas) {
+  const nomes = nomesDeAbas || [];
+  if (nomes.includes(ABA_INFO) || nomes.includes('transactions')) return 2;
+  if (nomes.includes('Backup_Lancamentos')) return 1;
+  return null;
+}
+
+// --- Integração com SheetJS e storage ---
+
+export async function exportarBackup() {
+  const dataset = {};
+  for (const store of STORES_EXPORTAVEIS) dataset[store] = await storage.getAll(store);
+  const sheets = datasetToSheets(dataset);
+  const wb = XLSX.utils.book_new();
+  for (const [nome, linhas] of Object.entries(sheets)) {
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(linhas), nome.slice(0, 31));
+  }
+  const saida = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+  await storage.setMeta('lastBackupAt', Date.now());
+  return new Blob([saida], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+}
+
+export async function importarBackup(arrayBuffer, opcoes) {
+  const wb = XLSX.read(arrayBuffer, { type: 'array' });
+  const sheets = {};
+  for (const nome of wb.SheetNames) {
+    sheets[nome] = XLSX.utils.sheet_to_json(wb.Sheets[nome], { defval: '' });
+  }
+
+  const { dataset, versao, avisos } = sheetsToDataset(sheets);
+  if (!versao) throw new Error('Este arquivo não parece ser um backup do app.');
+
+  const final = versao === 1 ? migrateV1ToV2(dataset, opcoes) : dataset;
+  if (versao === 1) avisos.push(...final.avisos);
+
+  const contagens = {};
+  // Categorias e cadastros antes de transactions: se a gravação for
+  // interrompida, nenhum lançamento fica apontando para algo inexistente.
+  for (const store of ['categories', 'accounts', 'paymentMethods', 'statements', 'classificationRules', 'transactions', 'meta']) {
+    const lista = final[store] || [];
+    await storage.putMany(store, lista);
+    contagens[store] = lista.length;
+  }
+  return { contagens, avisos };
+}
+```
+
+- [ ] **Step 4: Rodar e confirmar que passa**
+
+Run: `node tools/run-tests.mjs`
+Expected: PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add -A
+git commit -m "Adiciona backup completo com teste de ciclo fechado
+
+O backup do app anterior perdia faturas e campos de parcela. Aqui todos os
+stores sao exportados, e o teste de ciclo exportar-importar exige que o
+dataset volte identico - e o que impede a limitacao anterior de voltar.
+
+Campos aninhados viram JSON marcado numa celula, porque celula de planilha so
+guarda escalar; a marca distingue um array de verdade da string que parece um.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 11: Shell da UI — `index.html`, `styles.css`, `components.js`, `tabs.js`, `app.js`
+
+Estrutura visual e navegação, sem nenhuma tela de conteúdo ainda. A verificação aqui é visual e manual: as abas trocam, o app carrega sem erro de console, e o tema respeita claro e escuro.
+
+Copie `styles.css` de `../../Cartão de Credito/gastos-app/styles.css` como ponto de partida — o tema "livro contábil" (paper/ink/brass) é decisão de produto já validada — e acrescente as variáveis de tema escuro.
+
+**Files:**
+- Create: `index.html`, `styles.css`, `src/ui/components.js`, `src/ui/tabs.js`, `src/app.js`
+
+**Interfaces:**
+- Consumes: todos os módulos de `domain/`
+- Produces:
+  - `components.js`: `el(tag, attrs, filhos) -> HTMLElement`, `toast(msg, tipo)`, `abrirModal({ titulo, corpo, acoes }) -> Promise<string|null>`, `confirmar(msg) -> Promise<boolean>`
+  - `tabs.js`: `initTabs(onTrocar)` (guarda o callback no módulo), `irParaAba(nome)`
+  - `app.js`: `boot()` chamado no fim do módulo
+
+- [ ] **Step 1: Criar `index.html`**
+
+Cinco abas conforme spec §9. Cada painel entra vazio; as tarefas seguintes preenchem.
+
+```html
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f4efe4">
+  <title>Livro de Gastos</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon-180.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="cabecalho">
+    <h1>Livro de Gastos</h1>
+    <div id="statusApp" class="status" role="status" aria-live="polite"></div>
+  </header>
+
+  <nav class="tabbar" role="tablist">
+    <button class="tab-btn active" data-tab="Lancamentos" role="tab" aria-selected="true">Lançamentos</button>
+    <button class="tab-btn" data-tab="Conciliacao" role="tab" aria-selected="false">Conciliação</button>
+    <button class="tab-btn" data-tab="Parcelas" role="tab" aria-selected="false">Parcelas</button>
+    <button class="tab-btn" data-tab="Dashboard" role="tab" aria-selected="false">Dashboard</button>
+    <button class="tab-btn" data-tab="Cadastros" role="tab" aria-selected="false">Cadastros</button>
+  </nav>
+
+  <main>
+    <section class="tab-panel active" id="tabLancamentos" role="tabpanel"></section>
+    <section class="tab-panel" id="tabConciliacao" role="tabpanel">
+      <p class="vazio">A conciliação de fatura e extrato chega na Fase 2.</p>
+    </section>
+    <section class="tab-panel" id="tabParcelas" role="tabpanel">
+      <p class="vazio">A previsão de parcelas chega na Fase 2.</p>
+    </section>
+    <section class="tab-panel" id="tabDashboard" role="tabpanel">
+      <p class="vazio">O painel de gastos chega na Fase 3.</p>
+    </section>
+    <section class="tab-panel" id="tabCadastros" role="tabpanel"></section>
+  </main>
+
+  <div id="modalRaiz"></div>
+  <div id="toastRaiz" aria-live="polite"></div>
+
+  <script src="vendor/xlsx.full.min.js"></script>
+  <script type="module" src="src/app.js"></script>
+</body>
+</html>
+```
+
+- [ ] **Step 2: Criar `src/ui/components.js`**
+
+```js
+// Blocos de UI reutilizáveis. Nenhuma regra de negócio mora aqui.
+
+export function el(tag, attrs, filhos) {
+  const node = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (k === 'class') node.className = v;
+    else if (k === 'text') node.textContent = v;
+    else if (k.startsWith('on') && typeof v === 'function') node.addEventListener(k.slice(2).toLowerCase(), v);
+    else if (v !== null && v !== undefined && v !== false) node.setAttribute(k, v);
+  }
+  for (const filho of [].concat(filhos || [])) {
+    if (filho) node.appendChild(typeof filho === 'string' ? document.createTextNode(filho) : filho);
+  }
+  return node;
+}
+
+export function toast(msg, tipo) {
+  const raiz = document.getElementById('toastRaiz');
+  const node = el('div', { class: `toast ${tipo || 'info'}`, text: msg });
+  raiz.appendChild(node);
+  setTimeout(() => node.remove(), 4000);
+}
+
+/**
+ * Modal com ações nomeadas. Devolve o id da ação escolhida, ou null se o
+ * usuário fechou sem escolher. Existe em vez de window.confirm porque vários
+ * fluxos precisam de mais de duas saídas.
+ */
+export function abrirModal({ titulo, corpo, acoes }) {
+  return new Promise((resolve) => {
+    const raiz = document.getElementById('modalRaiz');
+    const fechar = (valor) => { raiz.innerHTML = ''; document.removeEventListener('keydown', aoTeclar); resolve(valor); };
+    const aoTeclar = (ev) => { if (ev.key === 'Escape') fechar(null); };
+    document.addEventListener('keydown', aoTeclar);
+
+    const botoes = (acoes || [{ id: 'ok', rotulo: 'OK' }]).map((a) =>
+      el('button', { class: `btn ${a.classe || ''}`, text: a.rotulo, onclick: () => fechar(a.id) })
+    );
+
+    raiz.appendChild(
+      el('div', { class: 'overlay', onclick: (ev) => { if (ev.target.classList.contains('overlay')) fechar(null); } }, [
+        el('div', { class: 'modal', role: 'dialog', 'aria-modal': 'true' }, [
+          el('h2', { text: titulo }),
+          typeof corpo === 'string' ? el('p', { text: corpo }) : corpo,
+          el('div', { class: 'modal-acoes' }, botoes),
+        ]),
+      ])
+    );
+    botoes[botoes.length - 1].focus();
+  });
+}
+
+export async function confirmar(msg) {
+  const r = await abrirModal({
+    titulo: 'Confirmar',
+    corpo: msg,
+    acoes: [
+      { id: 'cancelar', rotulo: 'Cancelar' },
+      { id: 'ok', rotulo: 'Confirmar', classe: 'btn-perigo' },
+    ],
+  });
+  return r === 'ok';
+}
+```
+
+- [ ] **Step 3: Criar `src/ui/tabs.js` e `src/app.js`**
+
+`src/ui/tabs.js`:
+
+```js
+// O callback de renderização fica no módulo, não é passado a cada chamada:
+// outras telas navegam por irParaAba(nome) e precisam que a aba de destino
+// seja renderizada, não apenas exibida vazia.
+let aoTrocar = null;
+
+export function initTabs(onTrocar) {
+  aoTrocar = onTrocar;
+  document.querySelectorAll('.tab-btn').forEach((btn) => {
+    btn.addEventListener('click', () => irParaAba(btn.dataset.tab));
+  });
+}
+
+export function irParaAba(nome) {
+  document.querySelectorAll('.tab-btn').forEach((b) => {
+    const ativo = b.dataset.tab === nome;
+    b.classList.toggle('active', ativo);
+    b.setAttribute('aria-selected', String(ativo));
+  });
+  document.querySelectorAll('.tab-panel').forEach((p) => {
+    p.classList.toggle('active', p.id === 'tab' + nome);
+  });
+  if (aoTrocar) aoTrocar(nome);
+}
+```
+
+`src/app.js`:
+
+```js
+// Boot e roteamento. Nenhuma regra de negócio e nenhuma manipulação de dados
+// mora aqui: este arquivo só decide o que renderizar.
+
+import { initTabs } from './ui/tabs.js';
+import { toast } from './ui/components.js';
+import { seedCategoriasIfEmpty } from './domain/categories.js';
+import { seedFormasIfEmpty } from './domain/payment-methods.js';
+import { renderCadastros } from './ui/cadastros.js';
+import { renderLancamentos } from './ui/lancamentos.js';
+import { talvezOferecerOnboarding } from './ui/onboarding.js';
+
+const RENDERIZADORES = {
+  Lancamentos: renderLancamentos,
+  Cadastros: renderCadastros,
+};
+
+async function renderizar(aba) {
+  const fn = RENDERIZADORES[aba];
+  if (fn) await fn();
+}
+
+async function boot() {
+  try {
+    await seedCategoriasIfEmpty();
+    await seedFormasIfEmpty();
+    initTabs(renderizar);
+    await renderizar('Lancamentos');
+    await talvezOferecerOnboarding();
+    registrarServiceWorker();
+    if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
+  } catch (e) {
+    toast('Erro ao iniciar o app: ' + e.message, 'erro');
+    throw e;
+  }
+}
+
+function registrarServiceWorker() {
+  if (!('serviceWorker' in navigator)) return;
+  navigator.serviceWorker.register('sw.js');
+}
+
+boot();
+```
+
+- [ ] **Step 4: Ajustar `styles.css` para tema claro e escuro**
+
+Copie o `styles.css` do app anterior e mova as cores para variáveis, acrescentando o bloco de tema escuro:
+
+```css
+:root {
+  --papel: #f4efe4;
+  --tinta: #2b2622;
+  --tinta-fraca: #6b6259;
+  --latao: #a8802c;
+  --linha: #d9cfbc;
+  --erro: #b3261e;
+  --ok: #0a7d32;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --papel: #1c1a17;
+    --tinta: #ebe4d8;
+    --tinta-fraca: #a09688;
+    --latao: #d3a850;
+    --linha: #3a352e;
+    --erro: #f2b8b5;
+    --ok: #7ddb9c;
+  }
+}
+
+body { background: var(--papel); color: var(--tinta); }
+```
+
+Toda regra existente que usava cor literal passa a usar a variável correspondente. A tabbar precisa rolar horizontalmente em tela estreita, porque agora são cinco abas:
+
+```css
+.tabbar { display: flex; overflow-x: auto; scrollbar-width: none; }
+.tabbar::-webkit-scrollbar { display: none; }
+.tab-btn { flex: 0 0 auto; }
+```
+
+- [ ] **Step 5: Verificar no navegador**
+
+```bash
+python -m http.server 8000
+```
+
+Abra `http://localhost:8000/`. Confirme, nesta ordem:
+1. As cinco abas aparecem e trocam ao toque.
+2. O console não tem erro (exceto os módulos ainda não criados nas tarefas 12–14, que serão resolvidos ao final delas — até lá, comente as importações correspondentes em `app.js`).
+3. Em tela de 360px de largura a tabbar rola sem quebrar o layout.
+4. Alternando o tema do sistema entre claro e escuro, o texto continua legível.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add -A
+git commit -m "Adiciona shell da UI com cinco abas e tema claro e escuro
+
+app.js so decide o que renderizar: nenhuma regra de negocio e nenhuma
+manipulacao de dados mora nele. abrirModal devolve o id da acao escolhida em
+vez de um booleano porque varios fluxos precisam de mais de duas saidas.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 12: `ui/cadastros.js` — Contas & Cartões, Formas e Categorias
+
+Três seções numa aba. Toda validação vem de `domain/`: esta camada só coleta o formulário, chama `validate*`, e mostra os erros devolvidos. Nenhuma regra é reimplementada aqui.
+
+**Files:**
+- Create: `src/ui/cadastros.js`
+- Modify: `styles.css` (classes `.cadastro-secao`, `.lista-cadastro`, `.erro-form`)
+
+**Interfaces:**
+- Consumes: `domain/accounts.js`, `domain/payment-methods.js`, `domain/categories.js`, `domain/transactions.js` (`listTransactions`, para o guarda de exclusão), `ui/components.js`, `importers/backup-xlsx.js`
+- Produces: `renderCadastros() -> Promise<void>`
+
+- [ ] **Step 1: Implementar `src/ui/cadastros.js`**
+
+```js
+// Aba Cadastros. Coleta formulário, delega validação para domain/ e exibe os
+// erros devolvidos. Nenhuma regra de negócio é reimplementada aqui.
+
+import { el, toast, abrirModal, confirmar } from './components.js';
+import {
+  TIPO_CONTA, TIPO_CARTAO, listAccounts, saveAccount, removeAccount,
+  validateAccount, suggestMatchers, novaConta, novoCartao, isAdicional,
+} from '../domain/accounts.js';
+import {
+  TIPOS_FORMA, listFormas, saveForma, removeForma, validatePaymentMethod, novaForma,
+} from '../domain/payment-methods.js';
+import {
+  listCategorias, saveCategoria, removeCategoria, validateCategoria, novaCategoria,
+} from '../domain/categories.js';
+import { listTransactions } from '../domain/transactions.js';
+import { exportarBackup, importarBackup } from '../importers/backup-xlsx.js';
+
+export async function renderCadastros() {
+  const painel = document.getElementById('tabCadastros');
+  painel.innerHTML = '';
+  painel.append(
+    await secaoContas(),
+    await secaoFormas(),
+    await secaoCategorias(),
+    secaoBackup()
+  );
+}
+
+function secao(titulo, filhos) {
+  return el('section', { class: 'cadastro-secao' }, [el('h2', { text: titulo }), ...filhos]);
+}
+
+function mostrarErros(erros) {
+  toast(erros.join(' '), 'erro');
+}
+
+// --- Contas e cartões ---
+
+async function secaoContas() {
+  const todas = await listAccounts();
+  const lista = el('div', { class: 'lista-cadastro' },
+    todas.map((a) => el('div', { class: 'item-cadastro' }, [
+      el('span', { class: 'item-nome', text: rotuloConta(a) }),
+      el('button', { class: 'btn btn-mini', text: 'Editar', onclick: () => editarConta(a, todas) }),
+      el('button', { class: 'btn btn-mini btn-perigo', text: 'Excluir', onclick: () => excluirConta(a) }),
+    ]))
+  );
+  if (!todas.length) lista.appendChild(el('p', { class: 'vazio', text: 'Nenhuma conta ou cartão cadastrado ainda.' }));
+
+  return secao('Contas e cartões', [
+    lista,
+    el('div', { class: 'acoes' }, [
+      el('button', { class: 'btn', text: '+ Conta corrente', onclick: () => editarConta(novaConta({ nome: '' }), todas) }),
+      el('button', { class: 'btn', text: '+ Cartão', onclick: () => editarConta(novoCartao({ nome: '', final: '' }), todas) }),
+    ]),
+  ]);
+}
+
+function rotuloConta(a) {
+  if (a.tipo === TIPO_CONTA) return `${a.nome} — ag. ${a.agencia} c/c ${a.numero}`;
+  const marca = isAdicional(a) ? ' (adicional)' : '';
+  return `${a.nome} — ${String(a.bandeira || '').toUpperCase()} final ${a.final}${marca}`;
+}
+
+async function editarConta(acc, todas) {
+  const ehCartao = acc.tipo === TIPO_CARTAO;
+  const campos = {};
+  const campo = (nome, rotulo, valor, tipo) => {
+    const input = el('input', { type: tipo || 'text', value: valor == null ? '' : valor, id: 'f_' + nome });
+    campos[nome] = input;
+    return el('label', { class: 'campo' }, [el('span', { text: rotulo }), input]);
+  };
+
+  const cartoesTitulares = todas.filter((a) => a.tipo === TIPO_CARTAO && !isAdicional(a) && a.id !== acc.id);
+  const contas = todas.filter((a) => a.tipo === TIPO_CONTA);
+
+  const seletor = (nome, rotulo, opcoes, selecionado) => {
+    const sel = el('select', { id: 'f_' + nome }, [
+      el('option', { value: '', text: '— nenhum —' }),
+      ...opcoes.map((o) => el('option', { value: o.id, text: o.nome, ...(o.id === selecionado ? { selected: 'selected' } : {}) })),
+    ]);
+    campos[nome] = sel;
+    return el('label', { class: 'campo' }, [el('span', { text: rotulo }), sel]);
+  };
+
+  const corpo = el('div', { class: 'form' }, [
+    campo('nome', 'Nome', acc.nome),
+    campo('instituicao', 'Instituição', acc.instituicao),
+    ...(ehCartao
+      ? [
+          campo('bandeira', 'Bandeira', acc.bandeira),
+          campo('final', 'Final (4 dígitos)', acc.final),
+          campo('diaVencimento', 'Dia de vencimento', acc.diaVencimento, 'number'),
+          seletor('cartaoPaiId', 'É adicional do cartão', cartoesTitulares, acc.cartaoPaiId),
+          seletor('contaPagadoraId', 'Conta que paga a fatura', contas, acc.contaPagadoraId),
+        ]
+      : [campo('agencia', 'Agência', acc.agencia), campo('numero', 'Número da conta', acc.numero)]),
+  ]);
+
+  const escolha = await abrirModal({
+    titulo: acc.nome ? 'Editar' : 'Novo cadastro',
+    corpo,
+    acoes: [{ id: 'cancelar', rotulo: 'Cancelar' }, { id: 'salvar', rotulo: 'Salvar' }],
+  });
+  if (escolha !== 'salvar') return;
+
+  const atualizado = { ...acc };
+  for (const [nome, input] of Object.entries(campos)) {
+    const v = input.value.trim();
+    atualizado[nome] = nome === 'diaVencimento' ? (v ? Number(v) : undefined) : v || undefined;
+  }
+  if (ehCartao && !atualizado.matchers?.length) atualizado.matchers = suggestMatchers(atualizado);
+
+  const erros = validateAccount(atualizado, todas);
+  if (erros.length) return mostrarErros(erros);
+
+  await saveAccount(atualizado);
+  toast('Cadastro salvo.', 'ok');
+  await renderCadastros();
+}
+
+async function excluirConta(acc) {
+  const transacoes = await listTransactions();
+  const emUso = transacoes.filter((t) => t.contaId === acc.id).length;
+  if (emUso) {
+    return toast(`Não dá para excluir: ${emUso} lançamento(s) usam este cadastro. Desative-o em vez de excluir.`, 'erro');
+  }
+  if (!(await confirmar(`Excluir "${acc.nome}"? Isso não pode ser desfeito.`))) return;
+  try {
+    await removeAccount(acc.id);
+    toast('Excluído.', 'ok');
+    await renderCadastros();
+  } catch (e) {
+    toast(e.message, 'erro');
+  }
+}
+
+// --- Formas de pagamento ---
+
+async function secaoFormas() {
+  const todas = await listFormas();
+  const lista = el('div', { class: 'lista-cadastro' },
+    todas.map((p) => el('div', { class: 'item-cadastro' }, [
+      el('span', { class: 'chip-cor', style: `background:${p.cor}` }),
+      el('span', { class: 'item-nome', text: `${p.nome} (${p.tipo})${p.ativo === false ? ' — desativada' : ''}` }),
+      el('button', { class: 'btn btn-mini', text: 'Editar', onclick: () => editarForma(p, todas) }),
+      el('button', { class: 'btn btn-mini', text: p.ativo === false ? 'Ativar' : 'Desativar', onclick: () => alternarForma(p) }),
+      el('button', { class: 'btn btn-mini btn-perigo', text: 'Excluir', onclick: () => excluirForma(p) }),
+    ]))
+  );
+  return secao('Formas de pagamento', [
+    lista,
+    el('div', { class: 'acoes' }, [
+      el('button', { class: 'btn', text: '+ Forma de pagamento', onclick: () => editarForma(novaForma({ nome: '', tipo: 'outro' }, todas), todas) }),
+    ]),
+  ]);
+}
+
+async function editarForma(pm, todas) {
+  const inputNome = el('input', { type: 'text', value: pm.nome });
+  const selTipo = el('select', {}, TIPOS_FORMA.map((t) =>
+    el('option', { value: t, text: t, ...(t === pm.tipo ? { selected: 'selected' } : {}) })
+  ));
+  const inputPadroes = el('input', { type: 'text', value: (pm.padroesExtrato || []).join(', ') });
+
+  const corpo = el('div', { class: 'form' }, [
+    el('label', { class: 'campo' }, [el('span', { text: 'Nome' }), inputNome]),
+    el('label', { class: 'campo' }, [el('span', { text: 'Tipo (define o comportamento)' }), selTipo]),
+    el('label', { class: 'campo' }, [
+      el('span', { text: 'Prefixos no extrato (separados por vírgula)' }), inputPadroes,
+    ]),
+  ]);
+
+  const escolha = await abrirModal({
+    titulo: pm.nome ? 'Editar forma' : 'Nova forma de pagamento',
+    corpo,
+    acoes: [{ id: 'cancelar', rotulo: 'Cancelar' }, { id: 'salvar', rotulo: 'Salvar' }],
+  });
+  if (escolha !== 'salvar') return;
+
+  const atualizado = novaForma({ ...pm, nome: inputNome.value.trim(), tipo: selTipo.value }, todas);
+  atualizado.id = pm.id;
+  atualizado.ordem = pm.ordem;
+  atualizado.padroesExtrato = inputPadroes.value.split(',').map((s) => s.trim()).filter(Boolean);
+
+  const erros = validatePaymentMethod(atualizado, todas);
+  if (erros.length) return mostrarErros(erros);
+
+  await saveForma(atualizado);
+  toast('Forma de pagamento salva.', 'ok');
+  await renderCadastros();
+}
+
+async function alternarForma(pm) {
+  await saveForma({ ...pm, ativo: pm.ativo === false });
+  await renderCadastros();
+}
+
+async function excluirForma(pm) {
+  if (!(await confirmar(`Excluir a forma "${pm.nome}"?`))) return;
+  try {
+    await removeForma(pm.id, await listTransactions());
+    toast('Excluída.', 'ok');
+    await renderCadastros();
+  } catch (e) {
+    toast(e.message, 'erro');
+  }
+}
+
+// --- Categorias ---
+
+async function secaoCategorias() {
+  const todas = await listCategorias();
+  const lista = el('div', { class: 'lista-cadastro' },
+    todas.map((c) => el('div', { class: 'item-cadastro' }, [
+      el('span', { class: 'chip-cor', style: `background:${c.cor}` }),
+      el('span', { class: 'item-nome', text: c.nome }),
+      el('button', { class: 'btn btn-mini', text: 'Editar', onclick: () => editarCategoria(c, todas) }),
+      el('button', { class: 'btn btn-mini btn-perigo', text: 'Excluir', onclick: () => excluirCategoria(c) }),
+    ]))
+  );
+  return secao('Categorias', [
+    lista,
+    el('div', { class: 'acoes' }, [
+      el('button', { class: 'btn', text: '+ Categoria', onclick: () => editarCategoria(novaCategoria('', null, todas), todas) }),
+    ]),
+  ]);
+}
+
+async function editarCategoria(cat, todas) {
+  const inputNome = el('input', { type: 'text', value: cat.nome });
+  const inputCor = el('input', { type: 'color', value: cat.cor });
+  const escolha = await abrirModal({
+    titulo: cat.nome ? 'Editar categoria' : 'Nova categoria',
+    corpo: el('div', { class: 'form' }, [
+      el('label', { class: 'campo' }, [el('span', { text: 'Nome' }), inputNome]),
+      el('label', { class: 'campo' }, [el('span', { text: 'Cor' }), inputCor]),
+    ]),
+    acoes: [{ id: 'cancelar', rotulo: 'Cancelar' }, { id: 'salvar', rotulo: 'Salvar' }],
+  });
+  if (escolha !== 'salvar') return;
+
+  const atualizada = { ...cat, nome: inputNome.value.trim(), cor: inputCor.value };
+  const erros = validateCategoria(atualizada, todas);
+  if (erros.length) return mostrarErros(erros);
+
+  await saveCategoria(atualizada);
+  toast('Categoria salva.', 'ok');
+  await renderCadastros();
+}
+
+async function excluirCategoria(cat) {
+  const transacoes = await listTransactions();
+  const emUso = transacoes.filter((t) => t.categoria === cat.id).length;
+  if (emUso) return toast(`${emUso} lançamento(s) usam esta categoria. Reclassifique-os antes de excluir.`, 'erro');
+  if (!(await confirmar(`Excluir a categoria "${cat.nome}"?`))) return;
+  try {
+    await removeCategoria(cat.id);
+    toast('Excluída.', 'ok');
+    await renderCadastros();
+  } catch (e) {
+    toast(e.message, 'erro');
+  }
+}
+
+// --- Backup ---
+
+function secaoBackup() {
+  const inputArquivo = el('input', { type: 'file', accept: '.xlsx', class: 'oculto' });
+  inputArquivo.addEventListener('change', async (ev) => {
+    const arquivo = ev.target.files[0];
+    if (!arquivo) return;
+    try {
+      // Backup do formato anterior é todo de cartão de crédito e não diz de
+      // qual: sem escolher um cartão, os lançamentos entrariam sem conta.
+      const cartoes = (await listAccounts()).filter((a) => a.tipo === TIPO_CARTAO);
+      const cartaoTitularId = await escolherCartaoParaImportacao(cartoes);
+      if (cartaoTitularId === false) return;
+
+      const { contagens, avisos } = await importarBackup(await arquivo.arrayBuffer(), {
+        cartaoTitularId, formaCreditoId: 'pm_credito',
+      });
+      const total = Object.values(contagens).reduce((a, b) => a + b, 0);
+      toast(`${total} registro(s) restaurados.`, 'ok');
+      if (avisos.length) await abrirModal({ titulo: 'Atenção', corpo: avisos.join('\n\n') });
+      await renderCadastros();
+    } catch (e) {
+      toast('Não consegui ler esse backup: ' + e.message, 'erro');
+    }
+    ev.target.value = '';
+  });
+
+  return secao('Backup', [
+    el('p', { class: 'ajuda', text: 'O backup contém todos os seus dados, inclusive faturas e extratos importados.' }),
+    el('div', { class: 'acoes' }, [
+      el('button', { class: 'btn', text: 'Exportar backup', onclick: baixarBackup }),
+      el('button', { class: 'btn', text: 'Importar backup', onclick: () => inputArquivo.click() }),
+    ]),
+    inputArquivo,
+  ]);
+}
+
+/**
+ * Devolve o id do cartão a associar, `null` se não há cartão cadastrado (caso
+ * de um backup do formato novo, que já traz o cartão dentro), ou `false` se o
+ * usuário cancelou.
+ */
+async function escolherCartaoParaImportacao(cartoes) {
+  if (!cartoes.length) return null;
+  if (cartoes.length === 1) return cartoes[0].id;
+  const sel = el('select', {}, cartoes.map((c) => el('option', { value: c.id, text: c.nome })));
+  const escolha = await abrirModal({
+    titulo: 'Backup do app anterior',
+    corpo: el('div', { class: 'form' }, [
+      el('p', { text: 'Se este for um backup do app anterior, os lançamentos são todos de cartão de crédito. A qual cartão associá-los?' }),
+      el('label', { class: 'campo' }, [el('span', { text: 'Cartão' }), sel]),
+    ]),
+    acoes: [{ id: 'cancelar', rotulo: 'Cancelar' }, { id: 'ok', rotulo: 'Importar' }],
+  });
+  return escolha === 'ok' ? sel.value : false;
+}
+
+async function baixarBackup() {
+  const blob = await exportarBackup();
+  const url = URL.createObjectURL(blob);
+  const link = el('a', { href: url, download: `backup-livro-de-gastos-${new Date().toISOString().slice(0, 10)}.xlsx` });
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+  toast('Backup gerado.', 'ok');
+}
+```
+
+- [ ] **Step 2: Verificar no navegador**
+
+Com `python -m http.server 8000` rodando, abra a aba Cadastros e confirme:
+1. As formas de pagamento e categorias do seed aparecem listadas.
+2. Cadastrar uma conta corrente e um cartão titular funciona; o campo de final rejeita menos de 4 dígitos com mensagem.
+3. Cadastrar um cartão marcando "É adicional do cartão" com o titular criado funciona, e o rótulo mostra "(adicional)".
+4. Tentar excluir a categoria "A Classificar" mostra a mensagem de bloqueio.
+5. Exportar backup baixa o `.xlsx`; reimportá-lo não duplica nada.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add -A
+git commit -m "Adiciona aba Cadastros com contas, cartoes, formas e categorias
+
+A camada de UI so coleta formulario, chama validate* de domain e mostra os
+erros devolvidos: nenhuma regra e reimplementada aqui. Exclusao de cadastro em
+uso e bloqueada com a contagem de lancamentos afetados, e a saida oferecida e
+desativar.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 13: `ui/lancamentos.js` — a tela de uso diário
+
+**Files:**
+- Create: `src/ui/lancamentos.js`
+- Modify: `styles.css` (`.filtros`, `.lista-lancamentos`, `.selo-auto`)
+
+**Interfaces:**
+- Consumes: `domain/transactions.js`, `domain/categories.js`, `domain/payment-methods.js`, `domain/accounts.js`, `core/money.js`, `core/dates.js`, `ui/components.js`
+- Produces: `renderLancamentos() -> Promise<void>`
+
+- [ ] **Step 1: Implementar `src/ui/lancamentos.js`**
+
+Pontos que o código precisa respeitar:
+
+- A forma de pagamento é obrigatória e vem pré-selecionada com a última usada, lida de `meta.ultimaFormaUsada`. Digitar um gasto é a ação mais repetida do app; um campo a mais para preencher toda vez é atrito real.
+- Escolher a forma preenche a conta automaticamente por `contaPadraoId`, mas o usuário pode trocar.
+- O lançamento classificado pela máquina exibe o selo `auto`; **editar a categoria remove o selo**, porque a escolha do usuário deixa de ser palpite da máquina.
+- A data é digitada em `DD/MM/AAAA` e convertida por `parseDateBR` antes de qualquer coisa. Nada de data formatada entra no domínio.
+
+```js
+import { el, toast, confirmar } from './components.js';
+import {
+  listTransactions, saveTransaction, removeTransaction,
+  novaTransaction, validateTransaction, filterTransactions, sumDespesas, NATUREZAS,
+} from '../domain/transactions.js';
+import { listCategorias } from '../domain/categories.js';
+import { listFormas } from '../domain/payment-methods.js';
+import { listAccounts } from '../domain/accounts.js';
+import { fmtBRL, parseMoneyBR } from '../core/money.js';
+import { formatDateBR, parseDateBR, todayISO, monthKey } from '../core/dates.js';
+import * as storage from '../core/storage.js';
+
+let filtros = { mes: monthKey(todayISO()) };
+let editandoId = null;
+
+export async function renderLancamentos() {
+  const painel = document.getElementById('tabLancamentos');
+  const [transacoes, categorias, formas, contas] = await Promise.all([
+    listTransactions(), listCategorias(), listFormas(), listAccounts(),
+  ]);
+  const ctx = { categorias, formas, contas };
+  const visiveis = filterTransactions(transacoes, filtros)
+    .sort((a, b) => (a.data < b.data ? 1 : -1));
+
+  painel.innerHTML = '';
+  painel.append(
+    await formulario(ctx, transacoes),
+    barraFiltros(ctx),
+    el('div', { class: 'total-periodo', text: `Total de gastos no período: ${fmtBRL(sumDespesas(visiveis))}` }),
+    listagem(visiveis, ctx)
+  );
+}
+
+async function formulario(ctx, transacoes) {
+  const emEdicao = editandoId ? transacoes.find((t) => t.id === editandoId) : null;
+  const ultimaForma = await storage.getMeta('ultimaFormaUsada', null);
+
+  const inpData = el('input', { type: 'text', inputmode: 'numeric', placeholder: 'DD/MM/AAAA', value: formatDateBR(emEdicao ? emEdicao.data : todayISO()) });
+  const inpDescricao = el('input', { type: 'text', placeholder: 'Descrição', value: emEdicao ? emEdicao.descricao : '' });
+  const inpValor = el('input', { type: 'text', inputmode: 'decimal', placeholder: '0,00', value: emEdicao ? String(emEdicao.valor).replace('.', ',') : '' });
+
+  const selCategoria = el('select', {}, ctx.categorias.map((c) =>
+    el('option', { value: c.id, text: c.nome, ...(emEdicao && emEdicao.categoria === c.id ? { selected: 'selected' } : {}) })
+  ));
+
+  const formasAtivas = ctx.formas.filter((f) => f.ativo !== false);
+  const formaSelecionada = emEdicao ? emEdicao.formaPagamentoId : ultimaForma;
+  const selForma = el('select', {}, formasAtivas.map((f) =>
+    el('option', { value: f.id, text: f.nome, ...(f.id === formaSelecionada ? { selected: 'selected' } : {}) })
+  ));
+
+  const selConta = el('select', {}, [
+    el('option', { value: '', text: '— sem conta —' }),
+    ...ctx.contas.map((a) => el('option', { value: a.id, text: a.nome, ...(emEdicao && emEdicao.contaId === a.id ? { selected: 'selected' } : {}) })),
+  ]);
+
+  // Escolher a forma preenche a conta pelo padrão dela, sem travar a escolha.
+  selForma.addEventListener('change', () => {
+    const forma = formasAtivas.find((f) => f.id === selForma.value);
+    if (forma && forma.contaPadraoId) selConta.value = forma.contaPadraoId;
+  });
+
+  const selNatureza = el('select', {}, NATUREZAS.map((n) =>
+    el('option', { value: n, text: rotuloNatureza(n), ...(emEdicao && emEdicao.natureza === n ? { selected: 'selected' } : {}) })
+  ));
+
+  const salvar = async () => {
+    const data = parseDateBR(inpData.value);
+    const valor = parseMoneyBR(inpValor.value);
+    const base = {
+      data,
+      descricao: inpDescricao.value.trim(),
+      valor: valor === null ? 0 : Math.abs(valor),
+      categoria: selCategoria.value,
+      formaPagamentoId: selForma.value,
+      contaId: selConta.value || undefined,
+      natureza: selNatureza.value,
+    };
+    const registro = emEdicao ? { ...emEdicao, ...base } : novaTransaction(base);
+
+    // Se o usuário mexeu na categoria, a escolha deixa de ser palpite da máquina.
+    if (emEdicao && emEdicao.categoria !== base.categoria) {
+      delete registro.classificadoAutomaticamente;
+      delete registro.regraId;
+    }
+
+    const erros = validateTransaction(registro);
+    if (erros.length) return toast(erros.join(' '), 'erro');
+
+    await saveTransaction(registro);
+    await storage.setMeta('ultimaFormaUsada', registro.formaPagamentoId);
+    editandoId = null;
+    toast(emEdicao ? 'Lançamento atualizado.' : 'Lançamento salvo.', 'ok');
+    await renderLancamentos();
+  };
+
+  return el('form', { class: 'form-lancamento', onsubmit: (ev) => { ev.preventDefault(); salvar(); } }, [
+    el('div', { class: 'linha-form' }, [campo('Data', inpData), campo('Valor', inpValor)]),
+    campo('Descrição', inpDescricao),
+    el('div', { class: 'linha-form' }, [campo('Categoria', selCategoria), campo('Forma de pagamento', selForma)]),
+    el('div', { class: 'linha-form' }, [campo('Conta / cartão', selConta), campo('Natureza', selNatureza)]),
+    el('div', { class: 'acoes' }, [
+      el('button', { class: 'btn btn-primario', type: 'submit', text: emEdicao ? 'Salvar alterações' : 'Lançar' }),
+      emEdicao ? el('button', { class: 'btn', type: 'button', text: 'Cancelar', onclick: async () => { editandoId = null; await renderLancamentos(); } }) : null,
+    ]),
+  ]);
+}
+
+function campo(rotulo, controle) {
+  return el('label', { class: 'campo' }, [el('span', { text: rotulo }), controle]);
+}
+
+function rotuloNatureza(n) {
+  return {
+    despesa: 'Gasto',
+    receita: 'Recebimento (não conta como gasto)',
+    transferencia: 'Transferência entre contas próprias',
+    pagamento_fatura: 'Pagamento de fatura',
+  }[n];
+}
+
+function barraFiltros(ctx) {
+  const inpMes = el('input', { type: 'month', value: filtros.mes || '' });
+  inpMes.addEventListener('change', async () => { filtros.mes = inpMes.value || undefined; await renderLancamentos(); });
+
+  const selForma = el('select', {}, [
+    el('option', { value: '', text: 'Todas as formas' }),
+    ...ctx.formas.map((f) => el('option', { value: f.id, text: f.nome })),
+  ]);
+  selForma.addEventListener('change', async () => {
+    filtros.formas = selForma.value ? [selForma.value] : [];
+    await renderLancamentos();
+  });
+
+  const chkAuto = el('input', { type: 'checkbox' });
+  chkAuto.addEventListener('change', async () => { filtros.somenteAuto = chkAuto.checked; await renderLancamentos(); });
+
+  return el('div', { class: 'filtros' }, [
+    campo('Mês', inpMes),
+    campo('Forma', selForma),
+    el('label', { class: 'campo-inline' }, [chkAuto, el('span', { text: 'Só classificados automaticamente' })]),
+  ]);
+}
+
+function listagem(visiveis, ctx) {
+  if (!visiveis.length) return el('p', { class: 'vazio', text: 'Nenhum lançamento neste filtro.' });
+  const nome = (lista, id) => (lista.find((x) => x.id === id) || {}).nome || '—';
+
+  return el('div', { class: 'lista-lancamentos' }, visiveis.map((t) =>
+    el('div', { class: `item-lancamento ${t.natureza !== 'despesa' ? 'nao-gasto' : ''}` }, [
+      el('div', { class: 'lanc-principal' }, [
+        el('span', { class: 'lanc-descricao', text: t.descricao }),
+        t.classificadoAutomaticamente ? el('span', { class: 'selo-auto', title: 'Categoria aplicada automaticamente', text: 'auto' }) : null,
+      ]),
+      el('div', { class: 'lanc-meta', text: `${formatDateBR(t.data)} · ${nome(ctx.categorias, t.categoria)} · ${nome(ctx.formas, t.formaPagamentoId)}` }),
+      el('div', { class: 'lanc-valor', text: fmtBRL(t.valor) }),
+      el('div', { class: 'acoes' }, [
+        el('button', { class: 'btn btn-mini', text: 'Editar', onclick: async () => { editandoId = t.id; await renderLancamentos(); window.scrollTo({ top: 0, behavior: 'smooth' }); } }),
+        el('button', { class: 'btn btn-mini btn-perigo', text: 'Excluir', onclick: () => excluir(t) }),
+      ]),
+    ])
+  ));
+}
+
+async function excluir(t) {
+  if (!(await confirmar(`Excluir "${t.descricao}"?`))) return;
+  await removeTransaction(t.id);
+  toast('Lançamento excluído.', 'ok');
+  await renderLancamentos();
+}
+```
+
+- [ ] **Step 2: Verificar no navegador**
+
+1. Lançar um gasto com Pix; conferir que aparece na lista e entra no total do período.
+2. Lançar um recebimento (natureza "Recebimento"); conferir que aparece na lista mas **não** muda o total de gastos.
+3. Recarregar a página e lançar de novo: a forma de pagamento vem pré-selecionada com a última usada.
+4. Editar um lançamento e conferir que os valores voltam corretos ao formulário.
+5. Filtrar por mês e por forma; conferir que o total acompanha o filtro.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add -A
+git commit -m "Adiciona aba Lancamentos com forma de pagamento e natureza
+
+A forma vem pre-selecionada com a ultima usada porque lancar um gasto e a acao
+mais repetida do app, e um campo a mais para preencher toda vez e atrito real.
+Editar a categoria de um lancamento classificado automaticamente remove o selo
+auto: a escolha do usuario deixa de ser palpite da maquina.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 14: `ui/onboarding.js` — primeira execução e migração
+
+Onde o usuário cadastra suas contas (que não podem estar no código, por o repositório ser público) e traz os dados do app anterior. Leia a seção 5.7 do spec.
+
+**Files:**
+- Create: `src/ui/onboarding.js`
+- Modify: `src/ui/cadastros.js` (botão "Migrar dados do app anterior" na seção Backup)
+
+**Interfaces:**
+- Consumes: `importers/legacy-idb.js`, `domain/accounts.js`, `ui/components.js`, `core/storage.js`
+- Produces: `talvezOferecerOnboarding() -> Promise<void>`, `migrarDoAppAnterior() -> Promise<void>`
+
+- [ ] **Step 1: Implementar `src/ui/onboarding.js`**
+
+```js
+// Primeira execução: cadastro inicial e migração do app anterior.
+//
+// Os dados de conta do usuário não podem vir no código porque o repositório é
+// público — por isso este assistente existe em vez de um seed.
+
+import { el, toast, abrirModal } from './components.js';
+import { legacyDatabaseExists, importLegacyInto } from '../importers/legacy-idb.js';
+import { listAccounts, saveAccount, novaConta, novoCartao, validateAccount } from '../domain/accounts.js';
+import { irParaAba } from './tabs.js';
+import * as storage from '../core/storage.js';
+
+export async function talvezOferecerOnboarding() {
+  if (await storage.getMeta('onboardingConcluido', false)) return;
+  const contas = await listAccounts();
+  if (contas.length) {
+    await storage.setMeta('onboardingConcluido', true);
+    return;
+  }
+
+  const temLegado = await legacyDatabaseExists();
+  const escolha = await abrirModal({
+    titulo: 'Bem-vindo ao Livro de Gastos',
+    corpo: el('div', {}, [
+      el('p', { text: 'Para começar, cadastre a conta e o cartão que você usa. Seus dados ficam só neste aparelho.' }),
+      temLegado
+        ? el('p', { text: 'Encontrei os dados do app de cartão de crédito neste navegador. Posso trazer tudo para cá — lançamentos, categorias e faturas importadas — sem alterar o app antigo.' })
+        : el('p', { class: 'ajuda', text: 'Se você usava o app anterior em outro aparelho, exporte um backup lá e importe em Cadastros.' }),
+    ]),
+    acoes: [
+      { id: 'depois', rotulo: 'Depois' },
+      ...(temLegado ? [{ id: 'migrar', rotulo: 'Trazer dados do app anterior' }] : []),
+      { id: 'cadastrar', rotulo: 'Cadastrar agora', classe: 'btn-primario' },
+    ],
+  });
+
+  if (escolha === 'migrar') return migrarDoAppAnterior();
+  if (escolha === 'cadastrar') return assistenteCadastro();
+}
+
+async function assistenteCadastro() {
+  const inpBanco = el('input', { type: 'text', placeholder: 'Ex.: Banco X' });
+  const inpAgencia = el('input', { type: 'text', placeholder: '0000' });
+  const inpNumero = el('input', { type: 'text', placeholder: '00000-0' });
+  const inpCartaoNome = el('input', { type: 'text', placeholder: 'Ex.: Cartão principal' });
+  const inpBandeira = el('input', { type: 'text', placeholder: 'visa / master' });
+  const inpFinal = el('input', { type: 'text', inputmode: 'numeric', placeholder: '0000' });
+  // Como o próprio usuário aparece nomeado no extrato dele quando transfere
+  // entre contas próprias, e a grafia varia conforme o banco emissor. A Fase 2
+  // usa isto para classificar essas linhas como transferência, e não gasto.
+  const inpApelidos = el('input', { type: 'text', placeholder: 'Ex.: JOAO DA SILVA, JOAO SILVA' });
+
+  const linha = (rotulo, controle) => el('label', { class: 'campo' }, [el('span', { text: rotulo }), controle]);
+
+  const escolha = await abrirModal({
+    titulo: 'Sua conta e seu cartão',
+    corpo: el('div', { class: 'form' }, [
+      el('h3', { text: 'Conta corrente' }),
+      linha('Banco', inpBanco), linha('Agência', inpAgencia), linha('Número', inpNumero),
+      el('h3', { text: 'Cartão de crédito' }),
+      linha('Nome', inpCartaoNome), linha('Bandeira', inpBandeira), linha('Final (4 dígitos)', inpFinal),
+      el('h3', { text: 'Seu nome no extrato' }),
+      linha('Como você aparece (separe variações por vírgula)', inpApelidos),
+      el('p', { class: 'ajuda', text: 'Quando você transfere dinheiro entre contas suas, seu nome aparece no extrato. Isso serve para o app não contar essas transferências como gasto.' }),
+      el('p', { class: 'ajuda', text: 'Você pode cadastrar mais contas, cartões e adicionais depois, na aba Cadastros.' }),
+    ]),
+    acoes: [{ id: 'cancelar', rotulo: 'Depois' }, { id: 'salvar', rotulo: 'Salvar', classe: 'btn-primario' }],
+  });
+  if (escolha !== 'salvar') return;
+
+  const conta = novaConta({
+    nome: `${inpBanco.value.trim()} — conta corrente`,
+    instituicao: inpBanco.value.trim(),
+    agencia: inpAgencia.value.trim(),
+    numero: inpNumero.value.trim(),
+  });
+  const cartao = novoCartao({
+    nome: inpCartaoNome.value.trim(),
+    instituicao: inpBanco.value.trim(),
+    bandeira: inpBandeira.value.trim().toLowerCase(),
+    final: inpFinal.value.trim(),
+    contaPagadoraId: conta.id,
+  });
+
+  const erros = [...validateAccount(conta, []), ...validateAccount(cartao, [conta])];
+  if (erros.length) {
+    toast(erros.join(' '), 'erro');
+    return assistenteCadastro();
+  }
+
+  await saveAccount(conta);
+  await saveAccount(cartao);
+  await storage.setMeta(
+    'apelidosTitular',
+    inpApelidos.value.split(',').map((s) => s.trim()).filter(Boolean)
+  );
+  await storage.setMeta('onboardingConcluido', true);
+  toast('Cadastro criado. Bom uso!', 'ok');
+  irParaAba('Cadastros');
+}
+
+export async function migrarDoAppAnterior() {
+  const contas = await listAccounts();
+  const cartoes = contas.filter((a) => a.tipo === 'cartao');
+  if (!cartoes.length) {
+    await abrirModal({
+      titulo: 'Cadastre o cartão primeiro',
+      corpo: 'Os lançamentos do app anterior são todos de cartão de crédito, então preciso saber a qual cartão associá-los. Cadastre o cartão na aba Cadastros e volte aqui.',
+    });
+    return assistenteCadastro();
+  }
+
+  const selCartao = el('select', {}, cartoes.map((c) => el('option', { value: c.id, text: c.nome })));
+  const escolha = await abrirModal({
+    titulo: 'Trazer dados do app anterior',
+    corpo: el('div', { class: 'form' }, [
+      el('p', { text: 'Todos os lançamentos, categorias e faturas do app anterior serão copiados. O app antigo não é alterado e continua funcionando.' }),
+      el('label', { class: 'campo' }, [el('span', { text: 'Associar os lançamentos a qual cartão?' }), selCartao]),
+    ]),
+    acoes: [{ id: 'cancelar', rotulo: 'Cancelar' }, { id: 'migrar', rotulo: 'Trazer dados', classe: 'btn-primario' }],
+  });
+  if (escolha !== 'migrar') return;
+
+  try {
+    const { transactions, statements, avisos } = await importLegacyInto({
+      cartaoTitularId: selCartao.value,
+      formaCreditoId: 'pm_credito',
+    });
+    await storage.setMeta('onboardingConcluido', true);
+    await abrirModal({
+      titulo: 'Pronto',
+      corpo: el('div', {}, [
+        el('p', { text: `${transactions.length} lançamento(s) e ${statements.length} fatura(s) foram trazidos.` }),
+        ...avisos.map((a) => el('p', { class: 'ajuda', text: a })),
+      ]),
+    });
+    irParaAba('Lancamentos');
+  } catch (e) {
+    toast('Não consegui ler os dados do app anterior: ' + e.message, 'erro');
+  }
+}
+```
+
+- [ ] **Step 2: Ligar o botão em Cadastros**
+
+Em `src/ui/cadastros.js`, importe `migrarDoAppAnterior` e acrescente na seção Backup:
+
+```js
+el('button', { class: 'btn', text: 'Migrar dados do app anterior', onclick: migrarDoAppAnterior }),
+```
+
+- [ ] **Step 3: Verificar o caminho de migração com dados de verdade**
+
+Este é o passo mais importante da fase: é o momento em que os dados reais do usuário atravessam.
+
+1. Sirva o app em `http://localhost:8000` e, **na mesma origem**, sirva também o app anterior (copie-o para uma subpasta temporária fora do repositório, ou use o app publicado). Abra o app anterior primeiro para que o banco `livro-de-gastos` exista nessa origem.
+2. Abra o app novo, cadastre um cartão e acione "Migrar dados do app anterior".
+3. Confirme: a contagem de lançamentos bate com a do app anterior; as faturas vieram; os lançamentos de parcela mantêm o número da parcela.
+4. **Confirme que o app anterior continua funcionando** — abra-o de novo e verifique que os dados dele estão intactos. A migração lê, nunca escreve.
+5. Rode a migração uma segunda vez e confirme que nada duplicou.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add -A
+git commit -m "Adiciona assistente de primeira execucao e migracao do app anterior
+
+Os dados de conta do usuario nao podem vir em seed porque o repositorio e
+publico, entao o cadastro inicial e um assistente. A migracao le o banco do
+app anterior na mesma origem, sem escrever nele: o app antigo segue intacto e
+utilizavel como retaguarda.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 15: PWA e publicação
+
+**Files:**
+- Create: `sw.js`, `manifest.webmanifest`
+- Modify: `src/version.js`, `README.md`
+
+**Interfaces:**
+- Consumes: `src/version.js` (`APP_VERSION`)
+- Produces: app publicado em `https://renewsolutionsbr.github.io/Financas/`
+
+- [ ] **Step 1: Criar `manifest.webmanifest`**
+
+```json
+{
+  "name": "Livro de Gastos",
+  "short_name": "Gastos",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "background_color": "#f4efe4",
+  "theme_color": "#f4efe4",
+  "lang": "pt-BR",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
+```
+
+- [ ] **Step 2: Criar `sw.js` importando a versão de um lugar só**
+
+O app anterior exigia lembrar de subir `CACHE_VERSION` à mão a cada publicação — esquecer significava aparelhos servindo arquivos velhos indefinidamente. Aqui existe **um** lugar para alterar.
+
+```js
+// Service worker. A versão vem de src/version.js: há um único lugar para
+// alterar a cada publicação, e esquecer de subir a versão deixava aparelhos
+// servindo arquivos antigos do cache indefinidamente.
+import { APP_VERSION } from './src/version.js';
+
+const CACHE = `livro-de-gastos-${APP_VERSION}`;
+
+const PRECACHE = [
+  './', './index.html', './styles.css', './manifest.webmanifest',
+  './src/app.js', './src/version.js',
+  './src/core/storage.js', './src/core/db-schema.js', './src/core/money.js',
+  './src/core/dates.js', './src/core/text.js', './src/core/ids.js',
+  './src/domain/categories.js', './src/domain/accounts.js',
+  './src/domain/payment-methods.js', './src/domain/transactions.js',
+  './src/importers/backup-xlsx.js', './src/importers/legacy-idb.js',
+  './src/ui/components.js', './src/ui/tabs.js', './src/ui/cadastros.js',
+  './src/ui/lancamentos.js', './src/ui/onboarding.js',
+  './vendor/xlsx.full.min.js',
+  './icons/icon-192.png', './icons/icon-512.png',
+];
+
+self.addEventListener('install', (ev) => {
+  ev.waitUntil(caches.open(CACHE).then((c) => c.addAll(PRECACHE)));
+});
+
+self.addEventListener('activate', (ev) => {
+  ev.waitUntil(
+    caches.keys().then((chaves) =>
+      Promise.all(chaves.filter((k) => k !== CACHE).map((k) => caches.delete(k)))
+    ).then(() => self.clients.claim())
+  );
+});
+
+self.addEventListener('fetch', (ev) => {
+  if (ev.request.method !== 'GET') return;
+  ev.respondWith(
+    fetch(ev.request)
+      .then((resp) => {
+        const copia = resp.clone();
+        caches.open(CACHE).then((c) => c.put(ev.request, copia));
+        return resp;
+      })
+      .catch(() => caches.match(ev.request).then((r) => r || caches.match('./index.html')))
+  );
+});
+
+self.addEventListener('message', (ev) => {
+  if (ev.data && ev.data.type === 'SKIP_WAITING') self.skipWaiting();
+});
+```
+
+Registre-o como módulo, já que ele usa `import`. Em `src/app.js`, ajuste:
+
+```js
+navigator.serviceWorker.register('sw.js', { type: 'module' });
+```
+
+- [ ] **Step 3: Rodar a suíte inteira antes de publicar**
+
+Run: `node tools/run-tests.mjs`
+Expected: PASS, sem nenhuma falha.
+
+Abra `http://localhost:8000/tools/tests.html`.
+Expected: todos verdes, incluindo os de navegador.
+
+- [ ] **Step 4: Publicar e ligar o GitHub Pages**
+
+```bash
+git push origin main
+gh api -X POST repos/RenewSolutionsBR/Financas/pages -f 'source[branch]=main' -f 'source[path]=/'
+```
+
+Aguarde o build e abra `https://renewsolutionsbr.github.io/Financas/`.
+
+- [ ] **Step 5: Verificar no app publicado**
+
+1. A PWA instala no celular (Android e iPhone).
+2. Com o avião ligado, o app abre e os dados continuam lá.
+3. **No mesmo navegador onde o app anterior está instalado**, a migração encontra os dados do app antigo e os traz.
+4. O app anterior continua abrindo e funcionando normalmente depois disso.
+
+- [ ] **Step 6: Commit e fechamento da fase**
+
+```bash
+git add -A
+git commit -m "Adiciona PWA com service worker de versao unica e publica no Pages
+
+A versao do cache vem de src/version.js em vez de uma constante duplicada no
+sw.js: esquecer de subi-la deixava aparelhos servindo arquivos antigos
+indefinidamente, que era o risco registrado no app anterior.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
+git push origin main
+```
+
+---
+
+## Verificação de fim de fase
+
+Antes de declarar a Fase 1 concluída, confirme cada item com evidência, não por impressão:
+
+- [ ] `node tools/run-tests.mjs` termina com código 0 e nenhuma falha
+- [ ] `tools/tests.html` mostra todos os testes verdes, inclusive os de IndexedDB
+- [ ] A migração trouxe os dados reais, com contagem conferida contra o app anterior
+- [ ] O app anterior continua íntegro e funcionando depois da migração
+- [ ] Rodar a migração duas vezes não duplica nada
+- [ ] Um ciclo exportar backup → importar backup devolve o mesmo conjunto de dados
+- [ ] `git status --porcelain` não lista nenhum `.pdf`, `.xls`, `.xlsx` ou `.csv` fora do ignore
+- [ ] Nenhum número de conta, agência, final de cartão real ou nome de pessoa aparece em `git grep` no repositório
+- [ ] A PWA instala e abre offline no celular do usuário
+- [ ] O usuário conseguiu lançar um gasto real pelo aparelho dele
+
+Só então escreva o plano da Fase 2.
