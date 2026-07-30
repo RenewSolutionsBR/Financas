@@ -1183,8 +1183,11 @@ describe('storage', () => {
     await storage.remove('categories', 'teste_b');
   });
 
-  it('putMany com lista vazia não falha', async () => {
+  it('putMany ignora lista vazia, nula ou ausente sem quebrar', async () => {
+    // O guard existe pelos dois ultimos casos: sem ele, .map lanca TypeError.
     await storage.putMany('categories', []);
+    await storage.putMany('categories', null);
+    await storage.putMany('categories', undefined);
   });
 
   it('busca por índice', async () => {
@@ -1255,6 +1258,12 @@ function openDB() {
       'Abertura do banco bloqueada por outra aba deste app. Feche as outras abas e recarregue.'
     ));
   });
+  // Uma abertura que falhou nao pode ficar cacheada: sem isso, toda chamada
+  // seguinte rejeitava com o mesmo erro ate a pagina ser recarregada, e fechar
+  // a aba que bloqueava - que e o que a propria mensagem manda fazer - nao
+  // adiantava nada. O catch cria so um ramo derivado para limpar o cache; o
+  // return devolve a promessa original, para quem chamou receber a rejeicao.
+  dbPromise.catch(() => { dbPromise = null; });
   return dbPromise;
 }
 
