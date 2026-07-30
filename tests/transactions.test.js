@@ -1,6 +1,6 @@
 import { describe, it, assert, assertEqual, assertDeepEqual } from './harness.js';
 import {
-  NATUREZAS, contaComoGasto, validateTransaction, sumDespesas,
+  NATUREZAS, SEM_FORMA, contaComoGasto, validateTransaction, sumDespesas,
   filterTransactions, totaisPorForma, novaTransaction,
 } from '../src/domain/transactions.js';
 
@@ -28,15 +28,31 @@ describe('transactions: o que conta como gasto', () => {
     assert(!contaComoGasto(t({ previsto: true })));
   });
 
-  it('soma apenas o que conta como gasto', () => {
+  it('soma apenas o que conta como gasto, sem residuo de ponto flutuante', () => {
     const lista = [
-      t({ id: 'a', valor: 100 }),
-      t({ id: 'b', valor: 50, natureza: 'receita' }),
-      t({ id: 'c', valor: 30, natureza: 'pagamento_fatura' }),
-      t({ id: 'd', valor: 20, previsto: true }),
-      t({ id: 'e', valor: 5.5 }),
+      t({ id: 'a', valor: 0.1 }),
+      t({ id: 'b', valor: 0.29 }),
+      t({ id: 'c', valor: 23.45 }),
+      t({ id: 'd', valor: 7781.06 }),
+      t({ id: 'e', valor: 50, natureza: 'receita' }),
+      t({ id: 'f', valor: 30, natureza: 'pagamento_fatura' }),
+      t({ id: 'g', valor: 20, natureza: 'transferencia' }),
+      t({ id: 'h', valor: 99, previsto: true }),
     ];
-    assertEqual(sumDespesas(lista), 105.5);
+    // Sem round2 a soma nativa daria 7804.900000000001.
+    assertEqual(sumDespesas(lista), 7804.9);
+  });
+
+  it('cem centavos somam exatamente um real', () => {
+    // Sem round2 isto daria 1.0000000000000007.
+    const centavos = Array.from({ length: 100 }, (_, i) => t({ id: 'c' + i, valor: 0.01 }));
+    assertEqual(sumDespesas(centavos), 1);
+  });
+
+  it('um valor ilegivel nao contamina o total', () => {
+    const lista = [t({ id: 'a', valor: 10 }), t({ id: 'b', valor: 'abc' }), t({ id: 'c', valor: 5 })];
+    // Perder um registro é ruim; zerar o mês inteiro em silêncio é pior.
+    assertEqual(sumDespesas(lista), 15);
   });
 
   it('soma de lista vazia é zero', () => {
@@ -66,6 +82,11 @@ describe('transactions: validação', () => {
   it('rejeita valor zero ou negativo: o sentido vem da natureza', () => {
     assert(validateTransaction(t({ valor: 0 })).length > 0);
     assert(validateTransaction(t({ valor: -10 })).length > 0);
+  });
+
+  it('nao lanca excecao para entrada invalida', () => {
+    assert(validateTransaction(null).length > 0);
+    assert(validateTransaction(undefined).length > 0);
   });
 });
 
@@ -110,19 +131,39 @@ describe('transactions: filtros', () => {
   it('filtro vazio de lista não elimina nada', () => {
     assertEqual(filterTransactions(lista, { formas: [] }).length, 3);
   });
+
+  it('filtra por natureza', () => {
+    const listaNaturezas = [t({ id: 'a' }), t({ id: 'b', natureza: 'receita' }), t({ id: 'c', natureza: 'transferencia' })];
+    assertDeepEqual(filterTransactions(listaNaturezas, { naturezas: ['receita', 'transferencia'] }).map((x) => x.id), ['b', 'c']);
+  });
+
+  it('somenteGastos exclui receita, transferencia, pagamento de fatura e previsto', () => {
+    const listaGastos = [
+      t({ id: 'a' }),
+      t({ id: 'b', natureza: 'receita' }),
+      t({ id: 'c', natureza: 'pagamento_fatura' }),
+      t({ id: 'd', previsto: true }),
+    ];
+    assertDeepEqual(filterTransactions(listaGastos, { somenteGastos: true }).map((x) => x.id), ['a']);
+  });
 });
 
 describe('transactions: totais por forma', () => {
   it('agrupa só o que conta como gasto', () => {
     const lista = [
-      t({ id: 'a', valor: 100, formaPagamentoId: 'pm_pix' }),
-      t({ id: 'b', valor: 40, formaPagamentoId: 'pm_pix' }),
-      t({ id: 'c', valor: 70, formaPagamentoId: 'pm_credito' }),
+      t({ id: 'a', valor: 100.1, formaPagamentoId: 'pm_pix' }),
+      t({ id: 'b', valor: 40.2, formaPagamentoId: 'pm_pix' }),
+      t({ id: 'c', valor: 70.35, formaPagamentoId: 'pm_credito' }),
       t({ id: 'd', valor: 999, formaPagamentoId: 'pm_pix', natureza: 'receita' }),
     ];
     const totais = totaisPorForma(lista);
-    assertEqual(totais.get('pm_pix'), 140);
-    assertEqual(totais.get('pm_credito'), 70);
+    assertEqual(totais.get('pm_pix'), 140.3);
+    assertEqual(totais.get('pm_credito'), 70.35);
+  });
+
+  it('agrupa lancamento sem forma sob uma chave nomeada', () => {
+    const mapa = totaisPorForma([t({ id: 'a', valor: 10, formaPagamentoId: undefined })]);
+    assertEqual(mapa.get(SEM_FORMA), 10);
   });
 });
 

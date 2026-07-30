@@ -10,11 +10,17 @@ import * as storage from '../core/storage.js';
 
 export const NATUREZAS = ['despesa', 'receita', 'transferencia', 'pagamento_fatura'];
 
+// Chave usada em totaisPorForma para lançamentos sem forma de pagamento
+// definida: agrupar sob a string literal "undefined" deixaria a tela sem
+// rótulo para mostrar; agrupar sob um nome próprio permite exibir "Sem forma".
+export const SEM_FORMA = 'sem_forma';
+
 export function contaComoGasto(t) {
   return t.natureza === 'despesa' && !t.previsto;
 }
 
 export function validateTransaction(t) {
+  if (!t || typeof t !== 'object') return ['Lançamento inválido.'];
   const erros = [];
   if (!String(t.descricao || '').trim()) erros.push('A descrição não pode ficar em branco.');
   if (!isValidISO(t.data)) erros.push('Informe uma data válida.');
@@ -29,7 +35,17 @@ export function validateTransaction(t) {
 }
 
 export function sumDespesas(transactions) {
-  return round2((transactions || []).reduce((s, t) => (contaComoGasto(t) ? s + Number(t.valor || 0) : s), 0));
+  let total = 0;
+  for (const t of transactions || []) {
+    if (!contaComoGasto(t)) continue;
+    const valor = Number(t.valor);
+    // Um valor ilegível é ignorado em vez de contaminar a soma: sem isso, um
+    // único registro corrompido tornava o total NaN, e fmtBRL exibia NaN como
+    // "R$ 0,00" — o mês inteiro aparecia zerado sem nenhum sinal de erro.
+    if (!Number.isFinite(valor)) continue;
+    total += valor;
+  }
+  return round2(total);
 }
 
 export function filterTransactions(transactions, filtros) {
@@ -54,7 +70,12 @@ export function totaisPorForma(transactions) {
   const mapa = new Map();
   for (const t of transactions || []) {
     if (!contaComoGasto(t)) continue;
-    mapa.set(t.formaPagamentoId, round2((mapa.get(t.formaPagamentoId) || 0) + Number(t.valor || 0)));
+    const valor = Number(t.valor);
+    // Mesma guarda de sumDespesas: um valor ilegível não pode contaminar o
+    // total do grupo inteiro.
+    if (!Number.isFinite(valor)) continue;
+    const chave = t.formaPagamentoId || SEM_FORMA;
+    mapa.set(chave, round2((mapa.get(chave) || 0) + valor));
   }
   return mapa;
 }
