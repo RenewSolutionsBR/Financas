@@ -709,7 +709,7 @@ Leia a seção 5.7 do spec antes de começar.
 - Modify: `tests/index.js`
 
 **Interfaces:**
-- Consumes: `core/dates.js` (`isValidISO`), `core/ids.js` (`slugId`)
+- Consumes: `core/dates.js` (`isValidISO`), `core/money.js` (`round2`), `core/ids.js` (`stableHash`)
 - Produces:
   - `DB_NAME = 'financas'`, `DB_VERSION = 2`, `LEGACY_DB_NAME = 'livro-de-gastos'`
   - `STORES` — array de `{ nome, keyPath, indices: [{ nome, keyPath, unique }] }`
@@ -772,7 +772,7 @@ import { LEGACY_V1 } from './fixtures/legacy-v1.js';
 const OPC = { cartaoTitularId: 'acc_cartao_1', formaCreditoId: 'pm_credito' };
 
 describe('db-schema: stores', () => {
-  it('declara os seis stores da v2', () => {
+  it('declara os sete stores da v2', () => {
     assertDeepEqual(
       STORES.map((s) => s.nome).sort(),
       ['accounts', 'categories', 'classificationRules', 'meta', 'paymentMethods', 'statements', 'transactions'].sort()
@@ -862,6 +862,51 @@ describe('db-schema: migração v1 para v2', () => {
     assert(avisos.some((a) => a.toLowerCase().includes('fatura')));
   });
 
+  it('trata previsto gravado como numero, que e como o app anterior grava', () => {
+    const legado = { expenses: [
+      { id: 'p1', descricao: 'A', valor: 10, data: '2026-06-01', categoria: 'casa', previsto: 1 },
+      { id: 'p0', descricao: 'B', valor: 10, data: '2026-06-01', categoria: 'casa', previsto: 0 },
+      { id: 'pt', descricao: 'C', valor: 10, data: '2026-06-01', categoria: 'casa', previsto: true },
+    ] };
+    const porId = new Map(migrateV1ToV2(legado, OPC).transactions.map((t) => [t.id, t]));
+    assertEqual(porId.get('p1').previsto, true);
+    assertEqual(porId.get('p0').previsto, false);
+    assertEqual(porId.get('pt').previsto, true);
+  });
+
+  it('nao deixa duas faturas sem vencimento colidirem no mesmo id', () => {
+    const legado = { expenses: [], faturas: [
+      { arquivo: 'fatura-A.pdf', rows: [{ valor: 1 }] },
+      { arquivo: 'fatura-B.pdf', rows: [{ valor: 2 }, { valor: 3 }] },
+    ] };
+    const { statements, avisos } = migrateV1ToV2(legado, OPC);
+    assertEqual(statements.length, 2);
+    assert(statements[0].id !== statements[1].id);
+    assertEqual(statements[0].vencimento, null);
+    assertEqual(avisos.filter((a) => /vencimento/i.test(a)).length, 2);
+  });
+
+  it('preserva campo desconhecido do app anterior em vez de descarta-lo', () => {
+    const legado = { expenses: [
+      { id: 'x', descricao: 'A', valor: 10, data: '2026-06-01', categoria: 'casa', observacao: 'nota do usuario' },
+    ] };
+    assertEqual(migrateV1ToV2(legado, OPC).transactions[0].observacao, 'nota do usuario');
+  });
+
+  it('le valor em string e normaliza negativo, mas descarta ilegivel com aviso', () => {
+    const legado = { expenses: [
+      { id: 's', descricao: 'A', valor: '23.50', data: '2026-06-01', categoria: 'casa' },
+      { id: 'n', descricao: 'B', valor: -50, data: '2026-06-01', categoria: 'casa' },
+      { id: 'z', descricao: 'C', valor: 'abc', data: '2026-06-01', categoria: 'casa' },
+    ] };
+    const { transactions, avisos } = migrateV1ToV2(legado, OPC);
+    const porId = new Map(transactions.map((t) => [t.id, t]));
+    assertEqual(porId.get('s').valor, 23.5);
+    assertEqual(porId.get('n').valor, 50);
+    assertEqual(porId.has('z'), false);
+    assert(avisos.some((a) => a.includes('"z"')));
+  });
+
   it('tolera legado vazio', () => {
     const r = migrateV1ToV2({}, OPC);
     assertDeepEqual(r.transactions, []);
@@ -892,6 +937,8 @@ Expected: FAIL — `Cannot find module '../src/core/db-schema.js'`.
 // navegador — e a migração é onde um erro custa os dados reais do usuário.
 
 import { isValidISO } from './dates.js';
+import { round2 } from './money.js';
+import { stableHash } from './ids.js';
 
 export const DB_NAME = 'financas';
 export const DB_VERSION = 2;
@@ -942,46 +989,86 @@ export function migrateV1ToV2(legado, opcoes) {
   const faturas = (legado && legado.faturas) || [];
   const avisos = [];
 
+// O app anterior e o backup .xlsx gravam `previsto` ora como booleano, ora
+// como 1/0. Comparar com `=== true` classificava uma parcela ainda prevista
+// como despesa efetivada, e ela passava a somar no total de gastos.
+function ehVerdadeiro(v) {
+  if (v === true || v === 1) return true;
+  if (typeof v === 'string') {
+    const s = v.trim().toLowerCase();
+    return s === 'true' || s === '1';
+  }
+  return false;
+}
+
+// Devolve o valor positivo, ou null se for ilegivel. Null nunca vira zero: um
+// valor que o app nao entende precisa parar na frente do usuario em vez de se
+// disfarcar de lancamento de R$ 0,00. Mesmo principio de parseMoneyBR.
+function valorMigrado(v) {
+  if (typeof v === 'string' && v.trim() === '') return null;
+  const n = typeof v === 'string' ? Number(v.trim()) : v;
+  if (typeof n !== 'number' || !Number.isFinite(n)) return null;
+  return Math.abs(round2(n));
+}
+
   const transactions = [];
   for (const e of expenses) {
     if (!isValidISO(e.data)) {
       avisos.push(`Lançamento "${e.id}" foi descartado por não ter data válida.`);
       continue;
     }
+    const valor = valorMigrado(e.valor);
+    if (valor === null) {
+      avisos.push(`Lançamento "${e.id}" foi descartado porque o valor "${e.valor}" não pôde ser lido.`);
+      continue;
+    }
     const t = {
+      // Espalha a origem primeiro para preservar campos que este codigo nao
+      // conhece. O app anterior pode ter acumulado campos que ninguem previu
+      // aqui, e descarta-los em silencio e exatamente o defeito do backup
+      // .xlsx que esta funcao existe para nao repetir.
+      ...e,
       id: e.id,
       data: e.data,
       descricao: e.descricao || '',
-      valor: Math.abs(Number(e.valor) || 0),
+      valor,
       categoria: e.categoria || 'a_classificar',
       natureza: 'despesa',
       formaPagamentoId: formaCreditoId,
       contaId: cartaoTitularId,
       origem: 'manual',
-      previsto: e.previsto === true,
+      previsto: ehVerdadeiro(e.previsto),
     };
-    // Campos opcionais só entram quando existiam, para não poluir o registro
-    // com um monte de undefined e para o teste de idempotência ser exato.
-    if (e.parcelaKey) t.parcelaKey = e.parcelaKey;
-    if (e.parcela_atual != null) t.parcela_atual = e.parcela_atual;
-    if (e.parcela_total != null) t.parcela_total = e.parcela_total;
-    if (e.conciliadoAutomaticamente) t.conciliadoAutomaticamente = true;
-    if (e.origemManual) t.origemManual = true;
-    if (e.grupo_parcela) t.grupo_parcela = e.grupo_parcela;
     transactions.push(t);
   }
 
-  const statements = faturas.map((f) => ({
-    id: `${cartaoTitularId}|fatura|${f.vencimento}`,
-    tipo: 'fatura',
-    contaId: cartaoTitularId,
-    adaptador: 'santander-cartao-pdf',
-    arquivo: f.arquivo || '',
-    importadoEm: f.importedAt || null,
-    vencimento: f.vencimento,
-    dataCorte: f.dataCorte || null,
-    rows: f.rows || [],
-  }));
+  const statements = [];
+  for (const f of faturas) {
+    // Sem vencimento valido, duas faturas geravam o mesmo id terminado em
+    // "undefined" e a segunda sobrescrevia a primeira no banco, em silencio.
+    // O hash do conteudo da fatura da uma referencia estavel e distinta.
+    let referencia = f.vencimento;
+    if (!isValidISO(f.vencimento)) {
+      referencia = 'sem-vencimento-' + stableHash([
+        f.arquivo || '', f.dataCorte || '', (f.rows || []).length, f.importedAt || '',
+      ]);
+      avisos.push(
+        `A fatura "${f.arquivo || 'sem nome'}" não tem vencimento válido e foi importada ` +
+        `com uma referência gerada. Confira-a na aba Conciliação.`
+      );
+    }
+    statements.push({
+      id: `${cartaoTitularId}|fatura|${referencia}`,
+      tipo: 'fatura',
+      contaId: cartaoTitularId,
+      adaptador: 'santander-cartao-pdf',
+      arquivo: f.arquivo || '',
+      importadoEm: f.importedAt || null,
+      vencimento: isValidISO(f.vencimento) ? f.vencimento : null,
+      dataCorte: f.dataCorte || null,
+      rows: f.rows || [],
+    });
+  }
 
   if (expenses.length > 0 && faturas.length === 0) {
     avisos.push(
