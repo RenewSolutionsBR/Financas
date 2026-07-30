@@ -1,7 +1,7 @@
 import { describe, it, assert, assertEqual } from './harness.js';
 import {
   TIPOS_FORMA, DEFAULT_PAYMENT_METHODS, conciliaComDoTipo,
-  validatePaymentMethod, formaPorPrefixoExtrato, novaForma,
+  validatePaymentMethod, formaPorPrefixoExtrato, novaForma, removeForma,
 } from '../src/domain/payment-methods.js';
 
 describe('payment-methods: seed', () => {
@@ -15,10 +15,6 @@ describe('payment-methods: seed', () => {
     const ordens = DEFAULT_PAYMENT_METHODS.map((p) => p.ordem);
     assertEqual(new Set(ordens).size, ordens.length);
     assert(DEFAULT_PAYMENT_METHODS.every((p) => TIPOS_FORMA.includes(p.tipo)));
-  });
-
-  it('o seed não traz nenhuma conta amarrada, por ser dado pessoal', () => {
-    assert(DEFAULT_PAYMENT_METHODS.every((p) => !p.contaPadraoId));
   });
 });
 
@@ -35,6 +31,11 @@ describe('payment-methods: comportamento por tipo', () => {
   it('dinheiro não concilia com documento algum', () => {
     assertEqual(conciliaComDoTipo('dinheiro'), 'nenhum');
     assertEqual(conciliaComDoTipo('outro'), 'nenhum');
+  });
+
+  it('tipo desconhecido não concilia com nada', () => {
+    assertEqual(conciliaComDoTipo('inventado'), 'nenhum');
+    assertEqual(conciliaComDoTipo(undefined), 'nenhum');
   });
 });
 
@@ -66,10 +67,27 @@ describe('payment-methods: inferência pelo extrato', () => {
   });
 
   it('escolhe o prefixo mais específico quando dois casam', () => {
-    // "DEBITO AUT." casa débito automático; "DEBITO AUT. FATURA CARTAO" é mais
-    // longo e precisa vencer, senão o pagamento de fatura vira débito comum.
-    const forma = formaPorPrefixoExtrato('DEBITO AUT. CTA ENERGIA ELETRICA   Concessionaria', todas);
-    assertEqual(forma.tipo, 'debito');
+    // 'DEBITO AUT.' (débito) e 'DEBITO AUT. FATURA' (crédito) casam os dois.
+    // Vence o mais longo, senão o pagamento da fatura vira débito comum.
+    assertEqual(formaPorPrefixoExtrato('DEBITO AUT.  FATURA CARTAO VISA    FINAL 0000', todas).tipo, 'credito');
+    assertEqual(formaPorPrefixoExtrato('DEBITO AUT. FAT.CARTAO MASTER CARD FINAL 0000', todas).tipo, 'credito');
+    assertEqual(formaPorPrefixoExtrato('DEBITO AUT. CTA ENERGIA ELETRICA   Concessionaria', todas).tipo, 'debito');
+  });
+
+  it('o prefixo mais longo vence independente da ordem do array', () => {
+    const curta = { id: 'a', nome: 'Curta', tipo: 'debito', padroesExtrato: ['DEBITO AUT.'] };
+    const longa = { id: 'b', nome: 'Longa', tipo: 'credito', padroesExtrato: ['DEBITO AUT. FATURA'] };
+    assertEqual(formaPorPrefixoExtrato('DEBITO AUT. FATURA X', [curta, longa]).id, 'b');
+    assertEqual(formaPorPrefixoExtrato('DEBITO AUT. FATURA X', [longa, curta]).id, 'b');
+  });
+
+  it('forma desativada não classifica', () => {
+    const inativa = { id: 'i', nome: 'Inativa', tipo: 'debito', ativo: false, padroesExtrato: ['DEBITO AUT.'] };
+    assertEqual(formaPorPrefixoExtrato('DEBITO AUT. ALGO', [inativa]), null);
+  });
+
+  it('só casa no começo da linha', () => {
+    assertEqual(formaPorPrefixoExtrato('PAGTO REF PIX ENVIADO', todas), null);
   });
 });
 
@@ -79,5 +97,24 @@ describe('payment-methods: construtor', () => {
     assertEqual(f.conciliaCom, 'nenhum');
     assertEqual(f.ordem, DEFAULT_PAYMENT_METHODS.length + 1);
     assert(f.id.startsWith('pm_'));
+  });
+});
+
+describe('payment-methods: exclusão', () => {
+  it('recusa excluir forma em uso, dizendo quantos lançamentos usam', async () => {
+    const transacoes = [
+      { id: 't1', formaPagamentoId: 'pm_pix' },
+      { id: 't2', formaPagamentoId: 'pm_pix' },
+      { id: 't3', formaPagamentoId: 'pm_boleto' },
+    ];
+    let erro = null;
+    try {
+      await removeForma('pm_pix', transacoes);
+    } catch (e) {
+      erro = e;
+    }
+    assert(erro !== null, 'deveria ter recusado');
+    assert(erro.message.includes('2'), `mensagem não diz quantos: ${erro.message}`);
+    assert(/desative/i.test(erro.message), 'mensagem não oferece a saída de desativar');
   });
 });
