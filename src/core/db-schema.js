@@ -3,6 +3,8 @@
 // navegador — e a migração é onde um erro custa os dados reais do usuário.
 
 import { isValidISO } from './dates.js';
+import { round2 } from './money.js';
+import { stableHash } from './ids.js';
 
 export const DB_NAME = 'financas';
 export const DB_VERSION = 2;
@@ -39,6 +41,28 @@ export const STORES = [
   { nome: 'meta', keyPath: 'key', indices: [] },
 ];
 
+// O app anterior e o backup .xlsx gravam previsto ora como booleano, ora como
+// 1/0. Comparar com === true classificava uma parcela prevista como despesa
+// efetivada, e ela passava a somar no total de gastos.
+function ehVerdadeiro(v) {
+  if (v === true || v === 1) return true;
+  if (typeof v === 'string') {
+    const s = v.trim().toLowerCase();
+    return s === 'true' || s === '1';
+  }
+  return false;
+}
+
+// Devolve o valor positivo, ou null se for ilegivel. Null nunca vira zero: um
+// valor que o app nao entende precisa parar na frente do usuario, e nao se
+// disfarcar de lancamento de R$ 0,00. Mesmo principio de parseMoneyBR.
+function valorMigrado(v) {
+  const n = typeof v === 'string' ? Number(v.trim()) : v;
+  if (typeof n !== 'number' || !Number.isFinite(n)) return null;
+  if (typeof v === 'string' && v.trim() === '') return null;
+  return Math.abs(round2(n));
+}
+
 /**
  * Converte o conteúdo do banco do app anterior no schema v2.
  *
@@ -59,40 +83,58 @@ export function migrateV1ToV2(legado, opcoes) {
       avisos.push(`Lançamento "${e.id}" foi descartado por não ter data válida.`);
       continue;
     }
+    const valor = valorMigrado(e.valor);
+    if (valor === null) {
+      avisos.push(`Lançamento "${e.id}" foi descartado porque o valor "${e.valor}" não pôde ser lido.`);
+      continue;
+    }
     const t = {
+      // Espalha a origem primeiro para preservar campos que este código não
+      // conhece. O app anterior pode ter acumulado campos que ninguém previu
+      // aqui, e descartá-los em silêncio é exatamente o defeito do backup
+      // .xlsx que esta função existe para não repetir.
+      ...e,
       id: e.id,
       data: e.data,
       descricao: e.descricao || '',
-      valor: Math.abs(Number(e.valor) || 0),
+      valor,
       categoria: e.categoria || 'a_classificar',
       natureza: 'despesa',
       formaPagamentoId: formaCreditoId,
       contaId: cartaoTitularId,
       origem: 'manual',
-      previsto: e.previsto === true,
+      previsto: ehVerdadeiro(e.previsto),
     };
-    // Campos opcionais só entram quando existiam, para não poluir o registro
-    // com um monte de undefined e para o teste de idempotência ser exato.
-    if (e.parcelaKey) t.parcelaKey = e.parcelaKey;
-    if (e.parcela_atual != null) t.parcela_atual = e.parcela_atual;
-    if (e.parcela_total != null) t.parcela_total = e.parcela_total;
-    if (e.conciliadoAutomaticamente) t.conciliadoAutomaticamente = true;
-    if (e.origemManual) t.origemManual = true;
-    if (e.grupo_parcela) t.grupo_parcela = e.grupo_parcela;
     transactions.push(t);
   }
 
-  const statements = faturas.map((f) => ({
-    id: `${cartaoTitularId}|fatura|${f.vencimento}`,
-    tipo: 'fatura',
-    contaId: cartaoTitularId,
-    adaptador: 'santander-cartao-pdf',
-    arquivo: f.arquivo || '',
-    importadoEm: f.importedAt || null,
-    vencimento: f.vencimento,
-    dataCorte: f.dataCorte || null,
-    rows: f.rows || [],
-  }));
+  const statements = [];
+  for (const f of faturas) {
+    // Sem vencimento válido, duas faturas geravam o mesmo id e a segunda
+    // sobrescrevia a primeira no banco. O hash do conteúdo da fatura dá uma
+    // referência estável e distinta, e o aviso manda o usuário conferir.
+    let referencia = f.vencimento;
+    if (!isValidISO(f.vencimento)) {
+      referencia = 'sem-vencimento-' + stableHash([
+        f.arquivo || '', f.dataCorte || '', (f.rows || []).length, f.importedAt || '',
+      ]);
+      avisos.push(
+        `A fatura "${f.arquivo || 'sem nome'}" não tem vencimento válido e foi importada ` +
+        `com uma referência gerada. Confira-a na aba Conciliação.`
+      );
+    }
+    statements.push({
+      id: `${cartaoTitularId}|fatura|${referencia}`,
+      tipo: 'fatura',
+      contaId: cartaoTitularId,
+      adaptador: 'santander-cartao-pdf',
+      arquivo: f.arquivo || '',
+      importadoEm: f.importedAt || null,
+      vencimento: isValidISO(f.vencimento) ? f.vencimento : null,
+      dataCorte: f.dataCorte || null,
+      rows: f.rows || [],
+    });
+  }
 
   if (expenses.length > 0 && faturas.length === 0) {
     avisos.push(

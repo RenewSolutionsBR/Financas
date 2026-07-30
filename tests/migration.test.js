@@ -5,7 +5,7 @@ import { LEGACY_V1 } from './fixtures/legacy-v1.js';
 const OPC = { cartaoTitularId: 'acc_cartao_1', formaCreditoId: 'pm_credito' };
 
 describe('db-schema: stores', () => {
-  it('declara os seis stores da v2', () => {
+  it('declara os sete stores da v2', () => {
     assertDeepEqual(
       STORES.map((s) => s.nome).sort(),
       ['accounts', 'categories', 'classificationRules', 'meta', 'paymentMethods', 'statements', 'transactions'].sort()
@@ -106,5 +106,52 @@ describe('db-schema: migração v1 para v2', () => {
     const { transactions, avisos } = migrateV1ToV2(legado, OPC);
     assertEqual(transactions.length, 0);
     assert(avisos.some((a) => a.includes('x')));
+  });
+
+  it('trata previsto gravado como numero, que e como o app anterior grava', () => {
+    const legado = { expenses: [
+      { id: 'p1', descricao: 'A', valor: 10, data: '2026-06-01', categoria: 'casa', previsto: 1 },
+      { id: 'p0', descricao: 'B', valor: 10, data: '2026-06-01', categoria: 'casa', previsto: 0 },
+      { id: 'pt', descricao: 'C', valor: 10, data: '2026-06-01', categoria: 'casa', previsto: true },
+      { id: 'pn', descricao: 'D', valor: 10, data: '2026-06-01', categoria: 'casa' },
+    ] };
+    const porId = new Map(migrateV1ToV2(legado, OPC).transactions.map((t) => [t.id, t]));
+    assertEqual(porId.get('p1').previsto, true);
+    assertEqual(porId.get('p0').previsto, false);
+    assertEqual(porId.get('pt').previsto, true);
+    assertEqual(porId.get('pn').previsto, false);
+  });
+
+  it('nao deixa duas faturas sem vencimento colidirem no mesmo id', () => {
+    const legado = { expenses: [], faturas: [
+      { arquivo: 'fatura-A.pdf', rows: [{ valor: 1 }] },
+      { arquivo: 'fatura-B.pdf', rows: [{ valor: 2 }, { valor: 3 }] },
+    ] };
+    const { statements, avisos } = migrateV1ToV2(legado, OPC);
+    assertEqual(statements.length, 2);
+    assert(statements[0].id !== statements[1].id);
+    assertEqual(statements[0].vencimento, null);
+    assertEqual(avisos.filter((a) => /vencimento/i.test(a)).length, 2);
+  });
+
+  it('preserva campo desconhecido do app anterior em vez de descarta-lo', () => {
+    const legado = { expenses: [
+      { id: 'x', descricao: 'A', valor: 10, data: '2026-06-01', categoria: 'casa', observacao: 'nota do usuario' },
+    ] };
+    assertEqual(migrateV1ToV2(legado, OPC).transactions[0].observacao, 'nota do usuario');
+  });
+
+  it('le valor em string e normaliza negativo, mas descarta ilegivel com aviso', () => {
+    const legado = { expenses: [
+      { id: 's', descricao: 'A', valor: '23.50', data: '2026-06-01', categoria: 'casa' },
+      { id: 'n', descricao: 'B', valor: -50, data: '2026-06-01', categoria: 'casa' },
+      { id: 'z', descricao: 'C', valor: 'abc', data: '2026-06-01', categoria: 'casa' },
+    ] };
+    const { transactions, avisos } = migrateV1ToV2(legado, OPC);
+    const porId = new Map(transactions.map((t) => [t.id, t]));
+    assertEqual(porId.get('s').valor, 23.5);
+    assertEqual(porId.get('n').valor, 50);
+    assertEqual(porId.has('z'), false);
+    assert(avisos.some((a) => a.includes('"z"')));
   });
 });
