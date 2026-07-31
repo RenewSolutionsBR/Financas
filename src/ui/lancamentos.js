@@ -1,7 +1,8 @@
 // Aba Lançamentos: a tela de uso diário, onde cada gasto é digitado. A regra
 // de ouro do sistema (o que conta como gasto) mora em domain/transactions.js;
 // esta tela só coleta o formulário e delega validação e persistência ao
-// domínio.
+// domínio — inclusive a marcação visual do que não é gasto, que usa
+// contaComoGasto() em vez de reimplementar a metade da regra.
 //
 // Conta e forma de pagamento desativadas somem do seletor do formulário,
 // exceto quando são o valor já gravado no lançamento em edição: um lançamento
@@ -12,7 +13,7 @@
 import { el, toast, confirmar } from './components.js';
 import {
   listTransactions, saveTransaction, removeTransaction,
-  novaTransaction, validateTransaction, filterTransactions, sumDespesas, NATUREZAS,
+  novaTransaction, validateTransaction, filterTransactions, sumDespesas, contaComoGasto, NATUREZAS,
 } from '../domain/transactions.js';
 import { listCategorias } from '../domain/categories.js';
 import { listFormas } from '../domain/payment-methods.js';
@@ -24,16 +25,72 @@ import * as storage from '../core/storage.js';
 let filtros = { mes: monthKey(todayISO()) };
 let editandoId = null;
 
+// Chamado pelo roteador (app.js) ao entrar na aba vindo de outro lugar —
+// nunca pelo re-render interno da própria tela, que precisa preservar o
+// filtro e a edição em curso. Sem isso, editar um lançamento, ir para
+// Cadastros e voltar deixava o formulário armado para sobrescrever um
+// lançamento antigo, e o filtro de mês/forma anterior continuava aplicado
+// sem nenhum indício.
+export function resetLancamentos() {
+  editandoId = null;
+  filtros = { mes: monthKey(todayISO()) };
+}
+
 // Pura, sem DOM: um item inativo some da lista, a não ser que seja `idAtual` —
-// o valor já gravado no registro em edição. Sem a exceção, editar um
-// lançamento antigo trocaria a conta ou a forma dele por "sem conta"/nenhuma
-// seleção assim que o cadastro fosse desativado, o que o usuário não pediu.
+// o valor já gravado no registro em edição. `idAtual` só conta quando não é
+// null/undefined: sem essa guarda, dois itens sem `id` (ex.: cadastro
+// corrompido vindo de uma restauração de backup antiga) se igualariam por
+// `undefined === undefined` e um inativo sem id voltaria a aparecer mesmo
+// fora de edição.
 export function opcoesAtivas(lista, idAtual) {
-  return (lista || []).filter((item) => item.ativo !== false || item.id === idAtual);
+  return (lista || []).filter((item) => item.ativo !== false || (idAtual != null && item.id === idAtual));
 }
 
 function rotuloComStatus(item) {
   return item.ativo === false ? `${item.nome} — desativada` : item.nome;
+}
+
+// Pura: decide o que o campo Valor significa antes de qualquer gravação.
+// parseMoneyBR devolve null tanto para "vazio" quanto para "não entendi o
+// formato" (ex.: "12.30", ponto decimal ambíguo) — aqui os dois casos são
+// distinguidos, porque o segundo merece dizer ao usuário que o formato é
+// inválido, em vez de colapsar para 0 e deixar a guarda genérica do domínio
+// ("valor precisa ser maior que zero") reclamar de um valor que na
+// verdade nunca chegou a existir.
+export function interpretarValor(textoDigitado) {
+  const texto = String(textoDigitado || '').trim();
+  if (!texto) return { valor: 0, erro: null };
+  const valor = parseMoneyBR(texto);
+  if (valor === null) {
+    return { valor: 0, erro: 'Valor inválido. Use vírgula para os centavos, como 12,30 (sem ponto).' };
+  }
+  return { valor: Math.abs(valor), erro: null };
+}
+
+// Pura: a marcação visual de "não é gasto" tem que ser a MESMA regra que
+// decide o total (contaComoGasto, usada por sumDespesas) — nunca uma cópia
+// parcial dela. Uma despesa prevista (previsto: true) não conta como gasto,
+// igual a receita/transferência/pagamento de fatura, e por isso também
+// precisa da marca; checar só `natureza !== 'despesa'` deixava passar
+// batido uma despesa prevista, que aparecia lado a lado com gasto real sem
+// nenhuma pista de que não somava no total.
+export function classeDoItem(t) {
+  return `item-lancamento${contaComoGasto(t) ? '' : ' nao-gasto'}`;
+}
+
+// Puras: derivam o que a barra de filtros deve mostrar a partir de `filtros`,
+// para o controle nunca divergir do estado que ele supostamente representa.
+// A barra inteira é reconstruída a cada renderLancamentos() (mesmo padrão de
+// `inpMes`, que já lia `filtros.mes` no value); sem espelhar esses dois
+// também, marcar/desmarcar "só automático" ou trocar a forma no filtro
+// parecia não ter efeito nenhum no controle, mesmo afetando o total de
+// verdade — um total que mente sobre o que está filtrando.
+export function formaFiltroAtual(filtros) {
+  return ((filtros || {}).formas || [])[0] || '';
+}
+
+export function somenteAutoFiltroAtual(filtros) {
+  return !!(filtros || {}).somenteAuto;
 }
 
 export async function renderLancamentos() {
@@ -95,34 +152,52 @@ async function formulario(ctx, transacoes) {
     el('option', { value: n, text: rotuloNatureza(n), ...(emEdicao && emEdicao.natureza === n ? { selected: 'selected' } : {}) })
   ));
 
+  const botaoSalvar = el('button', { class: 'btn btn-primario', type: 'submit', text: emEdicao ? 'Salvar alterações' : 'Lançar' });
+
+  // Guarda de reentrância: sem ela, dois disparos de submit antes do primeiro
+  // `await saveTransaction` resolver criam dois registros distintos
+  // (novaTransaction gera um id novo a cada chamada). A checagem em si é
+  // síncrona e roda antes de qualquer await, então bloqueia mesmo um segundo
+  // disparo que chega no mesmo tick do primeiro.
+  let salvando = false;
   const salvar = async () => {
-    const data = parseDateBR(inpData.value);
-    const valor = parseMoneyBR(inpValor.value);
-    const base = {
-      data,
-      descricao: inpDescricao.value.trim(),
-      valor: valor === null ? 0 : Math.abs(valor),
-      categoria: selCategoria.value,
-      formaPagamentoId: selForma.value,
-      contaId: selConta.value || undefined,
-      natureza: selNatureza.value,
-    };
-    const registro = emEdicao ? { ...emEdicao, ...base } : novaTransaction(base);
+    if (salvando) return;
+    salvando = true;
+    botaoSalvar.disabled = true;
+    try {
+      const { valor, erro: erroValor } = interpretarValor(inpValor.value);
+      if (erroValor) return toast(erroValor, 'erro');
 
-    // Se o usuário mexeu na categoria, a escolha deixa de ser palpite da máquina.
-    if (emEdicao && emEdicao.categoria !== base.categoria) {
-      delete registro.classificadoAutomaticamente;
-      delete registro.regraId;
+      const data = parseDateBR(inpData.value);
+      const base = {
+        data,
+        descricao: inpDescricao.value.trim(),
+        valor,
+        categoria: selCategoria.value,
+        formaPagamentoId: selForma.value,
+        contaId: selConta.value || undefined,
+        natureza: selNatureza.value,
+      };
+      const registro = emEdicao ? { ...emEdicao, ...base } : novaTransaction(base);
+
+      // Se o usuário mexeu na categoria, a escolha deixa de ser palpite da máquina.
+      if (emEdicao && emEdicao.categoria !== base.categoria) {
+        delete registro.classificadoAutomaticamente;
+        delete registro.regraId;
+      }
+
+      const erros = validateTransaction(registro);
+      if (erros.length) return toast(erros.join(' '), 'erro');
+
+      await saveTransaction(registro);
+      await storage.setMeta('ultimaFormaUsada', registro.formaPagamentoId);
+      editandoId = null;
+      toast(emEdicao ? 'Lançamento atualizado.' : 'Lançamento salvo.', 'ok');
+      await renderLancamentos();
+    } finally {
+      salvando = false;
+      botaoSalvar.disabled = false;
     }
-
-    const erros = validateTransaction(registro);
-    if (erros.length) return toast(erros.join(' '), 'erro');
-
-    await saveTransaction(registro);
-    await storage.setMeta('ultimaFormaUsada', registro.formaPagamentoId);
-    editandoId = null;
-    toast(emEdicao ? 'Lançamento atualizado.' : 'Lançamento salvo.', 'ok');
-    await renderLancamentos();
   };
 
   return el('form', { class: 'form-lancamento', onsubmit: (ev) => { ev.preventDefault(); salvar(); } }, [
@@ -131,7 +206,7 @@ async function formulario(ctx, transacoes) {
     el('div', { class: 'linha-form' }, [campo('Categoria', selCategoria), campo('Forma de pagamento', selForma)]),
     el('div', { class: 'linha-form' }, [campo('Conta / cartão', selConta), campo('Natureza', selNatureza)]),
     el('div', { class: 'acoes' }, [
-      el('button', { class: 'btn btn-primario', type: 'submit', text: emEdicao ? 'Salvar alterações' : 'Lançar' }),
+      botaoSalvar,
       emEdicao ? el('button', { class: 'btn', type: 'button', text: 'Cancelar', onclick: async () => { editandoId = null; await renderLancamentos(); } }) : null,
     ]),
   ]);
@@ -156,16 +231,17 @@ function barraFiltros(ctx) {
 
   // A barra de filtro mostra todas as formas, inclusive desativadas: o usuário
   // pode querer olhar o histórico de uma forma que não usa mais.
+  const formaAtual = formaFiltroAtual(filtros);
   const selForma = el('select', {}, [
-    el('option', { value: '', text: 'Todas as formas' }),
-    ...ctx.formas.map((f) => el('option', { value: f.id, text: rotuloComStatus(f) })),
+    el('option', { value: '', text: 'Todas as formas', ...(formaAtual === '' ? { selected: 'selected' } : {}) }),
+    ...ctx.formas.map((f) => el('option', { value: f.id, text: rotuloComStatus(f), ...(f.id === formaAtual ? { selected: 'selected' } : {}) })),
   ]);
   selForma.addEventListener('change', async () => {
     filtros.formas = selForma.value ? [selForma.value] : [];
     await renderLancamentos();
   });
 
-  const chkAuto = el('input', { type: 'checkbox' });
+  const chkAuto = el('input', { type: 'checkbox', ...(somenteAutoFiltroAtual(filtros) ? { checked: 'checked' } : {}) });
   chkAuto.addEventListener('change', async () => { filtros.somenteAuto = chkAuto.checked; await renderLancamentos(); });
 
   return el('div', { class: 'filtros' }, [
@@ -180,7 +256,7 @@ function listagem(visiveis, ctx) {
   const nome = (lista, id) => (lista.find((x) => x.id === id) || {}).nome || '—';
 
   return el('div', { class: 'lista-lancamentos' }, visiveis.map((t) =>
-    el('div', { class: `item-lancamento ${t.natureza !== 'despesa' ? 'nao-gasto' : ''}` }, [
+    el('div', { class: classeDoItem(t) }, [
       el('div', { class: 'lanc-principal' }, [
         el('span', { class: 'lanc-descricao', text: t.descricao }),
         t.classificadoAutomaticamente ? el('span', { class: 'selo-auto', title: 'Categoria aplicada automaticamente', text: 'auto' }) : null,

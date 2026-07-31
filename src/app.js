@@ -6,7 +6,7 @@ import { toast } from './ui/components.js';
 import { seedCategoriasIfEmpty } from './domain/categories.js';
 import { seedFormasIfEmpty } from './domain/payment-methods.js';
 import { renderCadastros } from './ui/cadastros.js';
-import { renderLancamentos } from './ui/lancamentos.js';
+import { renderLancamentos, resetLancamentos } from './ui/lancamentos.js';
 
 // A tela restante entra na tarefa 14. Ela acrescenta o próprio import e a
 // própria linha em RENDERIZADORES ao ser criada — nada de import comentado
@@ -17,6 +17,13 @@ const RENDERIZADORES = {
 };
 
 async function renderizar(aba) {
+  // Lancamentos guarda estado entre renders de propósito (filtro aplicado,
+  // edição em curso) porque o re-render interno da própria tela reusa esse
+  // estado — é assim que trocar o filtro de mês continua filtrado. Mas entrar
+  // na aba vindo de outro lugar (clique na barra de abas) precisa começar
+  // limpo: sem isso, editar um lançamento, ir para Cadastros e voltar reabria
+  // o formulário armado para sobrescrever o lançamento antigo.
+  if (aba === 'Lancamentos') resetLancamentos();
   const fn = RENDERIZADORES[aba];
   if (fn) await fn();
 }

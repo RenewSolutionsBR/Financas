@@ -181,6 +181,13 @@ button { cursor: pointer; }
   font-weight: 600;
   font-family: var(--font-body);
 }
+/* Feedback visual da guarda de reentrância do formulário de lançamento: o
+   botão fica visivelmente desabilitado entre o clique e o fim do salvamento,
+   em vez de parecer destravado enquanto um segundo clique já não faz nada. */
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
 /* Última ação do grupo é a principal — convenção usada por abrirModal, que
    sempre lista a ação afirmativa por último. */
 .modal-acoes .btn:last-child {
