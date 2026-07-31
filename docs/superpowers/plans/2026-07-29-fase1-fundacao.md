@@ -3976,6 +3976,10 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 ### Task 15: PWA e publicação
 
+> **AJUSTADO em 2026-07-31, decorrente da redução de escopo da Task 14:** `src/importers/legacy-idb.js` foi apagado e não deve constar do `PRECACHE` do service worker. As verificações do Step 5 que dependiam da migração ao vivo do app anterior foram substituídas por verificações do que existe de fato hoje.
+>
+> **Também ajustado o momento da publicação:** esta task ainda está sendo executada na branch `fase-1-fundacao`, e a revisão final da branch inteira (que ainda não rodou) pode gerar correções. Publicar no GitHub Pages e instalar no celular é uma ação pouco reversível e visível para fora do processo de revisão — o Step 4 original (`git push origin main` + ativar Pages) fica adiado para depois da revisão final e do merge via `finishing-a-development-branch`, não dentro desta task. Esta task entrega e verifica a infraestrutura da PWA na própria branch; a publicação de fato é o último passo do fechamento da fase.
+
 **Files:**
 - Create: `sw.js`, `manifest.webmanifest`
 - Modify: `src/version.js`, `README.md`
@@ -4023,7 +4027,7 @@ const PRECACHE = [
   './src/core/dates.js', './src/core/text.js', './src/core/ids.js',
   './src/domain/categories.js', './src/domain/accounts.js',
   './src/domain/payment-methods.js', './src/domain/transactions.js',
-  './src/importers/backup-xlsx.js', './src/importers/legacy-idb.js',
+  './src/importers/backup-xlsx.js',
   './src/ui/components.js', './src/ui/tabs.js', './src/ui/cadastros.js',
   './src/ui/cadastros-contas.js', './src/ui/cadastros-formas.js',
   './src/ui/cadastros-categorias.js', './src/ui/cadastros-backup.js',
@@ -4077,35 +4081,29 @@ Expected: PASS, sem nenhuma falha.
 Abra `http://localhost:8000/tools/tests.html`.
 Expected: todos verdes, incluindo os de navegador.
 
-- [ ] **Step 4: Publicar e ligar o GitHub Pages**
+- [ ] **Step 4: Verificar a PWA localmente, na própria branch**
 
-```bash
-git push origin main
-gh api -X POST repos/RenewSolutionsBR/Financas/pages -f 'source[branch]=main' -f 'source[path]=/'
-```
+Sem publicar ainda (isso fica para depois da revisão final da branch inteira — ver nota no topo desta task). Usando o servidor estático local (a mesma origem já usada nos testes de navegador desta fase):
 
-Aguarde o build e abra `https://renewsolutionsbr.github.io/Financas/`.
+1. Abra o app pela raiz do servidor local, confirme no DevTools → Application → Service Workers que `sw.js` registrou e instalou, e que `caches` tem uma entrada `livro-de-gastos-<versão>` com o `PRECACHE` inteiro.
+2. Simule offline (DevTools → Network → Offline) e recarregue: o app deve abrir normalmente, servido do cache.
+3. Suba `APP_VERSION` em `src/version.js`, recarregue, e confirme que o cache antigo é removido (`activate` limpando as chaves que não batem com `CACHE`) e o novo é instalado.
+4. Confirme que nada em `PRECACHE` aponta para um arquivo que não existe mais no repositório (checagem direta contra a lista de arquivos de `src/`, depois da Task 14 ter removido `importers/legacy-idb.js`).
 
-- [ ] **Step 5: Verificar no app publicado**
-
-1. A PWA instala no celular (Android e iPhone).
-2. Com o avião ligado, o app abre e os dados continuam lá.
-3. **No mesmo navegador onde o app anterior está instalado**, a migração encontra os dados do app antigo e os traz.
-4. O app anterior continua abrindo e funcionando normalmente depois disso.
-
-- [ ] **Step 6: Commit e fechamento da fase**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add -A
-git commit -m "Adiciona PWA com service worker de versao unica e publica no Pages
+git commit -m "Adiciona PWA com service worker de versao unica
 
 A versao do cache vem de src/version.js em vez de uma constante duplicada no
 sw.js: esquecer de subi-la deixava aparelhos servindo arquivos antigos
 indefinidamente, que era o risco registrado no app anterior.
 
 Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
-git push origin main
 ```
+
+**A publicação de fato (merge para `main`, ativar GitHub Pages, instalar no celular, verificar offline no aparelho real) acontece depois da revisão final de toda a branch, como parte do fechamento da fase — não dentro desta task.**
 
 ---
 
@@ -4115,10 +4113,9 @@ Antes de declarar a Fase 1 concluída, confirme cada item com evidência, não p
 
 - [ ] `node tools/run-tests.mjs` termina com código 0 e nenhuma falha
 - [ ] `tools/tests.html` mostra todos os testes verdes, inclusive os de IndexedDB
-- [ ] A migração trouxe os dados reais, com contagem conferida contra o app anterior
-- [ ] O app anterior continua íntegro e funcionando depois da migração
-- [ ] Rodar a migração duas vezes não duplica nada
-- [ ] Um ciclo exportar backup → importar backup devolve o mesmo conjunto de dados
+- [ ] O app anterior continua íntegro (nenhum código no repositório abre `livro-de-gastos` para escrita — Task 14 removeu a leitura ao vivo por decisão do usuário)
+- [ ] Um ciclo exportar backup → importar backup devolve o mesmo conjunto de dados (Task 10)
+- [ ] Um backup `.xlsx` no formato v1 do app anterior importa corretamente pelo caminho de `backup-xlsx.js`/`migrateV1ToV2` (única porta de dado histórico que resta)
 - [ ] `git status --porcelain` não lista nenhum `.pdf`, `.xls`, `.xlsx` ou `.csv` fora do ignore
 - [ ] Nenhum número de conta, agência, final de cartão real ou nome de pessoa aparece em `git grep` no repositório
 - [ ] A PWA instala e abre offline no celular do usuário
