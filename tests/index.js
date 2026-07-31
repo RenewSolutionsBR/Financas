@@ -16,6 +16,7 @@ export const TEST_MODULES = [
   './backup.test.js',
   './lancamentos.test.js',
   './origem-teste.test.js',
+  './cache-policy.test.js',
 ];
 
 // Testes que dependem de IndexedDB ou DOM: só no navegador.

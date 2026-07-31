@@ -32,9 +32,16 @@ async function boot() {
     await seedFormasIfEmpty();
     initTabs(renderizar);
     await renderizar('Lancamentos');
-    await talvezOferecerOnboarding();
+    // Dispara antes do onboarding de propósito: talvezOferecerOnboarding()
+    // pode ficar minutos esperando o usuário preencher conta e cartão no
+    // modal de boas-vindas, e as duas chamadas abaixo são fire-and-forget
+    // (não são aguardadas, e o registro do SW já engole falha). Se ficassem
+    // depois do onboarding, o cache offline e a persistência de storage só
+    // existiriam depois que o usuário terminasse de interagir com o modal —
+    // exatamente na primeira visita, que é quando mais importa ter cache.
     registrarServiceWorker();
     if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
+    await talvezOferecerOnboarding();
   } catch (e) {
     toast('Erro ao iniciar o app: ' + e.message, 'erro');
     throw e;
@@ -44,10 +51,15 @@ async function boot() {
 function registrarServiceWorker() {
   if (!('serviceWorker' in navigator)) return;
   // sw.js usa import para ler a versão de src/version.js, por isso precisa
-  // ser registrado como módulo. Falha de registro não pode virar erro de
-  // console nem travar o boot: o app funciona sem service worker, só perde
-  // o cache offline.
-  navigator.serviceWorker.register('sw.js', { type: 'module' }).catch(() => {});
+  // ser registrado como módulo. updateViaCache: 'none' evita que o HTTP
+  // cache do navegador segure uma cópia velha do import de src/version.js
+  // entre publicações (o servidor local manda no-store, mas GitHub Pages
+  // não necessariamente). Falha de registro não pode virar erro de console
+  // nem travar o boot: o app funciona sem service worker, só perde o cache
+  // offline.
+  navigator.serviceWorker
+    .register('sw.js', { type: 'module', updateViaCache: 'none' })
+    .catch(() => {});
 }
 
 boot();

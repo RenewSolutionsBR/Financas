@@ -51,10 +51,10 @@ anterior. Esquecer de subir a versão é o que fazia aparelhos do app anterior
 continuarem servindo arquivos velhos indefinidamente.
 
 `navigator.serviceWorker.register('sw.js', { type: 'module' })` depende de
-suporte a *module service workers*, disponível em Chrome/Edge/Android WebView
-atuais. O suporte no Safari/iOS não pôde ser confirmado com certeza no
-momento em que isso foi escrito — ver `.superpowers/sdd/2026-07-29-fase1-fundacao/task-15-report.md`
-para o risco registrado antes de instalar no iPhone.
+suporte a *module service workers*, suportado em Safari/iOS 15+ (WebKit,
+Safari 15, set/2021) além de Chrome/Edge/Android WebView atuais — qualquer
+iPhone em uso hoje passa folgado, sem necessidade de bundler ou de duplicar
+a constante de versão.
 
 A publicação em si (merge para `main`, GitHub Pages, instalação no celular)
 acontece no fechamento da Fase 1, não nesta task.
