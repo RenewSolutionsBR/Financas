@@ -2936,7 +2936,11 @@ export function el(tag, attrs, filhos) {
     else if (k.startsWith('on') && typeof v === 'function') node.addEventListener(k.slice(2).toLowerCase(), v);
     else if (v !== null && v !== undefined && v !== false) node.setAttribute(k, v);
   }
-  for (const filho of [].concat(filhos || [])) {
+  // A comparacao explicita tambem aqui: `filhos || []` transformava um filho 0
+  // solto (fora de array) em lista vazia antes de o laco comecar, e a guarda
+  // de dentro do laco nunca era alcancada.
+  const lista = filhos === null || filhos === undefined ? [] : [].concat(filhos);
+  for (const filho of lista) {
     // Comparacao explicita em vez de truthy: um filho 0 e legitimo e frequente
     // num app de dinheiro ("R$ 0,00", "0 lancamentos"), e o teste de truthy o
     // descartava calado. false continua sendo filtrado de proposito, porque e
