@@ -3775,7 +3775,9 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 
 ### Task 14: `ui/onboarding.js` — primeira execução e migração
 
-Onde o usuário cadastra suas contas (que não podem estar no código, por o repositório ser público) e traz os dados do app anterior. Leia a seção 5.7 do spec.
+> **ESCOPO REDUZIDO em 2026-07-31 por decisão direta do usuário:** a migração de lançamentos e faturas via leitura ao vivo do IndexedDB do app anterior (`importers/legacy-idb.js` e a seção 5.7 do spec) foi removida do escopo da Fase 1. O usuário optou por não trazer esse histórico; backup/restore do app novo (Task 10) e a importação de backup `.xlsx` v1 do app anterior (via `migrateV1ToV2`, que `importers/backup-xlsx.js` continua usando) cobrem a necessidade real. Ver ledger da Task 14 para o histórico completo da decisão e da correção.
+
+Onde o usuário cadastra suas contas (que não podem estar no código, por o repositório ser público). Leia a seção 5.7 do spec para o contexto histórico da migração — a leitura ao vivo do app anterior que ela descreve não foi implementada.
 
 **Files:**
 - Create: `src/ui/onboarding.js`
