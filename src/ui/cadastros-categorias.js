@@ -50,12 +50,9 @@ async function editarCategoria(cat, todas, aoMudar) {
 }
 
 async function excluirCategoria(cat, aoMudar) {
-  const transacoes = await listTransactions();
-  const emUso = transacoes.filter((t) => t.categoria === cat.id).length;
-  if (emUso) return toast(`${emUso} lançamento(s) usam esta categoria. Reclassifique-os antes de excluir.`, 'erro');
   if (!(await confirmar(`Excluir a categoria "${cat.nome}"?`))) return;
   try {
-    await removeCategoria(cat.id);
+    await removeCategoria(cat.id, await listTransactions());
     toast('Excluída.', 'ok');
     await aoMudar();
   } catch (e) {

@@ -16,6 +16,7 @@ export async function secaoContas(aoMudar) {
     todas.map((a) => el('div', { class: 'item-cadastro' }, [
       el('span', { class: 'item-nome', text: rotuloConta(a) }),
       el('button', { class: 'btn btn-mini', text: 'Editar', onclick: () => editarConta(a, todas, aoMudar) }),
+      el('button', { class: 'btn btn-mini', text: a.ativo === false ? 'Ativar' : 'Desativar', onclick: () => alternarConta(a, aoMudar) }),
       el('button', { class: 'btn btn-mini btn-perigo', text: 'Excluir', onclick: () => excluirConta(a, aoMudar) }),
     ]))
   );
@@ -31,9 +32,10 @@ export async function secaoContas(aoMudar) {
 }
 
 function rotuloConta(a) {
-  if (a.tipo === TIPO_CONTA) return `${a.nome} — ag. ${a.agencia} c/c ${a.numero}`;
+  const desativada = a.ativo === false ? ' — desativada' : '';
+  if (a.tipo === TIPO_CONTA) return `${a.nome} — ag. ${a.agencia} c/c ${a.numero}${desativada}`;
   const marca = isAdicional(a) ? ' (adicional)' : '';
-  return `${a.nome} — ${String(a.bandeira || '').toUpperCase()} final ${a.final}${marca}`;
+  return `${a.nome} — ${String(a.bandeira || '').toUpperCase()} final ${a.final}${marca}${desativada}`;
 }
 
 async function editarConta(acc, todas, aoMudar) {
@@ -93,15 +95,15 @@ async function editarConta(acc, todas, aoMudar) {
   await aoMudar();
 }
 
+async function alternarConta(acc, aoMudar) {
+  await saveAccount({ ...acc, ativo: acc.ativo === false });
+  await aoMudar();
+}
+
 async function excluirConta(acc, aoMudar) {
-  const transacoes = await listTransactions();
-  const emUso = transacoes.filter((t) => t.contaId === acc.id).length;
-  if (emUso) {
-    return toast(`Não dá para excluir: ${emUso} lançamento(s) usam este cadastro. Desative-o em vez de excluir.`, 'erro');
-  }
   if (!(await confirmar(`Excluir "${acc.nome}"? Isso não pode ser desfeito.`))) return;
   try {
-    await removeAccount(acc.id);
+    await removeAccount(acc.id, await listTransactions());
     toast('Excluído.', 'ok');
     await aoMudar();
   } catch (e) {

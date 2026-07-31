@@ -5,7 +5,7 @@
 import { el, toast, abrirModal } from './components.js';
 import { secao, campo } from './cadastros-comuns.js';
 import { listAccounts, TIPO_CARTAO } from '../domain/accounts.js';
-import { exportarBackup, importarBackup } from '../importers/backup-xlsx.js';
+import { exportarBackup, importarBackup, detectarVersaoDoArquivo } from '../importers/backup-xlsx.js';
 
 export function secaoBackup(aoMudar) {
   const inputArquivo = el('input', { type: 'file', accept: '.xlsx', class: 'oculto' });
@@ -13,23 +13,34 @@ export function secaoBackup(aoMudar) {
     const arquivo = ev.target.files[0];
     if (!arquivo) return;
     try {
-      // Backup do formato anterior é todo de cartão de crédito e não diz de
-      // qual: sem escolher um cartão, os lançamentos entrariam sem conta.
-      const cartoes = (await listAccounts()).filter((a) => a.tipo === TIPO_CARTAO);
-      const cartaoTitularId = await escolherCartaoParaImportacao(cartoes);
-      if (cartaoTitularId === false) return;
-
-      const { contagens, avisos } = await importarBackup(await arquivo.arrayBuffer(), {
-        cartaoTitularId, formaCreditoId: 'pm_credito',
-      });
+      const buffer = await arquivo.arrayBuffer();
+      const versao = detectarVersaoDoArquivo(buffer);
+      if (!versao) {
+        toast('Esse arquivo não parece ser um backup do app.', 'erro');
+        return;
+      }
+      // So o formato antigo precisa saber a qual cartao associar: o novo ja
+      // traz o cartao dentro. Perguntar sempre fazia o usuario decidir algo
+      // que seria descartado.
+      let cartaoTitularId = null;
+      if (versao === 1) {
+        const cartoes = (await listAccounts()).filter((a) => a.tipo === TIPO_CARTAO);
+        cartaoTitularId = await escolherCartaoParaImportacao(cartoes);
+        if (cartaoTitularId === false) return;
+      }
+      const { contagens, avisos } = await importarBackup(buffer, { cartaoTitularId, formaCreditoId: 'pm_credito' });
       const total = Object.values(contagens).reduce((a, b) => a + b, 0);
       toast(`${total} registro(s) restaurados.`, 'ok');
       if (avisos.length) await abrirModal({ titulo: 'Atenção', corpo: avisos.join('\n\n') });
       await aoMudar();
     } catch (e) {
       toast('Não consegui ler esse backup: ' + e.message, 'erro');
+    } finally {
+      // Sempre limpa, inclusive quando o usuario cancela: sem isso o input
+      // continuava apontando para o arquivo, e reselecionar o MESMO arquivo
+      // nao dispara change de novo - a tela ficava muda.
+      ev.target.value = '';
     }
-    ev.target.value = '';
   });
 
   return secao('Backup', [
@@ -43,9 +54,9 @@ export function secaoBackup(aoMudar) {
 }
 
 /**
- * Devolve o id do cartão a associar, `null` se não há cartão cadastrado (caso
- * de um backup do formato novo, que já traz o cartão dentro), ou `false` se o
- * usuário cancelou.
+ * Só é chamada para backup do formato antigo (versão 1). Devolve o id do
+ * cartão a associar, `null` se não há nenhum cartão cadastrado ainda, ou
+ * `false` se o usuário cancelou.
  */
 async function escolherCartaoParaImportacao(cartoes) {
   if (!cartoes.length) return null;

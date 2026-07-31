@@ -122,6 +122,13 @@ export function detectBackupVersion(nomesDeAbas) {
 
 // --- Integração com SheetJS e storage ---
 
+// Le so o cabecalho para descobrir a versao, para a tela nao perguntar coisas
+// que so valem para o formato antigo (a qual cartao associar os lancamentos).
+export function detectarVersaoDoArquivo(arrayBuffer) {
+  const wb = XLSX.read(arrayBuffer, { type: 'array' });
+  return detectBackupVersion(wb.SheetNames);
+}
+
 export async function exportarBackup() {
   const dataset = {};
   for (const store of STORES_EXPORTAVEIS) dataset[store] = await storage.getAll(store);

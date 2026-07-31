@@ -20,4 +20,5 @@ export const TEST_MODULES = [
 export const BROWSER_ONLY_MODULES = [
   './storage.browser.test.js',
   './backup.browser.test.js',
+  './accounts.browser.test.js',
 ];

@@ -122,11 +122,17 @@ export async function saveAccount(a) {
   return storage.put('accounts', a);
 }
 
-export async function removeAccount(id) {
+export async function removeAccount(id, transactions) {
   const todas = await listAccounts();
   const filhos = todas.filter((a) => a.cartaoPaiId === id);
   if (filhos.length) {
-    throw new Error(`Não dá para excluir: existem ${filhos.length} cartão(ões) adicional(is) ligados a este. Exclua-os primeiro ou desative este cartão.`);
+    throw new Error(`Não dá para excluir: existem ${filhos.length} cartão(ões) adicional(is) ligados a este. Exclua-os primeiro.`);
+  }
+  // A guarda de integridade mora aqui, e nao na tela: senao qualquer outro
+  // chamador apaga um cadastro em uso e deixa lancamento apontando para nada.
+  const emUso = (transactions || []).filter((t) => t.contaId === id).length;
+  if (emUso) {
+    throw new Error(`Não dá para excluir: ${emUso} lançamento(s) usam esta conta ou cartão. Desative-o em vez de excluir, para não perder o histórico.`);
   }
   return storage.remove('accounts', id);
 }

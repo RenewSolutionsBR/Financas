@@ -69,6 +69,17 @@ describe('categories', () => {
     assert(/destino/i.test(erro.message), `mensagem nao explica o motivo: ${erro.message}`);
   });
 
+  it('recusa excluir categoria em uso, dizendo quantos lancamentos usam', async () => {
+    // A guarda mora no dominio, nao na tela: removeCategoria lanca antes de
+    // tocar storage tanto para a_classificar quanto para em-uso, entao roda
+    // no Node.
+    const transacoes = [{ id: 't1', categoria: 'casa' }, { id: 't2', categoria: 'casa' }];
+    let erro = null;
+    try { await removeCategoria('casa', transacoes); } catch (e) { erro = e; }
+    assert(erro !== null, 'deveria ter recusado');
+    assert(erro.message.includes('2'), erro.message);
+  });
+
   it('novaCategoria escolhe cor livre da paleta em vez de repetir', () => {
     const existentes = [{ id: 'a', nome: 'A', cor: PALETA[0] }, { id: 'b', nome: 'B', cor: PALETA[1] }];
     assertEqual(novaCategoria('C', null, existentes).cor, PALETA[2]);
