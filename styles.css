@@ -314,3 +314,109 @@ button { cursor: pointer; }
 }
 
 .oculto { display: none; }
+
+/* --- Aba Lançamentos --- */
+
+.form-lancamento {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px 0;
+  border-bottom: 1px dashed var(--linha);
+}
+
+.linha-form {
+  display: flex;
+  gap: 12px;
+}
+.linha-form .campo { flex: 1 1 0; }
+
+.campo-inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.82rem;
+  color: var(--tinta-fraca);
+}
+
+.btn-primario {
+  background: var(--tinta);
+  color: var(--papel);
+  border-color: var(--tinta);
+}
+
+.total-periodo {
+  padding: 14px 0;
+  font-weight: 600;
+  color: var(--tinta);
+  border-bottom: 1px dashed var(--linha);
+}
+
+.filtros {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  padding: 14px 0;
+}
+.filtros .campo { flex: 1 1 140px; }
+
+.lista-lancamentos {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 0 20px;
+}
+
+.item-lancamento {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--linha);
+}
+.item-lancamento:last-child { border-bottom: none; }
+
+/* Receita, transferência e pagamento de fatura não contam como gasto: a
+   opacidade reduzida marca visualmente que o valor não entra no total do
+   período, sem precisar de outra coluna de texto explicando. */
+.item-lancamento.nao-gasto { opacity: 0.65; }
+
+.lanc-principal {
+  flex: 1 1 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lanc-descricao {
+  font-size: 0.92rem;
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.selo-auto {
+  flex: 0 0 auto;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--latao);
+  border: 1px solid var(--latao);
+  border-radius: 3px;
+  padding: 1px 5px;
+}
+
+.lanc-meta {
+  flex: 1 1 auto;
+  font-size: 0.78rem;
+  color: var(--tinta-fraca);
+}
+
+.lanc-valor {
+  flex: 0 0 auto;
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  font-weight: 600;
+}

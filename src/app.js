@@ -6,11 +6,13 @@ import { toast } from './ui/components.js';
 import { seedCategoriasIfEmpty } from './domain/categories.js';
 import { seedFormasIfEmpty } from './domain/payment-methods.js';
 import { renderCadastros } from './ui/cadastros.js';
+import { renderLancamentos } from './ui/lancamentos.js';
 
-// As telas restantes entram nas tarefas 13 e 14. Cada uma acrescenta o
-// próprio import e a própria linha em RENDERIZADORES ao ser criada — nada de
-// import comentado esperando por um arquivo que ainda não existe.
+// A tela restante entra na tarefa 14. Ela acrescenta o próprio import e a
+// própria linha em RENDERIZADORES ao ser criada — nada de import comentado
+// esperando por um arquivo que ainda não existe.
 const RENDERIZADORES = {
+  Lancamentos: renderLancamentos,
   Cadastros: renderCadastros,
 };
 
