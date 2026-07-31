@@ -1,14 +1,15 @@
-// Testa a lógica PURA da guarda que impede a suíte de teste (e a fixture de
-// banco legado falso) de rodar fora de localhost. É a única forma de provar
-// essa decisão: `location.hostname` é unforgeable num navegador de verdade,
-// então não dá pra simular a origem de produção navegando de verdade — mas
-// a decisão em si (que hostnames são permitidos) é lógica pura e testável.
+// Testa a lógica PURA da guarda que impede a suíte de teste de rodar fora de
+// localhost (tools/tests.html grava/apaga dados de verdade no banco
+// `financas`, e a página é servida pela mesma origem de produção que o
+// usuário usa). É a única forma de provar essa decisão: `location.hostname`
+// é unforgeable num navegador de verdade, então não dá pra simular a origem
+// de produção navegando de verdade — mas a decisão em si (que hostnames são
+// permitidos) é lógica pura e testável.
 //
-// Isto NÃO substitui a verificação de que a guarda de fato interrompe a
-// avaliação do módulo em fake-legacy-db.js e o carregamento em
-// tools/tests.html — essa parte foi conferida por leitura de código e por
-// confirmar que a suíte roda normalmente em localhost (onde a guarda deixa
-// passar).
+// Isto NÃO substitui a verificação de que a guarda de fato interrompe o
+// carregamento em tools/tests.html — essa parte foi conferida por leitura
+// de código e por confirmar que a suíte roda normalmente em localhost (onde
+// a guarda deixa passar).
 
 import { describe, it, assertEqual } from './harness.js';
 import { origemSeguraParaTestesDestrutivos } from './fixtures/origem-teste.js';

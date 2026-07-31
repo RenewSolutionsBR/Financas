@@ -24,6 +24,5 @@ export const BROWSER_ONLY_MODULES = [
   './backup.browser.test.js',
   './accounts.browser.test.js',
   './lancamentos.browser.test.js',
-  './legacy-idb.browser.test.js',
   './onboarding.browser.test.js',
 ];

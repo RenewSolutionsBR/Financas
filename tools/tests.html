@@ -26,14 +26,12 @@
     import { origemSeguraParaTestesDestrutivos } from '../tests/fixtures/origem-teste.js';
 
     // Esta suíte grava e apaga dados de verdade neste navegador: os testes
-    // de navegador escrevem no banco `financas`, e alguns criam/derrubam um
-    // banco `livro-de-gastos` FALSO para simular o app anterior. Como este
-    // arquivo é versionado e o GitHub Pages serve a raiz do repositório, a
-    // origem de produção é a MESMA origem onde o app anterior de verdade
-    // guarda o banco `livro-de-gastos` real do usuário — sem esta guarda,
-    // abrir esta página lá apagaria os dados dele. A checagem roda antes do
-    // laço de import, então nenhum teste chega a ser sequer carregado fora
-    // de localhost.
+    // de navegador escrevem no banco `financas`. Como este arquivo é
+    // versionado e o GitHub Pages serve a raiz do repositório, a origem de
+    // produção é a mesma onde o usuário guarda os dados reais dele — sem
+    // esta guarda, abrir esta página lá mexeria no banco de produção. A
+    // checagem roda antes do laço de import, então nenhum teste chega a ser
+    // sequer carregado fora de localhost.
     if (!origemSeguraParaTestesDestrutivos(location.hostname)) {
       const resumo = document.getElementById('resumo');
       resumo.textContent =

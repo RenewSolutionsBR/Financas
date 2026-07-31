@@ -222,6 +222,14 @@ assistente de primeira execução.
 
 ### 5.7 Migração v1 → v2
 
+> **SUPERADO em 2026-07-31 por decisão direta do usuário:** a migração de lançamentos/faturas
+> via leitura ao vivo do IndexedDB do app anterior foi removida do escopo da Fase 1; o usuário
+> optou por não trazer esse histórico. Backup/restore do app novo (Task 10) cobre a
+> necessidade real. `src/importers/legacy-idb.js` foi removido; `migrateV1ToV2`/
+> `db-schema.js` permanecem, porque `backup-xlsx.js` ainda os usa para importar backup `.xlsx`
+> no formato v1 do app anterior. O restante desta seção descreve o caminho que foi removido —
+> mantido como registro histórico da decisão de design, não como comportamento atual.
+
 **O backup `.xlsx` do app atual é parcial e não serve como caminho principal.** Sua planilha
 `Backup_Lancamentos` grava apenas `id, descricao, valor, data, categoria, previsto,
 parcelaKey`: perde `parcela_atual`, `parcela_total`, `conciliadoAutomaticamente`,
