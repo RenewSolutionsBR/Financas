@@ -5,11 +5,14 @@ import { initTabs } from './ui/tabs.js';
 import { toast } from './ui/components.js';
 import { seedCategoriasIfEmpty } from './domain/categories.js';
 import { seedFormasIfEmpty } from './domain/payment-methods.js';
+import { renderCadastros } from './ui/cadastros.js';
 
-// As telas entram nas tarefas 12 a 14. Cada uma acrescenta o próprio import e
-// a própria linha em RENDERIZADORES ao ser criada — nada de import comentado
-// esperando por um arquivo que ainda não existe.
-const RENDERIZADORES = {};
+// As telas restantes entram nas tarefas 13 e 14. Cada uma acrescenta o
+// próprio import e a própria linha em RENDERIZADORES ao ser criada — nada de
+// import comentado esperando por um arquivo que ainda não existe.
+const RENDERIZADORES = {
+  Cadastros: renderCadastros,
+};
 
 async function renderizar(aba) {
   const fn = RENDERIZADORES[aba];

@@ -219,3 +219,98 @@ button { cursor: pointer; }
 }
 .toast.erro { background: var(--erro); color: var(--papel); }
 .toast.ok { background: var(--ok); color: var(--papel); }
+
+/* --- Aba Cadastros --- */
+
+.cadastro-secao {
+  padding: 20px 0;
+  border-bottom: 1px dashed var(--linha);
+}
+.cadastro-secao:last-child { border-bottom: none; }
+.cadastro-secao h2 {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  margin: 0 0 12px;
+  color: var(--tinta);
+}
+
+.lista-cadastro {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.item-cadastro {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--linha);
+}
+.item-cadastro:last-child { border-bottom: none; }
+
+.item-nome {
+  flex: 1 1 160px;
+  font-size: 0.9rem;
+  word-break: break-word;
+}
+
+/* Bolinha de cor de forma de pagamento/categoria: não tem texto próprio, então
+   o tamanho fixo evita que ela estique junto com o flex do item. */
+.chip-cor {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  border: 1px solid var(--linha);
+}
+
+.acoes {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+  flex-wrap: wrap;
+}
+.acoes .btn { flex: 1 1 160px; }
+
+.btn-mini {
+  flex: 0 0 auto;
+  padding: 6px 10px;
+  font-size: 0.78rem;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.campo {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.82rem;
+  color: var(--tinta-fraca);
+}
+.campo input, .campo select, .campo textarea {
+  width: 100%;
+  color: var(--tinta);
+}
+
+.ajuda {
+  font-size: 0.82rem;
+  color: var(--tinta-fraca);
+  line-height: 1.5;
+}
+
+/* Reservada para mensagem de erro presa ao formulário, além do toast — hoje
+   mostrarErros() só usa toast, mas o bloco fica pronto para quando um
+   formulário quiser exibir o erro também junto do campo. */
+.erro-form {
+  color: var(--erro);
+  font-size: 0.82rem;
+  margin-top: 4px;
+}
+
+.oculto { display: none; }
