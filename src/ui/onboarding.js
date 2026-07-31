@@ -12,6 +12,7 @@ import { el, toast, abrirModal } from './components.js';
 import { campo } from './cadastros-comuns.js';
 import { legacyDatabaseExists, importLegacyInto } from '../importers/legacy-idb.js';
 import { TIPO_CARTAO, listAccounts, saveAccount, novaConta, novoCartao, validateAccount } from '../domain/accounts.js';
+import { listFormas } from '../domain/payment-methods.js';
 import { irParaAba } from './tabs.js';
 import * as storage from '../core/storage.js';
 
@@ -43,7 +44,16 @@ export async function talvezOferecerOnboarding() {
   if (escolha === 'cadastrar') return assistenteCadastro();
 }
 
+/**
+ * Devolve `true` se salvou (para quem encadeia, como migrarDoAppAnterior
+ * retomando a migração depois do cadastro), `false` se o usuário desistiu.
+ */
 async function assistenteCadastro() {
+  // Os inputs são criados uma única vez, fora do laço de novas tentativas:
+  // um erro de validação (ex.: final de cartão com 2 dígitos) reabre o modal
+  // reaproveitando os MESMOS nós, e não reconstruindo tudo do zero — sem
+  // isso, o usuário via os sete campos voltarem vazios depois de um erro,
+  // exatamente o tipo de atrito que a primeira tela do app não pode ter.
   const inpBanco = el('input', { type: 'text', placeholder: 'Ex.: Banco X' });
   const inpAgencia = el('input', { type: 'text', placeholder: '0000' });
   const inpNumero = el('input', { type: 'text', placeholder: '00000-0' });
@@ -55,62 +65,90 @@ async function assistenteCadastro() {
   // usa isto para classificar essas linhas como transferência, e não gasto.
   const inpApelidos = el('input', { type: 'text', placeholder: 'Ex.: JOAO DA SILVA, JOAO SILVA' });
 
-  const escolha = await abrirModal({
-    titulo: 'Sua conta e seu cartão',
-    corpo: el('div', { class: 'form' }, [
-      el('h3', { text: 'Conta corrente' }),
-      campo('Banco', inpBanco), campo('Agência', inpAgencia), campo('Número', inpNumero),
-      el('h3', { text: 'Cartão de crédito' }),
-      campo('Nome', inpCartaoNome), campo('Bandeira', inpBandeira), campo('Final (4 dígitos)', inpFinal),
-      el('h3', { text: 'Seu nome no extrato' }),
-      campo('Como você aparece (separe variações por vírgula)', inpApelidos),
-      el('p', { class: 'ajuda', text: 'Quando você transfere dinheiro entre contas suas, seu nome aparece no extrato. Isso serve para o app não contar essas transferências como gasto.' }),
-      el('p', { class: 'ajuda', text: 'Você pode cadastrar mais contas, cartões e adicionais depois, na aba Cadastros.' }),
-    ]),
-    acoes: [{ id: 'cancelar', rotulo: 'Depois' }, { id: 'salvar', rotulo: 'Salvar', classe: 'btn-primario' }],
-  });
-  if (escolha !== 'salvar') return;
+  for (;;) {
+    const escolha = await abrirModal({
+      titulo: 'Sua conta e seu cartão',
+      corpo: el('div', { class: 'form' }, [
+        el('h3', { text: 'Conta corrente' }),
+        campo('Banco', inpBanco), campo('Agência', inpAgencia), campo('Número', inpNumero),
+        el('h3', { text: 'Cartão de crédito' }),
+        campo('Nome', inpCartaoNome), campo('Bandeira', inpBandeira), campo('Final (4 dígitos)', inpFinal),
+        el('h3', { text: 'Seu nome no extrato' }),
+        campo('Como você aparece (separe variações por vírgula)', inpApelidos),
+        el('p', { class: 'ajuda', text: 'Quando você transfere dinheiro entre contas suas, seu nome aparece no extrato. Isso serve para o app não contar essas transferências como gasto.' }),
+        el('p', { class: 'ajuda', text: 'Você pode cadastrar mais contas, cartões e adicionais depois, na aba Cadastros.' }),
+      ]),
+      acoes: [{ id: 'cancelar', rotulo: 'Depois' }, { id: 'salvar', rotulo: 'Salvar', classe: 'btn-primario' }],
+    });
+    if (escolha !== 'salvar') return false;
 
-  const conta = novaConta({
-    nome: `${inpBanco.value.trim()} — conta corrente`,
-    instituicao: inpBanco.value.trim(),
-    agencia: inpAgencia.value.trim(),
-    numero: inpNumero.value.trim(),
-  });
-  const cartao = novoCartao({
-    nome: inpCartaoNome.value.trim(),
-    instituicao: inpBanco.value.trim(),
-    bandeira: inpBandeira.value.trim().toLowerCase(),
-    final: inpFinal.value.trim(),
-    contaPagadoraId: conta.id,
-  });
+    const conta = novaConta({
+      nome: `${inpBanco.value.trim()} — conta corrente`,
+      instituicao: inpBanco.value.trim(),
+      agencia: inpAgencia.value.trim(),
+      numero: inpNumero.value.trim(),
+    });
+    const cartao = novoCartao({
+      nome: inpCartaoNome.value.trim(),
+      instituicao: inpBanco.value.trim(),
+      bandeira: inpBandeira.value.trim().toLowerCase(),
+      final: inpFinal.value.trim(),
+      contaPagadoraId: conta.id,
+    });
 
-  const erros = [...validateAccount(conta, []), ...validateAccount(cartao, [conta])];
-  if (erros.length) {
-    toast(erros.join(' '), 'erro');
-    return assistenteCadastro();
+    const erros = [...validateAccount(conta, []), ...validateAccount(cartao, [conta])];
+    if (erros.length) {
+      toast(erros.join(' '), 'erro');
+      continue; // reabre o modal com os mesmos inputs, valores preservados
+    }
+
+    await saveAccount(conta);
+    await saveAccount(cartao);
+    await storage.setMeta(
+      'apelidosTitular',
+      inpApelidos.value.split(',').map((s) => s.trim()).filter(Boolean)
+    );
+    await storage.setMeta('onboardingConcluido', true);
+    toast('Cadastro criado. Bom uso!', 'ok');
+    irParaAba('Cadastros');
+    return true;
   }
-
-  await saveAccount(conta);
-  await saveAccount(cartao);
-  await storage.setMeta(
-    'apelidosTitular',
-    inpApelidos.value.split(',').map((s) => s.trim()).filter(Boolean)
-  );
-  await storage.setMeta('onboardingConcluido', true);
-  toast('Cadastro criado. Bom uso!', 'ok');
-  irParaAba('Cadastros');
 }
 
 export async function migrarDoAppAnterior() {
   const contas = await listAccounts();
-  const cartoes = contas.filter((a) => a.tipo === TIPO_CARTAO);
+  // Cartão desativado não pode ser oferecido como destino de dados novos —
+  // mesma regra que os seletores de Lançamentos (Task 13) já aplicam.
+  const cartoes = contas.filter((a) => a.tipo === TIPO_CARTAO && a.ativo !== false);
   if (!cartoes.length) {
     await abrirModal({
       titulo: 'Cadastre o cartão primeiro',
-      corpo: 'Os lançamentos do app anterior são todos de cartão de crédito, então preciso saber a qual cartão associá-los. Cadastre o cartão na aba Cadastros e volte aqui.',
+      corpo: 'Os lançamentos do app anterior são todos de cartão de crédito, então preciso saber a qual cartão associá-los. Cadastre o cartão e eu trago os dados em seguida.',
     });
-    return assistenteCadastro();
+    // Antes, esta função sempre encadeava para o cadastro e nunca retomava a
+    // migração — o botão "Trazer dados do app anterior" do modal de
+    // boas-vindas não migrava nada e o usuário nem ficava sabendo, porque
+    // assistenteCadastro() marca onboardingConcluido e o convite não
+    // reaparece. Agora só seguimos adiante se o cadastro foi salvo, e aí
+    // retomamos a MESMA função — que desta vez encontra o cartão recém
+    // criado e continua para a escolha de migração de verdade.
+    const cadastrou = await assistenteCadastro();
+    if (!cadastrou) return;
+    return migrarDoAppAnterior();
+  }
+
+  // A forma de crédito não pode ser cravada em 'pm_credito': o usuário pode
+  // ter renomeado, desativado ou excluído a forma padrão em Cadastros antes
+  // de migrar, e gravar um formaPagamentoId que não existe mais deixaria
+  // todo lançamento migrado com uma forma de pagamento invisível na UI.
+  const formas = await listFormas();
+  const formaCredito = formas.find((f) => f.tipo === 'credito' && f.ativo !== false);
+  if (!formaCredito) {
+    toast(
+      'Cadastre uma forma de pagamento do tipo "Crédito" antes de migrar (Cadastros → Formas de pagamento).',
+      'erro'
+    );
+    return;
   }
 
   const selCartao = el('select', {}, cartoes.map((c) => el('option', { value: c.id, text: c.nome })));
@@ -126,11 +164,12 @@ export async function migrarDoAppAnterior() {
 
   try {
     // Idempotente por construção: importLegacyInto preserva os ids do app
-    // anterior literalmente, e storage.putMany grava por put() — rodar de
-    // novo sobrescreve os mesmos registros em vez de duplicá-los (spec 5.7).
+    // anterior literalmente, e a gravação por put() (numa única transação
+    // atômica, ver storage.putManyAcrossStores) sobrescreve os mesmos
+    // registros em vez de duplicá-los (spec 5.7).
     const { transactions, statements, avisos } = await importLegacyInto({
       cartaoTitularId: selCartao.value,
-      formaCreditoId: 'pm_credito',
+      formaCreditoId: formaCredito.id,
     });
     await storage.setMeta('onboardingConcluido', true);
     await abrirModal({
@@ -142,6 +181,8 @@ export async function migrarDoAppAnterior() {
     });
     irParaAba('Lancamentos');
   } catch (e) {
-    toast('Não consegui ler os dados do app anterior: ' + e.message, 'erro');
+    // A mensagem já distingue leitura de escrita (ver importLegacyInto):
+    // não precisamos mais adivinhar aqui qual das duas falhou.
+    toast(e.message, 'erro');
   }
 }

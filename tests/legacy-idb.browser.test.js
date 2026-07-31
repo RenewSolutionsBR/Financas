@@ -38,16 +38,29 @@ const DADOS_FALSOS = {
   faturas: [
     { arquivo: 'fatura-falsa-sem-vencimento.pdf', dataCorte: '2026-05-20', importedAt: 1, rows: [{ valor: 12.5 }, { valor: 30 }] },
   ],
-  meta: [{ key: 'lastBackupAt', value: 1 }],
+  // Vazio de propósito: migrateV1ToV2 copia meta literalmente para o store
+  // 'meta' de verdade (mesma razão de categories acima), e nenhum teste
+  // deste arquivo precisa de um registro de meta migrado. Uma fixture antiga
+  // gravava aqui { key: 'lastBackupAt', value: 1 }, que é uma chave REAL do
+  // app (backup-xlsx.js) — o achado #5 da revisão pegou esse vazamento
+  // porque limparResultadoDaMigracao() não limpava o store 'meta'.
+  meta: [],
 };
 
 const OPCOES = { cartaoTitularId: 'acc_teste_cartao_legado', formaCreditoId: 'pm_credito' };
 
 async function limparResultadoDaMigracao() {
-  for (const id of ['falso_e1', 'falso_e2', 'falso_e3']) await storage.remove('transactions', id);
+  // Por contaId, não pela lista fixa de ids do fixture: um id sabotado (ex.:
+  // sufixo aleatório, para testar preservação de id) não bate com
+  // 'falso_e1'/'falso_e2'/'falso_e3' literais, e a limpeza por id fixo
+  // deixava o registro sabotado para trás na origem real — foi exatamente
+  // isso que apareceu na aba Lançamentos numa verificação manual depois de
+  // uma rodada de sabotagem. Por contaId pega o registro seja qual for o id.
+  const transacoes = await storage.getAll('transactions');
+  for (const t of transacoes.filter((t) => t.contaId === OPCOES.cartaoTitularId)) await storage.remove('transactions', t.id);
   for (const id of DADOS_FALSOS.categories.map((c) => c.id)) await storage.remove('categories', id);
   const todas = await storage.getAll('statements');
-  for (const s of todas.filter((s) => s.contaId === 'acc_teste_cartao_legado')) await storage.remove('statements', s.id);
+  for (const s of todas.filter((s) => s.contaId === OPCOES.cartaoTitularId)) await storage.remove('statements', s.id);
 }
 
 describe('legacy-idb: banco antigo ausente', () => {
@@ -65,12 +78,10 @@ describe('legacy-idb: banco antigo ausente', () => {
       erro = e;
     }
     assert(erro !== null, 'deveria ter rejeitado: nao ha banco antigo nesta origem');
-    // A promessa rejeita assim que onupgradeneeded dispara, mas a transacao de
-    // versionchange (abortada ou nao) so termina de comitar/reverter um
-    // instante depois — indexedDB.databases() consultado cedo demais nao
-    // reflete o resultado final. Sem esta espera, o teste passa mesmo quando
-    // a sabotagem (remover o abort()) esta ativa: falso negativo.
-    await new Promise((r) => setTimeout(r, 50));
+    // abrirSomenteLeitura() só rejeita a promessa dentro de
+    // req.transaction.onabort (não logo após chamar abort()), então por
+    // construção a transação de versionchange já terminou de reverter neste
+    // ponto — sem precisar de nenhuma espera arbitrária aqui.
     const bancos = await indexedDB.databases();
     assertEqual(
       bancos.some((b) => b.name === LEGACY_DB_NAME), false,
