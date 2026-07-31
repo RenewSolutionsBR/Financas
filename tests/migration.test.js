@@ -69,11 +69,20 @@ describe('db-schema: migração v1 para v2', () => {
     assertEqual(s.rows.length, 2);
   });
 
-  it('copia categorias e meta sem alterar', () => {
-    const { categories, meta } = migrateV1ToV2(LEGACY_V1, OPC);
+  it('copia categorias sem alterar', () => {
+    const { categories } = migrateV1ToV2(LEGACY_V1, OPC);
     assertEqual(categories.length, 3);
     assert(categories.some((c) => c.id === 'a_classificar'));
-    assert(meta.some((m) => m.key === 'lastBackupAt'));
+  });
+
+  // Nenhuma chave do meta do app anterior tem o MESMO significado no app
+  // novo, mesmo quando o nome bate: 'lastBackupAt' existe nos dois, mas
+  // cada um se refere ao backup daquele app. Copiar às cegas sobrescreveria
+  // em silêncio o timestamp do app novo com o do antigo.
+  it('nao traz meta do app anterior (nenhuma chave tem o mesmo significado), e avisa', () => {
+    const { meta, avisos } = migrateV1ToV2(LEGACY_V1, OPC);
+    assertEqual(meta.length, 0);
+    assert(avisos.some((a) => a.includes('lastBackupAt')), avisos.join(' | '));
   });
 
   it('é idempotente: rodar duas vezes produz o mesmo resultado', () => {
@@ -149,6 +158,21 @@ describe('db-schema: migração v1 para v2', () => {
     assert(statements[0].id.startsWith('acc_cartao_1|fatura|2026-06-30'));
     assert(statements[1].id.startsWith('acc_cartao_1|fatura|2026-06-30'));
     assert(avisos.some((a) => a.includes('mesma referência')), 'precisa avisar sobre a colisao');
+  });
+
+  it('desempata TRES faturas com a mesma referencia e o MESMO conteudo (arquivo/dataCorte/linhas identicos)', () => {
+    // A 1a versao da dedup desempatava por hash do conteudo: com tres
+    // faturas de conteudo IDENTICO, a 2a e a 3a geravam o MESMO hash, e a
+    // 3a colidia de novo com a 2a - so a 1a e a 2a ficavam com ids
+    // distintos, a 3a sumia. O desempate por contador nao tem esse limite,
+    // nao importa quantas colisoes existam.
+    const fatura = { vencimento: '2026-06-30', dataCorte: '2026-06-23', arquivo: 'fatura-identica.pdf', importedAt: 1, rows: [{ valor: 1 }] };
+    const legado = { expenses: [], faturas: [{ ...fatura }, { ...fatura }, { ...fatura }] };
+    const { statements, avisos } = migrateV1ToV2(legado, OPC);
+    assertEqual(statements.length, 3);
+    const idsUnicos = new Set(statements.map((s) => s.id));
+    assertEqual(idsUnicos.size, 3, `esperava 3 ids distintos, achei ${JSON.stringify([...idsUnicos])}`);
+    assertEqual(avisos.filter((a) => a.includes('mesma referência')).length, 2, 'um aviso por fatura excedente (a 2a e a 3a)');
   });
 
   it('descarta expense sem id valido, sem derrubar os demais', () => {

@@ -63,6 +63,18 @@ function valorMigrado(v) {
   return Math.abs(round2(n));
 }
 
+// Nenhuma chave do store `meta` do app anterior tem o MESMO significado no
+// app novo — inclusive quando o nome bate. `lastBackupAt`, por exemplo,
+// existe nos dois apps, mas cada um se refere ao backup daquele app
+// específico; copiá-la por engano sobrescreveria em silêncio o timestamp de
+// backup do app novo com o do antigo (foi exatamente esse vazamento que a
+// revisão pegou numa fixture de teste — o mesmo risco existia aqui, no
+// código de produção). A lista de chaves migráveis começa vazia de
+// propósito: se algum dia existir uma chave do legado que faça sentido
+// trazer, ela entra aqui, nomeada — nunca por cópia cega de tudo que o
+// store meta do legado tiver.
+const CHAVES_META_MIGRAVEIS = new Set();
+
 /**
  * Converte o conteúdo do banco do app anterior no schema v2.
  *
@@ -133,19 +145,25 @@ export function migrateV1ToV2(legado, opcoes) {
         `com uma referência gerada. Confira-a na aba Conciliação.`
       );
     }
-    let id = `${cartaoTitularId}|fatura|${referencia}`;
+    const idBase = `${cartaoTitularId}|fatura|${referencia}`;
+    let id = idBase;
     // Mesmo com vencimento válido, o app anterior não impedia reimportar o
     // mesmo PDF duas vezes com o mesmo vencimento — sem esta checagem, a
     // segunda sobrescrevia a primeira em silêncio no put() e a contagem
     // mostrada ao usuário ("N fatura(s) trazidas") não batia com o que
-    // sobrava gravado.
+    // sobrava gravado. O desempate é por CONTADOR, não por hash do conteúdo:
+    // três faturas com arquivo/dataCorte/quantidade de linhas idênticos
+    // produziriam o mesmo hash na 2ª e na 3ª, e a 3ª colidia de novo com a
+    // 2ª — o contador incrementa até achar um id livre, não importa quantas
+    // colisões existam.
     if (idsDeFaturaVistos.has(id)) {
-      const hash = stableHash([f.arquivo || '', f.dataCorte || '', (f.rows || []).length, f.importedAt || '', referencia]);
-      id = `${id}|dup-${hash}`;
+      let contador = 2;
+      while (idsDeFaturaVistos.has(`${idBase}|dup-${contador}`)) contador++;
+      id = `${idBase}|dup-${contador}`;
       avisos.push(
-        `Duas faturas do app anterior têm a mesma referência (${referencia}); uma delas foi ` +
-        `importada com um identificador ajustado para não sobrescrever a outra. Confira as ` +
-        `duas na aba Conciliação.`
+        `Duas ou mais faturas do app anterior têm a mesma referência (${referencia}); uma delas ` +
+        `foi importada com um identificador ajustado para não sobrescrever as outras. Confira as ` +
+        `faturas na aba Conciliação.`
       );
     }
     idsDeFaturaVistos.add(id);
@@ -169,11 +187,22 @@ export function migrateV1ToV2(legado, opcoes) {
     );
   }
 
+  const metaLegado = (legado && legado.meta) || [];
+  const meta = metaLegado.filter((m) => m && CHAVES_META_MIGRAVEIS.has(m.key)).map((m) => ({ ...m }));
+  const chavesIgnoradas = metaLegado.filter((m) => !(m && CHAVES_META_MIGRAVEIS.has(m.key)));
+  if (chavesIgnoradas.length) {
+    const nomes = chavesIgnoradas.map((m) => (m && m.key) || '(sem chave)').join(', ');
+    avisos.push(
+      `Configurações do app anterior (${nomes}) não foram trazidas: não têm o mesmo ` +
+      `significado no app novo.`
+    );
+  }
+
   return {
     transactions,
     categories: ((legado && legado.categories) || []).map((c) => ({ ...c })),
     statements,
-    meta: ((legado && legado.meta) || []).map((m) => ({ ...m })),
+    meta,
     avisos,
   };
 }

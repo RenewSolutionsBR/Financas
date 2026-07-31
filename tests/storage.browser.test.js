@@ -50,3 +50,61 @@ describe('storage', () => {
     await storage.remove('meta', 'teste_meta');
   });
 });
+
+// IDBObjectStore.put() lança SINCRONAMENTE (não via request.onerror) quando o
+// valor não tem uma chave válida para o keyPath do store — put({}) num store
+// com keyPath 'id' é o caso mais comum. Isso importa porque uma sabotagem
+// (ou um bug futuro) que enfileire o put() e só aborte a transação no
+// caminho assíncrono deixaria os itens ANTERIORES ao ruim gravados mesmo
+// com a chamada tendo lançado — "ou tudo entra, ou nada entra" vira mentira
+// bem no caminho de erro mais comum, não no raro (quota, etc.).
+describe('storage: atomicidade de putMany/putManyAcrossStores', () => {
+  it('putMany nao grava nada se um item lancar sincronamente (sem chave valida para o keyPath)', async () => {
+    // try/finally em volta da limpeza: se a asserção falhar (é exatamente o
+    // que a sabotagem faz de propósito), o registro do item BOM ainda assim
+    // precisa ser removido — senão ele fica na origem real e faz a PRÓXIMA
+    // execução deste teste falhar por um motivo totalmente diferente (o id
+    // já existir de antes), mascarando o resultado real da sabotagem.
+    try {
+      let erro = null;
+      try {
+        await storage.putMany('categories', [
+          { id: 'teste_atomico_1', nome: 'Boa', cor: '#111' },
+          { nome: 'Sem id' }, // sem 'id': keyPath do store 'categories' é 'id'
+        ]);
+      } catch (e) {
+        erro = e;
+      }
+      assert(erro !== null, 'deveria ter lançado');
+      assertEqual(
+        await storage.get('categories', 'teste_atomico_1'), undefined,
+        'o item ANTES do item ruim na lista não pode ter sido gravado'
+      );
+    } finally {
+      await storage.remove('categories', 'teste_atomico_1');
+    }
+  });
+
+  it('putManyAcrossStores nao grava em NENHUM store se um item de outro store lancar sincronamente', async () => {
+    try {
+      const categoriasAntes = (await storage.getAll('categories')).length;
+      let erro = null;
+      try {
+        await storage.putManyAcrossStores({
+          categories: [{ id: 'teste_atomico_2', nome: 'Boa', cor: '#222' }],
+          transactions: [{ data: '2026-06-10', valor: 1 }], // sem 'id': keyPath de 'transactions' é 'id'
+        });
+      } catch (e) {
+        erro = e;
+      }
+      assert(erro !== null, 'deveria ter lançado');
+      const categoriasDepois = (await storage.getAll('categories')).length;
+      assertEqual(
+        categoriasDepois, categoriasAntes,
+        'a categoria de um store SEM problema nao pode ter sido gravada por causa de erro em outro store da mesma transação'
+      );
+    } finally {
+      await storage.remove('categories', 'teste_atomico_2');
+    }
+  });
+});

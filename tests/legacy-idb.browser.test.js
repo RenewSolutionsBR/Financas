@@ -61,6 +61,11 @@ async function limparResultadoDaMigracao() {
   for (const id of DADOS_FALSOS.categories.map((c) => c.id)) await storage.remove('categories', id);
   const todas = await storage.getAll('statements');
   for (const s of todas.filter((s) => s.contaId === OPCOES.cartaoTitularId)) await storage.remove('statements', s.id);
+  // N5: a fixture de meta é [] de propósito (ver comentário acima), então
+  // isto é um no-op hoje — mas fica aqui para não depender de ninguém
+  // lembrar de manter a fixture vazia; se algum dia ela ganhar uma linha,
+  // esta limpeza a alcança do mesmo jeito.
+  for (const m of DADOS_FALSOS.meta) await storage.remove('meta', m.key);
 }
 
 describe('legacy-idb: banco antigo ausente', () => {
@@ -140,6 +145,47 @@ describe('legacy-idb: migracao com banco antigo falso (dados inventados)', () =>
         await limparResultadoDaMigracao();
       }
     } finally {
+      await derrubarBancoLegadoFalso();
+    }
+  });
+
+  // #2 da revisão: IDBObjectStore.put() lança SINCRONAMENTE (não via
+  // request.onerror) quando o valor não tem chave válida para o keyPath do
+  // store. migrateV1ToV2 copia `categories` do legado sem checar `id`
+  // nenhum (só `expenses` tem essa guarda) — uma categoria sem id, vinda do
+  // banco antigo, é um jeito real de disparar o caminho síncrono end-to-end.
+  it('categoria sem id valido: a migracao falha atomicamente, nada do lote fica gravado', async () => {
+    const dadosComCategoriaRuim = {
+      ...DADOS_FALSOS,
+      categories: [...DADOS_FALSOS.categories, { nome: 'Categoria sem id' }],
+    };
+    await criarBancoLegadoFalso(dadosComCategoriaRuim);
+    try {
+      let erro = null;
+      try {
+        await importLegacyInto(OPCOES);
+      } catch (e) {
+        erro = e;
+      }
+      assert(erro !== null, 'deveria ter lançado');
+      assert(/Não consegui salvar/i.test(erro.message), erro.message);
+
+      // Nada deste lote pode ter sido gravado — nem os lançamentos válidos
+      // (falso_e1/falso_e3) nem a fatura, mesmo eles tendo sido enfileirados
+      // ANTES da categoria ruim na mesma transação atômica.
+      const transacoesMigradas = (await storage.getAll('transactions'))
+        .filter((t) => t.contaId === OPCOES.cartaoTitularId);
+      assertEqual(transacoesMigradas.length, 0, 'nenhum lançamento deveria ter sido gravado');
+      const faturasMigradas = (await storage.getAll('statements'))
+        .filter((s) => s.contaId === OPCOES.cartaoTitularId);
+      assertEqual(faturasMigradas.length, 0, 'nenhuma fatura deveria ter sido gravada');
+      const categorias = await storage.getAll('categories');
+      assert(
+        !categorias.some((c) => c.id === 'falso_teste_alimentacao'),
+        'nem a categoria BOA do mesmo lote deveria ter sido gravada'
+      );
+    } finally {
+      await limparResultadoDaMigracao();
       await derrubarBancoLegadoFalso();
     }
   });

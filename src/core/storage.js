@@ -78,10 +78,47 @@ export async function put(nome, valor) {
   return promessa(store(await openDB(), nome, 'readwrite').put(valor));
 }
 
+// Aguarda o desfecho da TRANSAÇÃO (commit ou abort), não as respostas
+// individuais de cada put(): uma requisição que falha aborta a transação
+// inteira por padrão (não chamamos preventDefault no erro dela), e só o
+// evento da transação diz se o conjunto todo realmente foi para o disco.
+function aguardarTransacao(tx) {
+  return new Promise((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error || new Error('A gravação foi cancelada.'));
+  });
+}
+
+// Enfileira os put()s dentro de uma transação já aberta, sem deixar uma
+// falha SÍNCRONA (ex.: valor sem chave válida para o keyPath do store —
+// IDBObjectStore.put() lança na hora, não via request.onerror) comitar em
+// silêncio os itens que já tinham sido enfileirados antes dela. Sem isto,
+// "ou tudo entra, ou nada entra" era mentira no caminho mais comum de erro
+// (chave ausente/errada) e verdade só no raro (quota, etc., que é
+// assíncrono e já abortava a transação por padrão).
+async function enfileirarComRollback(tx, executar) {
+  const desfecho = aguardarTransacao(tx);
+  try {
+    executar();
+  } catch (erroSincrono) {
+    try {
+      tx.abort();
+    } catch (e) {
+      // Já pode estar abortando ou fechada — não é um erro novo a reportar.
+    }
+    await desfecho.catch(() => {}); // espera o rollback terminar antes de propagar
+    throw erroSincrono;
+  }
+  await desfecho;
+}
+
 export async function putMany(nome, valores) {
   if (!valores || !valores.length) return;
   const s = store(await openDB(), nome, 'readwrite');
-  await Promise.all(valores.map((v) => promessa(s.put(v))));
+  await enfileirarComRollback(s.transaction, () => {
+    for (const v of valores) s.put(v);
+  });
 }
 
 /**
@@ -107,18 +144,11 @@ export async function putManyAcrossStores(entradasPorStore) {
     // stores com mais de um nome — mesma guarda de store() acima.
     tx = db.transaction(nomes, 'readwrite');
   }
-  for (const nome of nomes) {
-    const s = tx.objectStore(nome);
-    for (const v of entradasPorStore[nome]) s.put(v);
-  }
-  // Espera o COMMIT da transação, não só as respostas individuais de put():
-  // uma requisição que falha aborta a transação inteira por padrão (nós não
-  // chamamos preventDefault no erro dela), e só o evento da transação diz se
-  // o conjunto todo realmente foi para o disco.
-  await new Promise((resolve, reject) => {
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-    tx.onabort = () => reject(tx.error || new Error('A gravação foi cancelada.'));
+  await enfileirarComRollback(tx, () => {
+    for (const nome of nomes) {
+      const s = tx.objectStore(nome);
+      for (const v of entradasPorStore[nome]) s.put(v);
+    }
   });
 }
 

@@ -7,6 +7,21 @@
 // aqui nem em quem usa este módulo.
 
 import { LEGACY_DB_NAME } from '../../src/core/db-schema.js';
+import { origemSeguraParaTestesDestrutivos } from './origem-teste.js';
+
+// GUARDA CRÍTICA: derrubarBancoLegadoFalso() chama indexedDB.deleteDatabase
+// incondicionalmente. tests/ e tools/tests.html são versionados e o GitHub
+// Pages serve a raiz do repositório — sem esta guarda, abrir a suíte na
+// origem de produção (a mesma origem do app anterior de verdade) apagaria
+// o banco `livro-de-gastos` real do usuário, faturas de janeiro a junho de
+// 2026 incluídas. A checagem roda no corpo do módulo, não dentro de uma
+// função: uma falha aqui interrompe a AVALIAÇÃO do módulo, então nenhuma
+// das funções abaixo chega a existir para ser chamada por engano.
+if (typeof location !== 'undefined' && !origemSeguraParaTestesDestrutivos(location.hostname)) {
+  throw new Error(
+    'Fixture de teste não roda fora de localhost/127.0.0.1 — evita apagar o banco do app anterior numa origem real.'
+  );
+}
 
 const STORES_LEGADO = ['expenses', 'categories', 'faturas', 'meta'];
 

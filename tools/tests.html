@@ -23,6 +23,26 @@
   <script type="module">
     import { runAll } from '../tests/harness.js';
     import { TEST_MODULES, BROWSER_ONLY_MODULES } from '../tests/index.js';
+    import { origemSeguraParaTestesDestrutivos } from '../tests/fixtures/origem-teste.js';
+
+    // Esta suíte grava e apaga dados de verdade neste navegador: os testes
+    // de navegador escrevem no banco `financas`, e alguns criam/derrubam um
+    // banco `livro-de-gastos` FALSO para simular o app anterior. Como este
+    // arquivo é versionado e o GitHub Pages serve a raiz do repositório, a
+    // origem de produção é a MESMA origem onde o app anterior de verdade
+    // guarda o banco `livro-de-gastos` real do usuário — sem esta guarda,
+    // abrir esta página lá apagaria os dados dele. A checagem roda antes do
+    // laço de import, então nenhum teste chega a ser sequer carregado fora
+    // de localhost.
+    if (!origemSeguraParaTestesDestrutivos(location.hostname)) {
+      const resumo = document.getElementById('resumo');
+      resumo.textContent =
+        'Esta suíte de testes só roda em localhost: ela grava e apaga dados neste ' +
+        'navegador, inclusive um banco que simula o app anterior. Rode o servidor ' +
+        'local e abra esta página por localhost (ou 127.0.0.1) para executar os testes.';
+      resumo.className = 'falhou';
+      throw new Error('Suíte de testes bloqueada fora de localhost/127.0.0.1.');
+    }
 
     for (const mod of [...TEST_MODULES, ...BROWSER_ONLY_MODULES]) {
       await import(`../tests/${mod.replace('./', '')}`);
