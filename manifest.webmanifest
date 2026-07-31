@@ -1,9 +1,8 @@
 {
   "name": "Livro de Gastos",
   "short_name": "Gastos",
-  "description": "Controle financeiro pessoal offline-first.",
-  "start_url": "./index.html",
-  "scope": "./",
+  "start_url": ".",
+  "scope": ".",
   "display": "standalone",
   "background_color": "#f4efe4",
   "theme_color": "#f4efe4",

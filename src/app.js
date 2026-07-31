@@ -43,10 +43,11 @@ async function boot() {
 
 function registrarServiceWorker() {
   if (!('serviceWorker' in navigator)) return;
-  // sw.js chega numa tarefa de infraestrutura futura. Falha de registro (por
-  // exemplo o arquivo ainda não existir) não pode virar erro de console nem
-  // travar o boot: o app funciona sem service worker, só perde o cache offline.
-  navigator.serviceWorker.register('sw.js').catch(() => {});
+  // sw.js usa import para ler a versão de src/version.js, por isso precisa
+  // ser registrado como módulo. Falha de registro não pode virar erro de
+  // console nem travar o boot: o app funciona sem service worker, só perde
+  // o cache offline.
+  navigator.serviceWorker.register('sw.js', { type: 'module' }).catch(() => {});
 }
 
 boot();
