@@ -79,6 +79,15 @@ export function migrateV1ToV2(legado, opcoes) {
 
   const transactions = [];
   for (const e of expenses) {
+    // Sem id não há como gravar (keyPath 'id' em transactions) nem como
+    // referenciar o registro num aviso depois — e sem esta guarda, o
+    // putMany/putManyAcrossStores inteiro falhava com "key path yielded a
+    // value that is not a valid key", derrubando os demais lançamentos bons
+    // junto (ou, com a gravação atômica, a migração inteira).
+    if (!e || typeof e.id !== 'string' || !e.id) {
+      avisos.push('Um lançamento sem identificador válido foi descartado (não é possível migrá-lo com segurança).');
+      continue;
+    }
     if (!isValidISO(e.data)) {
       avisos.push(`Lançamento "${e.id}" foi descartado por não ter data válida.`);
       continue;
@@ -109,6 +118,7 @@ export function migrateV1ToV2(legado, opcoes) {
   }
 
   const statements = [];
+  const idsDeFaturaVistos = new Set();
   for (const f of faturas) {
     // Sem vencimento válido, duas faturas geravam o mesmo id e a segunda
     // sobrescrevia a primeira no banco. O hash do conteúdo da fatura dá uma
@@ -123,8 +133,24 @@ export function migrateV1ToV2(legado, opcoes) {
         `com uma referência gerada. Confira-a na aba Conciliação.`
       );
     }
+    let id = `${cartaoTitularId}|fatura|${referencia}`;
+    // Mesmo com vencimento válido, o app anterior não impedia reimportar o
+    // mesmo PDF duas vezes com o mesmo vencimento — sem esta checagem, a
+    // segunda sobrescrevia a primeira em silêncio no put() e a contagem
+    // mostrada ao usuário ("N fatura(s) trazidas") não batia com o que
+    // sobrava gravado.
+    if (idsDeFaturaVistos.has(id)) {
+      const hash = stableHash([f.arquivo || '', f.dataCorte || '', (f.rows || []).length, f.importedAt || '', referencia]);
+      id = `${id}|dup-${hash}`;
+      avisos.push(
+        `Duas faturas do app anterior têm a mesma referência (${referencia}); uma delas foi ` +
+        `importada com um identificador ajustado para não sobrescrever a outra. Confira as ` +
+        `duas na aba Conciliação.`
+      );
+    }
+    idsDeFaturaVistos.add(id);
     statements.push({
-      id: `${cartaoTitularId}|fatura|${referencia}`,
+      id,
       tipo: 'fatura',
       contaId: cartaoTitularId,
       adaptador: 'santander-cartao-pdf',

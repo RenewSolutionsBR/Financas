@@ -28,9 +28,15 @@ function abrirSomenteLeitura() {
     req.onerror = () => reject(req.error);
     req.onupgradeneeded = () => {
       // Só acontece se o banco não existia. Abortamos para não deixar um banco
-      // vazio para trás.
+      // vazio para trás — e só rejeitamos a promessa quando a transação de
+      // versionchange já terminou de abortar (evento `abort`, não a simples
+      // chamada de `abort()`), para que quem espera esta promessa possa
+      // contar que o banco fantasma já não existe mais, sem precisar de
+      // nenhuma espera arbitrária depois.
+      req.transaction.onabort = () => {
+        reject(new Error('O banco do app anterior não existe nesta origem.'));
+      };
       req.transaction.abort();
-      reject(new Error('O banco do app anterior não existe nesta origem.'));
     };
   });
 }
@@ -59,14 +65,27 @@ export async function readLegacyDatabase() {
 }
 
 export async function importLegacyInto(opcoes) {
-  const legado = await readLegacyDatabase();
+  // Fase de leitura e fase de escrita relatam erros com mensagens distintas:
+  // um erro no meio da leitura não tem nada gravado ainda, e um erro na
+  // escrita, com a gravação atômica abaixo, também não — mas o usuário
+  // precisa saber QUAL das duas falhou para não confundir "o app anterior
+  // sumiu" com "não coube no aparelho".
+  let legado;
+  try {
+    legado = await readLegacyDatabase();
+  } catch (e) {
+    throw new Error('Não consegui ler os dados do app anterior: ' + e.message);
+  }
+
   const { transactions, categories, statements, meta, avisos } = migrateV1ToV2(legado, opcoes);
-  // Ordem deliberada: categorias antes de transactions, para que nenhum
-  // lançamento fique apontando para uma categoria que ainda não existe se a
-  // gravação for interrompida no meio.
-  await storage.putMany('categories', categories);
-  await storage.putMany('transactions', transactions);
-  await storage.putMany('statements', statements);
-  await storage.putMany('meta', meta);
+  try {
+    // Uma única transação cobrindo os quatro stores: ou tudo entra, ou nada
+    // entra. Antes disto, um erro na 3ª de quatro gravações separadas
+    // deixava as duas primeiras já persistidas e o app avisava "não
+    // consegui ler" sobre uma migração que na verdade tinha gravado metade.
+    await storage.putManyAcrossStores({ categories, transactions, statements, meta });
+  } catch (e) {
+    throw new Error('Não consegui salvar os dados migrados neste aparelho: ' + e.message);
+  }
   return { transactions, statements, avisos };
 }

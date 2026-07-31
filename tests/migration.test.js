@@ -134,6 +134,36 @@ describe('db-schema: migração v1 para v2', () => {
     assertEqual(avisos.filter((a) => /vencimento/i.test(a)).length, 2);
   });
 
+  it('nao deixa duas faturas com o MESMO vencimento valido colidirem no mesmo id', () => {
+    // Diferente do teste acima (sem vencimento): aqui as duas faturas tem
+    // vencimento valido e igual - o app anterior nao impedia reimportar o
+    // mesmo PDF duas vezes. Sem a dedup, a segunda sobrescrevia a primeira
+    // no put() e a contagem mostrada ao usuario nao batia com o gravado.
+    const legado = { expenses: [], faturas: [
+      { vencimento: '2026-06-30', dataCorte: '2026-06-23', arquivo: 'fatura-1a-via.pdf', rows: [{ valor: 1 }] },
+      { vencimento: '2026-06-30', dataCorte: '2026-06-23', arquivo: 'fatura-reimportada.pdf', rows: [{ valor: 1 }, { valor: 2 }] },
+    ] };
+    const { statements, avisos } = migrateV1ToV2(legado, OPC);
+    assertEqual(statements.length, 2);
+    assert(statements[0].id !== statements[1].id, 'os dois ids precisam ser distintos para nao se sobrescreverem');
+    assert(statements[0].id.startsWith('acc_cartao_1|fatura|2026-06-30'));
+    assert(statements[1].id.startsWith('acc_cartao_1|fatura|2026-06-30'));
+    assert(avisos.some((a) => a.includes('mesma referência')), 'precisa avisar sobre a colisao');
+  });
+
+  it('descarta expense sem id valido, sem derrubar os demais', () => {
+    const legado = { expenses: [
+      { descricao: 'sem id nenhum', valor: 10, data: '2026-06-01', categoria: 'casa' },
+      { id: '', descricao: 'id vazio', valor: 10, data: '2026-06-01', categoria: 'casa' },
+      { id: 42, descricao: 'id numerico', valor: 10, data: '2026-06-01', categoria: 'casa' },
+      { id: 'bom', descricao: 'este tem id', valor: 10, data: '2026-06-01', categoria: 'casa' },
+    ] };
+    const { transactions, avisos } = migrateV1ToV2(legado, OPC);
+    assertEqual(transactions.length, 1);
+    assertEqual(transactions[0].id, 'bom');
+    assertEqual(avisos.filter((a) => a.includes('identificador válido')).length, 3);
+  });
+
   it('preserva campo desconhecido do app anterior em vez de descarta-lo', () => {
     const legado = { expenses: [
       { id: 'x', descricao: 'A', valor: 10, data: '2026-06-01', categoria: 'casa', observacao: 'nota do usuario' },

@@ -84,6 +84,44 @@ export async function putMany(nome, valores) {
   await Promise.all(valores.map((v) => promessa(s.put(v))));
 }
 
+/**
+ * Grava em vários stores dentro de uma única transação — ou tudo entra, ou
+ * nada entra. Existe para operações como a migração do app anterior, que
+ * gravam em quatro stores (categories/transactions/statements/meta): sem
+ * isto, um erro na 3ª gravação deixava as duas primeiras já persistidas,
+ * e o usuário via uma migração "parcial" sem nenhum aviso disso.
+ *
+ * @param {Record<string, any[]>} entradasPorStore
+ */
+export async function putManyAcrossStores(entradasPorStore) {
+  const nomes = Object.keys(entradasPorStore || {}).filter(
+    (nome) => (entradasPorStore[nome] || []).length
+  );
+  if (!nomes.length) return;
+  const db = await openDB();
+  let tx;
+  try {
+    tx = db.transaction(nomes, 'readwrite', { durability: 'strict' });
+  } catch (e) {
+    // Motores antigos rejeitam a assinatura de 3 argumentos, ou a lista de
+    // stores com mais de um nome — mesma guarda de store() acima.
+    tx = db.transaction(nomes, 'readwrite');
+  }
+  for (const nome of nomes) {
+    const s = tx.objectStore(nome);
+    for (const v of entradasPorStore[nome]) s.put(v);
+  }
+  // Espera o COMMIT da transação, não só as respostas individuais de put():
+  // uma requisição que falha aborta a transação inteira por padrão (nós não
+  // chamamos preventDefault no erro dela), e só o evento da transação diz se
+  // o conjunto todo realmente foi para o disco.
+  await new Promise((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error || new Error('A gravação foi cancelada.'));
+  });
+}
+
 export async function remove(nome, key) {
   return promessa(store(await openDB(), nome, 'readwrite').delete(key));
 }
