@@ -6,6 +6,7 @@ import { el, toast, abrirModal } from './components.js';
 import { secao, campo } from './cadastros-comuns.js';
 import { listAccounts, TIPO_CARTAO } from '../domain/accounts.js';
 import { exportarBackup, importarBackup, detectarVersaoDoArquivo } from '../importers/backup-xlsx.js';
+import { migrarDoAppAnterior } from './onboarding.js';
 
 export function secaoBackup(aoMudar) {
   const inputArquivo = el('input', { type: 'file', accept: '.xlsx', class: 'oculto' });
@@ -48,6 +49,7 @@ export function secaoBackup(aoMudar) {
     el('div', { class: 'acoes' }, [
       el('button', { class: 'btn', text: 'Exportar backup', onclick: baixarBackup }),
       el('button', { class: 'btn', text: 'Importar backup', onclick: () => inputArquivo.click() }),
+      el('button', { class: 'btn', text: 'Migrar dados do app anterior', onclick: migrarDoAppAnterior }),
     ]),
     inputArquivo,
   ]);

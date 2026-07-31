@@ -7,10 +7,8 @@ import { seedCategoriasIfEmpty } from './domain/categories.js';
 import { seedFormasIfEmpty } from './domain/payment-methods.js';
 import { renderCadastros } from './ui/cadastros.js';
 import { renderLancamentos, resetLancamentos } from './ui/lancamentos.js';
+import { talvezOferecerOnboarding } from './ui/onboarding.js';
 
-// A tela restante entra na tarefa 14. Ela acrescenta o próprio import e a
-// própria linha em RENDERIZADORES ao ser criada — nada de import comentado
-// esperando por um arquivo que ainda não existe.
 const RENDERIZADORES = {
   Lancamentos: renderLancamentos,
   Cadastros: renderCadastros,
@@ -34,6 +32,7 @@ async function boot() {
     await seedFormasIfEmpty();
     initTabs(renderizar);
     await renderizar('Lancamentos');
+    await talvezOferecerOnboarding();
     registrarServiceWorker();
     if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
   } catch (e) {
