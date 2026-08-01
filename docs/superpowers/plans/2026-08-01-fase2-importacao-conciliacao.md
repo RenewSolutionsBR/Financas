@@ -1307,16 +1307,17 @@ git commit -m "Adiciona compra parcelada manual com aviso de duplicidade em Lanc
 **⚠️ Nota de privacidade, leia antes de começar**: os PDFs em `Faturas/` são documentos financeiros reais do usuário. Nada do texto extraído deles pode ir para um commit sem passar por anonimização manual (nomes, valores, números de cartão trocados por fictícios, preservando só a estrutura). Ao medir o parser contra os arquivos reais, faça isso **fora do diretório do repositório** (num script solto, ou no console do navegador apontando pro caminho absoluto do arquivo) — nunca copie um PDF ou o texto bruto extraído dele para dentro de `financas-app/`, nem temporariamente.
 
 **Files:**
-- Create: `src/importers/santander-cartao-pdf.js`
+- Create: `src/importers/santander-cartao-pdf.js` (núcleo puro: `parseFaturaTexto` e o `register`/`detectar`/`parse` que o consome)
+- Create: `src/importers/santander-cartao-pdf-extrair.js` (browser-only: extração de texto via `pdf.js` — `extractLines` e seus helpers, Step 8)
 - Copy: `vendor/pdf.min.mjs`, `vendor/pdf.worker.min.mjs` de `Cartão de Credito/gastos-app/vendor/`
 - Test: `tests/santander-cartao-pdf.test.js`
 - Test fixture: `tests/fixtures/fatura-texto-sintetica.js` (texto **sintético**, no formato que `extractLines` produz — não derivado de nenhum PDF real; ver nota de privacidade acima)
 
 **Interfaces:**
 - Consumes: `importers/registry.js` (`register`), `domain/classification.js` (`canonicalizar`), `core/ids.js` (`stableHash`)
-- Produces: registra o adaptador `santander-cartao-pdf` no import do módulo (`register({ id: 'santander-cartao-pdf', ... })`), e exporta as funções internas necessárias para teste: `parseFaturaTexto(linhas, arquivo)` (pura — recebe linhas já extraídas do PDF, sem depender de `pdf.js`, para ser testável em Node sem abrir um PDF de verdade), `extractCutoffDateDeLinhas(linhas, vencimentoDate)`, `resolveDate(dd, mm, vencimento)`.
+- Produces: `santander-cartao-pdf.js` registra o adaptador `santander-cartao-pdf` (`register({ id: 'santander-cartao-pdf', ... })`) e exporta as funções internas necessárias para teste: `parseFaturaTexto(linhas, arquivo, vencimentoDate)` (pura — recebe linhas já extraídas do PDF, sem depender de `pdf.js`, para ser testável em Node sem abrir um PDF de verdade; devolve `{ rows, checksum, avisos }`), `extractCutoffDateDeLinhas(linhas, vencimentoDate)`, `extrairPeriodoCompras(linhas, dataCorteISO)`, `resolveDate(dd, mm, vencimento)`, `vencimentoFromText(linhas)`, `toISOExportado(d)`. `santander-cartao-pdf-extrair.js` exporta só `extractLines(doc)`, importado por `santander-cartao-pdf.js`.
 
-A extração de texto do PDF em si (`extractLines`, que usa `pdf.js` e só roda no navegador) fica separada da lógica de parsing de linha (`parseFaturaTexto`, pura) — é essa fronteira que permite testar o parsing inteiro no Node contra fixtures de texto, sem nunca abrir um PDF nos testes automatizados.
+**Divisão em dois arquivos, decidida antes do dispatch** (não durante a implementação): a extração de texto do PDF em si (`extractLines`, que usa `pdf.js` e só roda no navegador — Step 8) mais o núcleo de parsing (`parseFaturaTexto` e seus helpers, Steps 1-7) juntos passariam de ~300 linhas, acima do teto de ~250 dos Global Constraints. A fronteira pura/impura que a task já separa (`parseFaturaTexto` testável em Node vs. `extractLines` browser-only) é exatamente onde cortar — cada lado já era conceitualmente independente, então a divisão não força nenhuma reestruturação, só move o Step 8 para o arquivo `-extrair.js`.
 
 - [ ] **Step 1: Vendorizar o PDF.js**
 
@@ -1658,13 +1659,232 @@ const CARD_HEADER_RE = /^(@)?[^-]*-\s*\d{4}\s*XXXX\s*XXXX\s*(\d{4})\s*$/;
 // grupo 1: presença de '@' => adicional. grupo 2: final do cartão.
 ```
 
-Adicione `plastico: 'titular' | 'adicional'` à linha normalizada, e teste com uma fixture sintética que tenha os dois tipos de bloco (siga o mesmo princípio do Step 2 — texto inventado, não copiado). Extraia o bloco "Período das compras" da página 1 (frame antes de `Detalhamento da Fatura`, junto de onde `CUTOFF_RE` já procura) escolhendo, entre as quatro faixas, a que **termina** na `dataCorte` já extraída — devolva como `periodoCompras: { inicio, fim }` no nível do `statement`, não da linha. Escreva o teste desse casamento (quatro faixas sintéticas, confirme que a certa é escolhida pela coincidência de fim com o corte) antes de implementar, seguindo o mesmo ciclo test-first dos passos anteriores.
+Adicione `plastico: 'titular' | 'adicional'` à linha normalizada, e teste com uma fixture sintética que tenha os dois tipos de bloco (siga o mesmo princípio do Step 2 — texto inventado, não copiado).
 
-- [ ] **Step 8: `detectar` e `register` — colar a extração de texto (browser-only) e registrar o adaptador**
-
-Acrescente ao final do arquivo a extração de texto (portada quase literal do app anterior — `clusterRowsFromItems`, `reconstructSegment`, `reconstructPageLines`, `extractLines`, `getPageItems`, e as constantes `COMPLETE_ROW_RE`/`LABEL_LINE_RE` de suporte), sem testes automatizados (depende de `pdf.js` real, é browser-only) — mas com uma verificação manual no navegador antes do commit. Implemente:
+Exporte também `extrairPeriodoCompras(linhas, dataCorteISO)`, que varre as primeiras linhas da página 1 (mesma região onde `CUTOFF_RE` já procura) por faixas `DD/MM/AA a DD/MM/AA` e escolhe a que **termina** na `dataCorte` já extraída:
 
 ```js
+const FAIXA_PERIODO_RE = /(\d{2})\/(\d{2})\/(\d{2})\s*a\s*(\d{2})\/(\d{2})\/(\d{2})/g;
+
+export function extrairPeriodoCompras(linhas, dataCorteISO) {
+  if (!dataCorteISO) return null;
+  const texto = (linhas || []).slice(0, 30).join(' ');
+  const faixas = [];
+  let m;
+  while ((m = FAIXA_PERIODO_RE.exec(texto))) {
+    faixas.push({ inicio: `20${m[3]}-${m[2]}-${m[1]}`, fim: `20${m[6]}-${m[5]}-${m[4]}` });
+  }
+  return faixas.find((f) => f.fim === dataCorteISO) || null;
+}
+```
+
+Teste antes de implementar (quatro faixas sintéticas, confirme que a certa é escolhida pela coincidência de fim com o corte, e que nenhuma faixa batendo devolve `null` sem lançar):
+
+```js
+describe('santander-cartao-pdf: extrairPeriodoCompras', () => {
+  it('escolhe a faixa cujo FIM bate com a dataCorte, entre quatro faixas', () => {
+    const linhas = [
+      'Período das compras',
+      '26/02/26 a 25/03/26  26/03/26 a 25/04/26  26/04/26 a 25/05/26  26/05/26 a 24/06/26',
+    ];
+    const resultado = extrairPeriodoCompras(linhas, '2026-05-25');
+    assertDeepEqual(resultado, { inicio: '2026-04-26', fim: '2026-05-25' });
+  });
+
+  it('nenhuma faixa batendo com o corte devolve null, sem lancar', () => {
+    const linhas = ['26/02/26 a 25/03/26'];
+    assertEqual(extrairPeriodoCompras(linhas, '2026-12-31'), null);
+  });
+
+  it('sem dataCorte conhecida, devolve null direto (nao ha o que comparar)', () => {
+    assertEqual(extrairPeriodoCompras(['26/02/26 a 25/03/26'], null), null);
+  });
+});
+```
+
+- [ ] **Step 8: `santander-cartao-pdf-extrair.js` — extração de texto (browser-only)**
+
+Crie o segundo arquivo (ver "Divisão em dois arquivos" acima). Extração de texto portada do app anterior — `clusterRowsFromItems`, `reconstructSegment`, `reconstructPageLines`, `extractLines`, `getPageItems`. **Uma correção deliberada em relação ao original**: o app anterior tinha o nome real do usuário hardcoded em `LABEL_LINE_RE` (`TITULAR EXEMPLO|@\s*RENE`) — funcionava só porque era um app de um usuário só, mas não pode entrar num repositório público, e também não generalizava para outro titular. A versão abaixo reconhece a **forma estrutural** da linha de cabeçalho de cartão (mesmo padrão de `CARD_HEADER_RE` do outro arquivo) em vez de um nome específico — funciona para qualquer titular, sem dado pessoal no código-fonte.
+
+Sem testes automatizados (depende de `pdf.js` real, é browser-only) — só a verificação manual do Step 9.
+
+```js
+// Extração de texto de PDF via pdf.js — browser-only, sem equivalente
+// testável em Node. A lógica de parsing de linha (que é testável) mora em
+// santander-cartao-pdf.js; este arquivo só produz as linhas de texto que
+// aquele consome.
+
+function clusterRowsFromItems(items, yTol = 2.2) {
+  const sorted = [...items].sort((a, b) => (b.y - a.y) || (a.x - b.x));
+  const rows = [];
+  let cur = [];
+  let curY = null;
+  for (const it of sorted) {
+    if (curY === null || Math.abs(it.y - curY) <= yTol) {
+      cur.push(it);
+      curY = curY === null ? it.y : curY;
+    } else {
+      rows.push(cur);
+      cur = [it];
+      curY = it.y;
+    }
+  }
+  if (cur.length) rows.push(cur);
+  return rows.map((r) => r.sort((a, b) => a.x - b.x).map((it) => it.str).join(' ').replace(/\s+/g, ' ').trim());
+}
+
+const COMPLETE_ROW_RE = /^(?:\S+\s+)?\d{2}\/\d{2}\s+.+\d,\d{2}\s*$/;
+// Reconhece linha de cabeçalho de cartão pela FORMA estrutural (mesmo padrão
+// do CARD_HEADER_RE em santander-cartao-pdf.js), não por nome de pessoa —
+// o app anterior tinha o nome real do usuário hardcoded aqui, o que não
+// pode se repetir num repositório público nem generaliza para outro titular.
+const LABEL_LINE_RE = /^(Parcelamentos|Despesas|Pagamento e Demais|VALOR TOTAL|Compra\s+Data|Detalhamento da Fatura|Resumo da Fatura|IOF DESPESA|@?[^-]+-\s*\d{4}\s*XXXX\s*XXXX\s*\d{4})/i;
+
+function scoreCompleteness(lines) {
+  return lines.reduce((n, l) => n + ((COMPLETE_ROW_RE.test(l) || LABEL_LINE_RE.test(l)) ? 1 : 0), 0);
+}
+
+function reconstructSegment(items, depth = 0) {
+  if (!items.length || depth > 4) return clusterRowsFromItems(items);
+  const xs = [...new Set(items.map((it) => Math.round(it.x)))].sort((a, b) => a - b);
+  const noSplitLines = clusterRowsFromItems(items);
+  if (xs.length < 2) return noSplitLines;
+
+  let bestLines = noSplitLines;
+  let bestScore = scoreCompleteness(noSplitLines);
+
+  for (let i = 0; i < xs.length - 1; i++) {
+    const gap = xs[i + 1] - xs[i];
+    if (gap < 35) continue;
+    const mid = (xs[i] + xs[i + 1]) / 2;
+    const left = items.filter((it) => it.x < mid);
+    const right = items.filter((it) => it.x >= mid);
+    if (left.length < 5 || right.length < 5) continue;
+    const combined = [...reconstructSegment(left, depth + 1), ...reconstructSegment(right, depth + 1)];
+    const combinedScore = scoreCompleteness(combined);
+    if (combinedScore > bestScore) { bestLines = combined; bestScore = combinedScore; }
+  }
+  return bestLines;
+}
+
+function clusterRowsWithY(items, yTol = 2.2) {
+  const sorted = [...items].sort((a, b) => (b.y - a.y) || (a.x - b.x));
+  const rows = [];
+  let cur = [];
+  let curY = null;
+  for (const it of sorted) {
+    if (curY === null || Math.abs(it.y - curY) <= yTol) {
+      cur.push(it);
+      curY = curY === null ? it.y : curY;
+    } else {
+      rows.push({ y: curY, items: cur });
+      cur = [it];
+      curY = it.y;
+    }
+  }
+  if (cur.length) rows.push({ y: curY, items: cur });
+  return rows.map(({ y, items: r }) => ({ y, text: r.sort((a, b) => a.x - b.x).map((it) => it.str).join(' ').replace(/\s+/g, ' ').trim() }));
+}
+
+function reconstructPageLines(items, alreadyInDetail) {
+  if (!items.length) return { lines: [], stillInDetail: alreadyInDetail };
+
+  const rough = clusterRowsWithY(items);
+  let yTop = null;
+  let yFooter = null;
+  for (const { y, text } of rough) {
+    if (/Detalhamento da Fatura/i.test(text)) yTop = yTop === null ? y : Math.max(yTop, y);
+    if (/Juros e Custo Efetivo Total/i.test(text)) yFooter = yFooter === null ? y : Math.max(yFooter, y);
+  }
+
+  const inDetailAtStart = alreadyInDetail || yTop !== null;
+  if (!inDetailAtStart) return { lines: [], stillInDetail: false };
+
+  const hi = yTop !== null ? yTop + 3 : Math.max(...items.map((it) => it.y)) + 1;
+  const lo = yFooter !== null ? yFooter + 3 : Math.min(...items.map((it) => it.y)) - 1;
+  const bandItems = items.filter((it) => it.y >= lo && it.y <= hi);
+
+  let lines = reconstructSegment(bandItems);
+  if (yTop !== null) lines = ['Detalhamento da Fatura', ...lines];
+  return { lines, stillInDetail: true };
+}
+
+async function getPageItems(page) {
+  const content = await page.getTextContent();
+  return content.items
+    .filter((it) => it.str && it.str.trim().length > 0)
+    .map((it) => ({ str: it.str.trim(), x: it.transform[4], y: it.transform[5] }));
+}
+
+export async function extractLines(doc) {
+  const allLines = [];
+  let inDetail = false;
+  for (let pageNo = 1; pageNo <= doc.numPages; pageNo++) {
+    const page = await doc.getPage(pageNo);
+    const items = await getPageItems(page);
+    const { lines, stillInDetail } = reconstructPageLines(items, inDetail);
+    inDetail = stillInDetail;
+    allLines.push(...lines);
+    if (lines.some((l) => /^Resumo da Fatura/i.test(l.trim()))) break;
+  }
+  return allLines;
+}
+```
+
+- [ ] **Step 9: `vencimentoFromText` + `detectar`/`parse`/`register` — completar `santander-cartao-pdf.js`**
+
+O app anterior extraía o vencimento preferencialmente do NOME do arquivo (`Visa-DD-MM-AAAA.pdf`), porque era a convenção pessoal de um usuário só com um cartão. O app novo é multi-cartão e não pode depender de convenção de nome de arquivo — **só o texto do PDF** (rótulo "Vencimento" impresso), que é o que já funcionava como fallback no app anterior e não depende de ninguém ter renomeado nada.
+
+Escreva o teste primeiro, em `tests/santander-cartao-pdf.test.js` (junto dos demais):
+
+```js
+describe('santander-cartao-pdf: vencimentoFromText', () => {
+  it('acha a data de vencimento pelo rotulo "Vencimento" em linha propria, olhando as 2 linhas seguintes', () => {
+    const linhas = ['Fatura', 'Vencimento', 'irrelevante', '25/06/2026', 'resto'];
+    const d = vencimentoFromText(linhas);
+    assertEqual(d.getFullYear(), 2026);
+    assertEqual(d.getMonth(), 5); // junho
+    assertEqual(d.getDate(), 25);
+  });
+
+  it('acha tambem quando "Vencimento" e a data estao na MESMA linha', () => {
+    const d = vencimentoFromText(['Vencimento: 25/06/2026']);
+    assertEqual(d.getDate(), 25);
+  });
+
+  it('sem nenhum rotulo de vencimento reconhecivel, devolve null', () => {
+    assertEqual(vencimentoFromText(['nada aqui']), null);
+  });
+});
+```
+
+Implemente em `santander-cartao-pdf.js` (portado do app anterior, mesma lógica):
+
+```js
+function vencimentoFromText(linhas) {
+  for (let i = 0; i < linhas.length; i++) {
+    if (/^Vencimento$/i.test(linhas[i].trim())) {
+      for (let j = i + 1; j < Math.min(i + 3, linhas.length); j++) {
+        const m = /(\d{2})\/(\d{2})\/(\d{4})/.exec(linhas[j]);
+        if (m) return new Date(parseInt(m[3], 10), parseInt(m[2], 10) - 1, parseInt(m[1], 10));
+      }
+    }
+    const inline = /Vencimento\D+(\d{2})\/(\d{2})\/(\d{4})/i.exec(linhas[i]);
+    if (inline) return new Date(parseInt(inline[3], 10), parseInt(inline[2], 10) - 1, parseInt(inline[1], 10));
+  }
+  return null;
+}
+
+export function toISOExportado(d) {
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+```
+
+Rode `node tools/run-tests.mjs` e confirme PASS nos três testes acima antes de seguir. Agora complete o adaptador, importando `extractLines` do arquivo do Step 8:
+
+```js
+import { extractLines } from './santander-cartao-pdf-extrair.js';
+
 async function getPdfjs() {
   const lib = await import('../../vendor/pdf.min.mjs');
   lib.GlobalWorkerOptions.workerSrc = new URL('../../vendor/pdf.worker.min.mjs', import.meta.url).href;
@@ -1675,29 +1895,52 @@ async function parse(arrayBuffer, opcoes) {
   const pdfjsLib = await getPdfjs();
   const doc = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
   const linhas = await extractLines(doc);
-  // ... extrai vencimento (nome do arquivo ou texto), dataCorte via
-  // extractCutoffDateDeLinhas, chama parseFaturaTexto(linhas, opcoes.arquivo, vencimentoDate),
-  // monta { statement: { tipo: 'fatura', vencimento, dataCorte, periodoCompras, totalImpresso, rows }, rows, avisos }
+
+  const vencimentoDate = vencimentoFromText(linhas);
+  if (!vencimentoDate) {
+    throw new Error('Não consegui identificar a data de vencimento desta fatura (procurei o rótulo "Vencimento" no texto do PDF).');
+  }
+  const vencimentoISO = toISOExportado(vencimentoDate);
+
+  const dataCorteDate = extractCutoffDateDeLinhas(linhas, vencimentoDate);
+  const dataCorteISO = dataCorteDate ? toISOExportado(dataCorteDate) : null;
+  const periodoCompras = extrairPeriodoCompras(linhas, dataCorteISO);
+
+  const { rows, checksum, avisos } = parseFaturaTexto(linhas, opcoes.arquivo, vencimentoDate);
+  if (!dataCorteISO) avisos.push('Não encontrei a data de corte no PDF — a janela de conciliação vai usar uma estimativa.');
+
+  return {
+    statement: {
+      tipo: 'fatura', contaId: opcoes.contaId, adaptador: 'santander-cartao-pdf',
+      arquivo: opcoes.arquivo, importadoEm: Date.now(),
+      vencimento: vencimentoISO,
+      dataCorte: dataCorteISO,
+      periodoCompras,
+      totalImpresso: checksum.sections.reduce((soma, s) => soma + s.expected, 0),
+      rows,
+    },
+    rows, avisos, checksum,
+  };
 }
 
-function detectar(buffer) {
-  // pontuação simples: 0 se a extensão já não é .pdf (o registry já filtra
-  // por aceita, então aqui só precisa distinguir de outro adaptador de PDF
-  // futuro, se existir) — por ora, todo .pdf que chegar aqui pontua 1.
+function detectar() {
+  // O registry já filtra por extensão (.pdf); todo arquivo que chega aqui
+  // já passou por esse filtro, então pontua 1 sem checagem adicional —
+  // não há hoje um segundo adaptador de PDF para desempatar contra.
   return 1;
 }
 
 register({ id: 'santander-cartao-pdf', label: 'Fatura Santander (PDF)', aceita: ['.pdf'], detectar, parse });
 ```
 
-- [ ] **Step 9: Verificação manual no navegador com um dos PDFs reais**
+- [ ] **Step 10: Verificação manual no navegador com um dos PDFs reais**
 
 Servidor local, importe um dos três PDFs de `Faturas/` pela UI (ainda sem tela de Conciliação pronta — use um harness de teste manual em `tools/`, análogo ao `test-parser.html` do app anterior, criado só pra esta verificação). Confirme: checksum fecha, todas as linhas de despesa/parcelamento aparecem, a linha de pagamento de fatura aparece com `secao:'pagamentos_creditos'`, plástico e período de compras extraídos corretamente. **Não** commite nenhum artefato dessa verificação manual (nem print, nem texto extraído).
 
-- [ ] **Step 10: Commit**
+- [ ] **Step 11: Commit**
 
 ```bash
-git add vendor/pdf.min.mjs vendor/pdf.worker.min.mjs tests/santander-cartao-pdf.test.js tests/fixtures/fatura-texto-sintetica.js src/importers/santander-cartao-pdf.js
+git add vendor/pdf.min.mjs vendor/pdf.worker.min.mjs tests/santander-cartao-pdf.test.js tests/fixtures/fatura-texto-sintetica.js src/importers/santander-cartao-pdf.js src/importers/santander-cartao-pdf-extrair.js
 git commit -m "Adiciona adaptador de fatura Santander PDF, com plastico e periodo de compras"
 ```
 
