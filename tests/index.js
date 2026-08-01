@@ -18,6 +18,7 @@ export const TEST_MODULES = [
   './cadastros-comuns.test.js',
   './origem-teste.test.js',
   './cache-policy.test.js',
+  './registry.test.js',
 ];
 
 // Testes que dependem de IndexedDB ou DOM: só no navegador.
