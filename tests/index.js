@@ -21,6 +21,7 @@ export const TEST_MODULES = [
   './registry.test.js',
   './classification.test.js',
   './parcelas.test.js',
+  './lancamentos-parcelado.test.js',
 ];
 
 // Testes que dependem de IndexedDB ou DOM: só no navegador.

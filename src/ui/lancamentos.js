@@ -12,8 +12,9 @@
 
 import { el, toast, confirmar } from './components.js';
 import { campo, mostrarErros, opcoesAtivas, rotuloComStatus } from './cadastros-comuns.js';
+import { campoParceladoEModal } from './lancamentos-parcelado.js';
 import {
-  listTransactions, saveTransaction, removeTransaction,
+  listTransactions, saveTransaction, saveTransactions, removeTransaction,
   novaTransaction, validateTransaction, filterTransactions, sumDespesas, contaComoGasto, NATUREZAS,
 } from '../domain/transactions.js';
 import { listCategorias } from '../domain/categories.js';
@@ -246,6 +247,15 @@ async function formulario(ctx, transacoes) {
 
   const botaoSalvar = el('button', { class: 'btn btn-primario', type: 'submit', text: emEdicao ? 'Salvar alterações' : 'Lançar' });
 
+  // Compra parcelada: só faz sentido lançando do zero, nunca editando um
+  // lançamento já existente (mesmo raciocínio de não misturar os dois fluxos
+  // que o app anterior já tinha) — por isso o checkbox nem aparece em edição.
+  const { checkbox: chkParcelado, painelExtra: painelParcelado, confirmarEObterLancamentos } = campoParceladoEModal({
+    campo,
+    parseMoneyBR,
+    onRemoverTransacoes: async (ids) => { for (const id of ids) await removeTransaction(id); },
+  });
+
   // Guarda de reentrância: sem ela, dois disparos de submit antes do primeiro
   // `await saveTransaction` resolver criam dois registros distintos
   // (novaTransaction gera um id novo a cada chamada). A checagem em si é
@@ -257,6 +267,42 @@ async function formulario(ctx, transacoes) {
     salvando = true;
     botaoSalvar.disabled = true;
     try {
+      // Compra parcelada desvia pro fluxo do módulo irmão inteiro: N
+      // lançamentos de uma vez em vez de um só, checando duplicidade antes.
+      // Fica fora do fluxo de edição de propósito (checkbox nem aparece
+      // então) — não faz sentido "editar e parcelar" ao mesmo tempo.
+      if (chkParcelado.checked && !emEdicao) {
+        const base = {
+          descricao: inpDescricao.value.trim(),
+          data: parseDateBR(inpData.value),
+          categoria: selCategoria.value,
+          formaPagamentoId: selForma.value,
+          contaId: selConta.value || undefined,
+        };
+        // allFaturaRows vazio: a importação de fatura ainda não existe nesta
+        // fase (chega na Task 8) — sem fatura importada, não há linha pra
+        // casar na checagem fraca de duplicidade, só a identidade exata por
+        // parcelaKey entre lançamentos já continua funcionando.
+        const resultado = await confirmarEObterLancamentos(transacoes, [], base);
+        if (resultado.erro) { toast(resultado.erro, 'erro'); return; }
+        if (resultado.cancelado) return;
+
+        // Mesma validação do domínio usada no lançamento único, aplicada à
+        // parcela 1 (a única que carrega o formato final de todos os campos
+        // que o usuário digitou à mão — data, descrição, categoria, forma):
+        // pega data inválida, descrição vazia ou categoria/forma não
+        // escolhida antes de gravar qualquer coisa.
+        const erros = validateTransaction(resultado.lista[0]);
+        if (erros.length) return mostrarErros(erros);
+
+        await saveTransactions(resultado.lista);
+        await storage.setMeta('ultimaFormaUsada', base.formaPagamentoId);
+        editandoId = null;
+        toast(`${resultado.lista.length} parcelas lançadas, uma por mês.`, 'ok');
+        await renderLancamentos();
+        return;
+      }
+
       const { valor, erro: erroValor } = interpretarValor(inpValor.value);
       if (erroValor) return toast(erroValor, 'erro');
 
@@ -297,6 +343,8 @@ async function formulario(ctx, transacoes) {
     campo('Descrição', inpDescricao),
     el('div', { class: 'linha-form' }, [campo('Categoria', selCategoria), campo('Forma de pagamento', selForma)]),
     el('div', { class: 'linha-form' }, [campo('Conta / cartão', selConta), campo('Natureza', selNatureza)]),
+    emEdicao ? null : el('label', { class: 'campo-inline' }, [chkParcelado, el('span', { text: 'Compra parcelada' })]),
+    emEdicao ? null : painelParcelado,
     el('div', { class: 'acoes' }, [
       botaoSalvar,
       emEdicao ? el('button', { class: 'btn', type: 'button', text: 'Cancelar', onclick: async () => { editandoId = null; await renderLancamentos(); } }) : null,
