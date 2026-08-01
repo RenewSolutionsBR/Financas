@@ -3,7 +3,7 @@
 // reimplementada aqui (cartão adicional, matchers, etc. moram em domain/).
 
 import { el, toast, abrirModal, confirmar } from './components.js';
-import { secao, campo, mostrarErros } from './cadastros-comuns.js';
+import { secao, campo, mostrarErros, opcoesAtivas, rotuloComStatus } from './cadastros-comuns.js';
 import {
   TIPO_CONTA, TIPO_CARTAO, listAccounts, saveAccount, removeAccount,
   validateAccount, suggestMatchers, novaConta, novoCartao, isAdicional,
@@ -47,13 +47,20 @@ async function editarConta(acc, todas, aoMudar) {
     return campo(rotulo, input);
   };
 
-  const cartoesTitulares = todas.filter((a) => a.tipo === TIPO_CARTAO && !isAdicional(a) && a.id !== acc.id);
-  const contas = todas.filter((a) => a.tipo === TIPO_CONTA);
+  // opcoesAtivas: uma conta/cartão desativado some do seletor, exceto quando
+  // é o valor já gravado neste cadastro — mesma regra do formulário de
+  // Lançamentos, para não oferecer sem marca nenhuma um cadastro que o
+  // usuário desativou de propósito.
+  const cartoesTitulares = opcoesAtivas(
+    todas.filter((a) => a.tipo === TIPO_CARTAO && !isAdicional(a) && a.id !== acc.id),
+    acc.cartaoPaiId
+  );
+  const contas = opcoesAtivas(todas.filter((a) => a.tipo === TIPO_CONTA), acc.contaPagadoraId);
 
   const seletor = (nome, rotulo, opcoes, selecionado) => {
     const sel = el('select', { id: 'f_' + nome }, [
       el('option', { value: '', text: '— nenhum —' }),
-      ...opcoes.map((o) => el('option', { value: o.id, text: o.nome, ...(o.id === selecionado ? { selected: 'selected' } : {}) })),
+      ...opcoes.map((o) => el('option', { value: o.id, text: rotuloComStatus(o), ...(o.id === selecionado ? { selected: 'selected' } : {}) })),
     ]);
     campos[nome] = sel;
     return campo(rotulo, sel);

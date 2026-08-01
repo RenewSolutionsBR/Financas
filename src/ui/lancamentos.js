@@ -11,6 +11,7 @@
 // para poder editar a descrição.
 
 import { el, toast, confirmar } from './components.js';
+import { campo, mostrarErros, opcoesAtivas, rotuloComStatus } from './cadastros-comuns.js';
 import {
   listTransactions, saveTransaction, removeTransaction,
   novaTransaction, validateTransaction, filterTransactions, sumDespesas, contaComoGasto, NATUREZAS,
@@ -36,19 +37,11 @@ export function resetLancamentos() {
   filtros = { mes: monthKey(todayISO()) };
 }
 
-// Pura, sem DOM: um item inativo some da lista, a não ser que seja `idAtual` —
-// o valor já gravado no registro em edição. `idAtual` só conta quando não é
-// null/undefined: sem essa guarda, dois itens sem `id` (ex.: cadastro
-// corrompido vindo de uma restauração de backup antiga) se igualariam por
-// `undefined === undefined` e um inativo sem id voltaria a aparecer mesmo
-// fora de edição.
-export function opcoesAtivas(lista, idAtual) {
-  return (lista || []).filter((item) => item.ativo !== false || (idAtual != null && item.id === idAtual));
-}
-
-function rotuloComStatus(item) {
-  return item.ativo === false ? `${item.nome} — desativada` : item.nome;
-}
+// opcoesAtivas e rotuloComStatus moraram aqui e foram extraídas para
+// cadastros-comuns.js: os seletores de Cadastros que referenciam outro
+// cadastro (ex.: "conta que paga a fatura", "conta padrão da forma")
+// precisam da mesma regra — um cadastro desativado sem marca, ou pior,
+// escondido, era exatamente o furo que a revisão final pegou.
 
 // Pura: decide o que o campo Valor significa antes de qualquer gravação.
 // parseMoneyBR devolve null tanto para "vazio" quanto para "não entendi o
@@ -187,7 +180,7 @@ async function formulario(ctx, transacoes) {
       }
 
       const erros = validateTransaction(registro);
-      if (erros.length) return toast(erros.join(' '), 'erro');
+      if (erros.length) return mostrarErros(erros);
 
       await saveTransaction(registro);
       await storage.setMeta('ultimaFormaUsada', registro.formaPagamentoId);
@@ -210,10 +203,6 @@ async function formulario(ctx, transacoes) {
       emEdicao ? el('button', { class: 'btn', type: 'button', text: 'Cancelar', onclick: async () => { editandoId = null; await renderLancamentos(); } }) : null,
     ]),
   ]);
-}
-
-function campo(rotulo, controle) {
-  return el('label', { class: 'campo' }, [el('span', { text: rotulo }), controle]);
 }
 
 function rotuloNatureza(n) {

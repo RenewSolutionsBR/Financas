@@ -9,7 +9,7 @@
 // importers/backup-xlsx.js) cobre a necessidade real de continuidade.
 
 import { el, toast, abrirModal } from './components.js';
-import { campo } from './cadastros-comuns.js';
+import { campo, mostrarErros } from './cadastros-comuns.js';
 import { listAccounts, saveAccount, novaConta, novoCartao, validateAccount } from '../domain/accounts.js';
 import { irParaAba } from './tabs.js';
 import * as storage from '../core/storage.js';
@@ -88,7 +88,7 @@ async function assistenteCadastro() {
 
     const erros = [...validateAccount(conta, []), ...validateAccount(cartao, [conta])];
     if (erros.length) {
-      toast(erros.join(' '), 'erro');
+      mostrarErros(erros);
       continue; // reabre o modal com os mesmos inputs, valores preservados
     }
 
