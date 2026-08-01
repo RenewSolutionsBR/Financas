@@ -14,7 +14,9 @@
 import { describe, it, assert, assertEqual, assertDeepEqual } from './harness.js';
 import {
   interpretarValor, classeDoItem, formaFiltroAtual, somenteAutoFiltroAtual,
+  tipoContaParaForma, contasParaForma,
 } from '../src/ui/lancamentos.js';
+import { TIPO_CONTA, TIPO_CARTAO } from '../src/domain/accounts.js';
 
 function t(over) {
   return {
@@ -65,6 +67,52 @@ describe('lancamentos: classeDoItem (marcação visual de não-gasto)', () => {
     // Este é o caso que uma checagem só em `natureza` perde: contaComoGasto
     // exige despesa E não prevista.
     assertEqual(classeDoItem(t({ previsto: true })), 'item-lancamento nao-gasto');
+  });
+});
+
+describe('lancamentos: tipoContaParaForma (que cadastro o campo Conta/cartão oferece)', () => {
+  it('credito exige cartao', () => {
+    assertEqual(tipoContaParaForma('credito'), TIPO_CARTAO);
+  });
+
+  it('dinheiro nao usa conta nenhuma', () => {
+    assertEqual(tipoContaParaForma('dinheiro'), null);
+  });
+
+  it('as demais formas (e ausencia de forma) caem em conta corrente', () => {
+    for (const tipo of ['debito', 'pix', 'boleto', 'transferencia', 'outro', undefined, null]) {
+      assertEqual(tipoContaParaForma(tipo), TIPO_CONTA, `tipo=${tipo}`);
+    }
+  });
+});
+
+describe('lancamentos: contasParaForma (filtra o seletor Conta/cartão pelo tipo da forma)', () => {
+  const contaCorrente = { id: 'acc_cc', tipo: TIPO_CONTA, nome: 'Conta corrente' };
+  const cartao = { id: 'acc_cartao', tipo: TIPO_CARTAO, nome: 'Cartao' };
+  const contas = [contaCorrente, cartao];
+
+  it('credito so oferece cartao, mesmo havendo conta corrente cadastrada', () => {
+    // Prova que nao e so "devolve tudo": uma implementacao ingenua que
+    // ignorasse o tipo devolveria as duas.
+    assertDeepEqual(contasParaForma(contas, 'credito', null), [cartao]);
+  });
+
+  it('pix so oferece conta corrente, nao o cartao', () => {
+    assertDeepEqual(contasParaForma(contas, 'pix', null), [contaCorrente]);
+  });
+
+  it('dinheiro nao oferece nenhuma conta, quando nao ha idAtual', () => {
+    assertDeepEqual(contasParaForma(contas, 'dinheiro', null), []);
+  });
+
+  it('dinheiro com conta ja gravada (dado legado) preserva essa conta na lista', () => {
+    // Sem esta excecao, abrir para edicao um lancamento antigo com essa
+    // combinacao apagaria o campo sozinho, so por ter carregado a tela.
+    assertDeepEqual(contasParaForma(contas, 'dinheiro', 'acc_cc'), [contaCorrente]);
+  });
+
+  it('pix com cartao ja gravado (idAtual de tipo errado) preserva o cartao junto com as contas corrente', () => {
+    assertDeepEqual(contasParaForma(contas, 'pix', 'acc_cartao'), [contaCorrente, cartao]);
   });
 });
 

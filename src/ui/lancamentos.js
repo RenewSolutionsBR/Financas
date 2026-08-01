@@ -18,7 +18,7 @@ import {
 } from '../domain/transactions.js';
 import { listCategorias } from '../domain/categories.js';
 import { listFormas } from '../domain/payment-methods.js';
-import { listAccounts } from '../domain/accounts.js';
+import { listAccounts, TIPO_CONTA, TIPO_CARTAO } from '../domain/accounts.js';
 import { fmtBRL, parseMoneyBR } from '../core/money.js';
 import { formatDateBR, parseDateBR, todayISO, monthKey } from '../core/dates.js';
 import * as storage from '../core/storage.js';
@@ -69,6 +69,28 @@ export function interpretarValor(textoDigitado) {
 // nenhuma pista de que não somava no total.
 export function classeDoItem(t) {
   return `item-lancamento${contaComoGasto(t) ? '' : ' nao-gasto'}`;
+}
+
+// Pura: que tipo de cadastro o campo "Conta / cartão" deve oferecer, dado o
+// tipo da forma de pagamento escolhida. Cartão de crédito só faz sentido com
+// um cartão (é dali que a fatura sai); dinheiro não anda em conta nenhuma;
+// as demais formas (débito, pix, boleto, transferência...) descontam de uma
+// conta corrente. `null` de entrada (nenhuma forma selecionada ainda) cai no
+// caso comum, conta corrente, em vez de travar o campo sem necessidade.
+export function tipoContaParaForma(tipoForma) {
+  if (tipoForma === 'credito') return TIPO_CARTAO;
+  if (tipoForma === 'dinheiro') return null;
+  return TIPO_CONTA;
+}
+
+// Pura: filtra as contas pelo tipo esperado da forma, mas sempre preservando
+// a conta em `idAtual` mesmo que ela não bata com o tipo — sem essa exceção,
+// abrir para edição um lançamento com combinação legada (ex.: dinheiro com
+// uma conta gravada de antes desta regra existir) apagaria o valor do campo
+// sem o usuário ter tocado em nada, só por ter carregado a tela.
+export function contasParaForma(contas, tipoForma, idAtual) {
+  const tipoEsperado = tipoContaParaForma(tipoForma);
+  return (contas || []).filter((c) => c.id === idAtual || (tipoEsperado !== null && c.tipo === tipoEsperado));
 }
 
 // Puras: derivam o que a barra de filtros deve mostrar a partir de `filtros`,
@@ -146,7 +168,10 @@ async function formulario(ctx, transacoes) {
   // automático abaixo não encontra option nenhuma para selecionar, deixando
   // o select em branco.
   const contaAtualId = emEdicao ? emEdicao.contaId : contaPadraoInicial;
-  const contasOpcoes = opcoesAtivas(ctx.contas, contaAtualId);
+  const tipoFormaSelecionada = formaPreSelecionada
+    ? formaPreSelecionada.tipo
+    : (emEdicao ? (ctx.formas.find((f) => f.id === emEdicao.formaPagamentoId) || {}).tipo : null);
+  const contasOpcoes = opcoesAtivas(contasParaForma(ctx.contas, tipoFormaSelecionada, contaAtualId), contaAtualId);
   const selConta = el('select', {}, [
     el('option', { value: '', text: '— sem conta —' }),
     ...contasOpcoes.map((a) => el('option', {
@@ -156,13 +181,27 @@ async function formulario(ctx, transacoes) {
     })),
   ]);
 
-  // Escolher a forma preenche a conta automaticamente pelo padrão dela, sem
-  // travar a escolha: o usuário ainda pode trocar depois. O mesmo
-  // preenchimento no render inicial já está coberto acima (contaPadraoInicial
-  // marca a option "selected" direto), este listener só cobre a troca manual.
+  // Trocar a forma refaz a LISTA de opções de conta (não só o valor
+  // selecionado): cartão de crédito só pode oferecer cartão, dinheiro não
+  // oferece conta nenhuma, o resto oferece conta corrente — ver
+  // tipoContaParaForma. Mantém a conta já escolhida se ela continuar fazendo
+  // sentido pro novo tipo (trocar entre duas formas de conta corrente não
+  // precisa perder a seleção); senão cai na conta padrão da nova forma, ou em
+  // branco.
   selForma.addEventListener('change', () => {
-    const forma = ctx.formas.find((f) => f.id === selForma.value);
-    if (forma && forma.contaPadraoId) selConta.value = forma.contaPadraoId;
+    const forma = ctx.formas.find((f) => f.id === selForma.value) || null;
+    const tipoEsperado = tipoContaParaForma(forma ? forma.tipo : null);
+    const contaContinuaValida = selConta.value && tipoEsperado !== null &&
+      ctx.contas.some((c) => c.id === selConta.value && c.tipo === tipoEsperado);
+    const novoValor = contaContinuaValida ? selConta.value : ((forma && forma.contaPadraoId) || '');
+    const novasOpcoes = opcoesAtivas(contasParaForma(ctx.contas, forma ? forma.tipo : null, novoValor), novoValor);
+    selConta.innerHTML = '';
+    selConta.append(
+      el('option', { value: '', text: '— sem conta —' }),
+      ...novasOpcoes.map((a) => el('option', {
+        value: a.id, text: rotuloComStatus(a), ...(a.id === novoValor ? { selected: 'selected' } : {}),
+      }))
+    );
   });
 
   const selNatureza = el('select', {}, NATUREZAS.map((n) =>
