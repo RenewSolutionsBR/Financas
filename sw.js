@@ -2,9 +2,16 @@
 // alterar a cada publicação, e esquecer de subir a versão deixava aparelhos
 // servindo arquivos antigos do cache indefinidamente.
 import { APP_VERSION } from './src/version.js';
-import { respostaCacheavel } from './src/core/cache-policy.js';
+import { respostaCacheavel, cachesParaApagar } from './src/core/cache-policy.js';
 
-const CACHE = `livro-de-gastos-${APP_VERSION}`;
+// Mesmo namespace do banco deste app (db-schema.js: DB_NAME = 'financas'),
+// nunca o nome do app anterior ('livro-de-gastos'): caches.keys() é por
+// ORIGEM, e este app e o app de cartão de crédito que já está em produção
+// vivem na mesma origem no GitHub Pages, em caminhos diferentes. Um cache
+// chamado "livro-de-gastos-*" correria o risco de colidir com (ou ser
+// apagado/sobrescrito por engano por) o cache do app anterior.
+const PREFIXO_CACHE = 'financas-';
+const CACHE = `${PREFIXO_CACHE}${APP_VERSION}`;
 
 const PRECACHE = [
   './', './index.html', './styles.css', './manifest.webmanifest',
@@ -32,7 +39,7 @@ self.addEventListener('install', (ev) => {
 self.addEventListener('activate', (ev) => {
   ev.waitUntil(
     caches.keys().then((chaves) =>
-      Promise.all(chaves.filter((k) => k !== CACHE).map((k) => caches.delete(k)))
+      Promise.all(cachesParaApagar(chaves, CACHE, PREFIXO_CACHE).map((k) => caches.delete(k)))
     ).then(() => self.clients.claim())
   );
 });
