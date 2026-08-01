@@ -271,9 +271,11 @@ describe('classification: canonicalizar', () => {
     assertEqual(canonicalizar('PAGSEGURO*LOJAEXEMPLO', 'fatura'), 'LOJAEXEMPLO');
   });
 
-  it('PAGSEGURO* nao e cortado pela metade pelo prefixo mais curto PAG*', () => {
-    // Prova que a ordem das alternativas no regex importa: se "PAG" fosse
-    // tentado antes de "PAGSEGURO", sobraria "SEGURO*LOJAEXEMPLO".
+  it('PAGSEGURO* e removido por inteiro, nao so o prefixo PAG*', () => {
+    // O literal '\*' logo apos cada alternativa faz o motor retroceder e
+    // achar "PAGSEGURO*" mesmo que "PAG" seja tentado primeiro — a ordem das
+    // alternativas nao muda o resultado aqui (verificado). Este teste prova
+    // que o prefixo INTEIRO some, nao que a ordem importe.
     assertEqual(canonicalizar('PAGSEGURO*OUTRALOJA', 'fatura'), 'OUTRALOJA');
   });
 
@@ -451,9 +453,12 @@ const UFS = [
   'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO',
 ];
 
-// Alternativas mais longas ANTES das mais curtas: PAGSEGURO precisa ser
-// tentado antes de PAG, senão o regex casa "PAG" dentro de "PAGSEGURO" e
-// sobra "SEGURO*..." no meio do nome do estabelecimento.
+// PAGSEGURO, PAG e MP: os três exigem o literal '\*' logo em seguida, então
+// a ordem das alternativas NÃO importa aqui — se o motor casar "PAG" e o
+// '\*' seguinte falhar (por vir "SEGURO" no meio), ele retrocede e tenta as
+// outras alternativas na mesma posição até achar "PAGSEGURO*" inteiro.
+// Verificado: 'PAGSEGURO|PAG|MP' e 'PAG|MP|PAGSEGURO' produzem o mesmo
+// resultado para 'PAGSEGURO*...'. A ordem aqui é só legibilidade.
 const PREFIXO_ADQUIRENTE_RE = /^(PAGSEGURO|PAG|MP)\*/;
 const SUFIXO_PARCELA_RE = /\s*\d{2}\/\d{2}\s*$/;
 const DOCUMENTO_RE = /\d{6,}/g;
@@ -480,6 +485,20 @@ export function canonicalizar(descricaoBruta, escopo) {
     .replace(/\s+/g, ' ')
     .trim();
 
+  // 6. Sufixo de UF, quando o último token é uma sigla de estado válida —
+  // por lista fechada de 27, não "duas letras maiúsculas no fim" (evitaria
+  // cortar siglas legítimas de nome de loja, tipo "BR"). Executado ANTES da
+  // etapa 3 (numeração da spec 8.1 preservada nos comentários, ordem de
+  // EXECUÇÃO invertida entre as duas): quando a UF vem depois do número de
+  // parcela ("... 02/06 SP"), a UF fica sobrando no fim da string e a etapa
+  // 3 (ancorada em `$`) não alcança o "02/06" — sem inverter, "02/06"
+  // sobrevivia à canonicalização inteira.
+  const tokens = texto.split(' ');
+  const ultimo = tokens[tokens.length - 1];
+  if (tokens.length > 1 && UFS.includes(ultimo)) {
+    texto = tokens.slice(0, -1).join(' ');
+  }
+
   // 3. Sufixo de parcela NN/NN.
   texto = texto.replace(SUFIXO_PARCELA_RE, '').trim();
 
@@ -489,15 +508,6 @@ export function canonicalizar(descricaoBruta, escopo) {
   // 5. Sequência de 6+ dígitos (documento/NSU) — um código de 5 dígitos ou
   // menos costuma ser parte legítima do nome (CEP curto, código de loja).
   texto = texto.replace(DOCUMENTO_RE, '').replace(/\s+/g, ' ').trim();
-
-  // 6. Sufixo de UF, quando o último token é uma sigla de estado válida —
-  // por lista fechada de 27, não "duas letras maiúsculas no fim" (evitaria
-  // cortar siglas legítimas de nome de loja, tipo "BR").
-  const tokens = texto.split(' ');
-  const ultimo = tokens[tokens.length - 1];
-  if (tokens.length > 1 && UFS.includes(ultimo)) {
-    texto = tokens.slice(0, -1).join(' ');
-  }
 
   return texto.trim();
 }
@@ -627,9 +637,9 @@ Expected: PASS em todos os testes de `classification.test.js`, nenhuma regressã
 
 - [ ] **Step 5: Sabotar `PREFIXO_ADQUIRENTE_RE` e confirmar que o teste específico cai**
 
-Troque temporariamente a ordem do regex para `/^(PAG|MP|PAGSEGURO)\*/` (mais curto primeiro).
+Troque temporariamente para `/^(PAG|MP)\*/` (remove `PAGSEGURO` da alternação — trocar só a ORDEM não derruba nada, como o comentário do regex já explica).
 Run: `node tools/run-tests.mjs`
-Expected: FALHOU só em `'PAGSEGURO* nao e cortado pela metade pelo prefixo mais curto PAG*'` — prova que o teste não é vácuo. Reverta a ordem original antes de continuar.
+Expected: FALHOU só em `'PAGSEGURO* e removido por inteiro, nao so o prefixo PAG*'` — prova que o teste não é vácuo. Reverta antes de continuar.
 
 - [ ] **Step 6: Commit**
 
