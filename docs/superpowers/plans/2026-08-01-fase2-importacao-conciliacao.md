@@ -96,7 +96,7 @@ O formato de linha normalizada (o que `parse` devolve em `rows[]`) é o contrato
 Crie `tests/registry.test.js`:
 
 ```js
-import { describe, it, assert, assertEqual } from './harness.js';
+import { describe, it, assert, assertEqual, assertDeepEqual } from './harness.js';
 import {
   register, listAdaptadores, adaptadoresParaExtensao, detectarMelhorAdaptador, limparRegistro,
 } from '../src/importers/registry.js';
@@ -116,13 +116,13 @@ describe('registry: registro e filtro por extensão', () => {
     register(adaptadorFalso({ id: 'b', aceita: ['.pdf'] }));
     register(adaptadorFalso({ id: 'c', aceita: ['.xls', '.xlsx'] }));
     const paraXls = adaptadoresParaExtensao('extrato.xls').map((a) => a.id);
-    assertEqual(paraXls, ['a', 'c']);
+    assertDeepEqual(paraXls, ['a', 'c']);
   });
 
   it('a extensão é case-insensitive', () => {
     limparRegistro();
     register(adaptadorFalso({ id: 'a', aceita: ['.pdf'] }));
-    assertEqual(adaptadoresParaExtensao('FATURA.PDF').map((a) => a.id), ['a']);
+    assertDeepEqual(adaptadoresParaExtensao('FATURA.PDF').map((a) => a.id), ['a']);
   });
 });
 
@@ -231,7 +231,7 @@ Precisa existir antes dos adaptadores (Tasks 5-7), porque toda linha importada c
 Crie `tests/classification.test.js`:
 
 ```js
-import { describe, it, assert, assertEqual } from './harness.js';
+import { describe, it, assert, assertEqual, assertDeepEqual } from './harness.js';
 import {
   canonicalizar, aplicarRegra, aprenderRegra, candidatosRetroativos, novaRegra,
 } from '../src/domain/classification.js';
@@ -418,14 +418,14 @@ describe('classification: candidatosRetroativos', () => {
     const t4 = { id: 't4', categoria: CATEGORIA_A_CLASSIFICAR, origemRef: null }; // lancamento manual, sem origem
     const mapa = new Map([['t1', 'PADARIA XYZ'], ['t2', 'OUTRA COISA'], ['t3', 'PADARIA XYZ'], ['t4', 'PADARIA XYZ']]);
     const resultado = candidatosRetroativos([t1, t2, t3, t4], regra, mapa);
-    assertEqual(resultado.map((t) => t.id), ['t1']);
+    assertDeepEqual(resultado.map((t) => t.id), ['t1']);
   });
 
   it('regra nao-exata (contem/regex) nunca reaplica retroativamente — risco de falso positivo em massa', () => {
     const regra = { padrao: 'PADAR', tipoMatch: 'contem' };
     const t1 = { id: 't1', categoria: CATEGORIA_A_CLASSIFICAR, origemRef: { statementId: 's1', linhaId: 'l1' } };
     const mapa = new Map([['t1', 'PADARIA XYZ']]);
-    assertEqual(candidatosRetroativos([t1], regra, mapa), []);
+    assertDeepEqual(candidatosRetroativos([t1], regra, mapa), []);
   });
 });
 ```
@@ -730,7 +730,7 @@ describe('parcelas: computeParcelaGroups + syncPredictions', () => {
     assert(toAdd.every((t) => t.previsto === true && t.natureza === 'despesa'), 'previsao e despesa nao efetivada');
     assert(toAdd.every((t) => t.contaId === CONTA && t.formaPagamentoId === FORMA));
     assert(toAdd.every((t) => t.parcela_total === 3), 'parcela_total precisa vir do grupo original (3), nao ser recalculado errado a partir de "remaining"');
-    assertEqual(toAdd.map((t) => t.parcela_atual).sort(), [2, 3]);
+    assertDeepEqual(toAdd.map((t) => t.parcela_atual).sort(), [2, 3]);
   });
 
   it('mesma compra gera o MESMO id de previsao em duas chamadas — idempotencia', () => {
@@ -763,13 +763,13 @@ describe('parcelas: computeParcelaGroups + syncPredictions', () => {
     // nunca seria regenerada de qualquer forma, entao tem que sobreviver.
     const manual = { id: 'x123', previsto: true, origemManual: true };
     const { toRemoveIds } = syncPredictions([rowParcelamento()], [manual], CONTA, FORMA);
-    assertEqual(toRemoveIds, []);
+    assertDeepEqual(toRemoveIds, []);
   });
 
   it('lancamento CONFIRMADO (previsto false) nunca entra na lista de remocao', () => {
     const confirmado = { id: 'confirmed_x', previsto: false };
     const { toRemoveIds } = syncPredictions([rowParcelamento()], [confirmado], CONTA, FORMA);
-    assertEqual(toRemoveIds, []);
+    assertDeepEqual(toRemoveIds, []);
   });
 });
 
@@ -842,7 +842,7 @@ describe('parcelas: findParcelaDuplicates', () => {
     const key = computeParcelaKey('LOJA X', '2026-06-01', 4);
     const t = { id: 't1', parcelaKey: key };
     const resultado = findParcelaDuplicates([t], [], 'LOJA X', '2026-06-01', 4, 25);
-    assertEqual(resultado.map((r) => r.id), ['t1']);
+    assertDeepEqual(resultado.map((r) => r.id), ['t1']);
   });
 
   it('acha por heuristica fraca: valor <R$0,05, data <=15 dias, descricao por substring bidirecional, so parcela_atual>1', () => {
@@ -850,29 +850,29 @@ describe('parcelas: findParcelaDuplicates', () => {
     const key = computeParcelaKey('LOJA EXEMPLO XYZ', '2026-06-05', 4);
     const t = { id: 't1', parcelaKey: key };
     const resultado = findParcelaDuplicates([t], [rowFatura], 'LOJA EXEMPLO', '2026-06-10', 4, 25);
-    assertEqual(resultado.map((r) => r.id), ['t1']);
+    assertDeepEqual(resultado.map((r) => r.id), ['t1']);
   });
 
   it('heuristica fraca IGNORA linha de fatura com parcela_atual === 1', () => {
     const rowFatura = { tipo: 'parcelamento', parcela_atual: 1, parcela_total: 4, descricao: 'LOJA EXEMPLO XYZ', data: '2026-06-05', valor: 25.02 };
     const resultado = findParcelaDuplicates([], [rowFatura], 'LOJA EXEMPLO', '2026-06-10', 4, 25);
-    assertEqual(resultado, []);
+    assertDeepEqual(resultado, []);
   });
 
   it('diferenca de valor >= R$0,05 nao conta como duplicata fraca', () => {
     const rowFatura = { tipo: 'parcelamento', parcela_atual: 2, parcela_total: 4, descricao: 'LOJA EXEMPLO', data: '2026-06-05', valor: 25.10 };
     const resultado = findParcelaDuplicates([], [rowFatura], 'LOJA EXEMPLO', '2026-06-10', 4, 25);
-    assertEqual(resultado, []);
+    assertDeepEqual(resultado, []);
   });
 
   it('diferenca de data > 15 dias nao conta como duplicata fraca', () => {
     const rowFatura = { tipo: 'parcelamento', parcela_atual: 2, parcela_total: 4, descricao: 'LOJA EXEMPLO', data: '2026-05-01', valor: 25 };
     const resultado = findParcelaDuplicates([], [rowFatura], 'LOJA EXEMPLO', '2026-06-10', 4, 25);
-    assertEqual(resultado, []);
+    assertDeepEqual(resultado, []);
   });
 
   it('sem nenhuma pista, devolve lista vazia', () => {
-    assertEqual(findParcelaDuplicates([], [], 'NADA', '2026-06-10', 2, 10), []);
+    assertDeepEqual(findParcelaDuplicates([], [], 'NADA', '2026-06-10', 2, 10), []);
   });
 });
 ```
@@ -1118,7 +1118,7 @@ Wire da Task 3 na tela de uso diário: o checkbox "Compra parcelada" que cria N 
 Crie `tests/lancamentos-parcelado.test.js`:
 
 ```js
-import { describe, it, assert, assertEqual } from './harness.js';
+import { describe, it, assert, assertEqual, assertDeepEqual } from './harness.js';
 import { montarLancamentosParcelados } from '../src/ui/lancamentos-parcelado.js';
 import { computeParcelaKey } from '../src/domain/parcelas.js';
 import { CATEGORIA_A_CLASSIFICAR } from '../src/domain/categories.js';
@@ -1157,9 +1157,9 @@ describe('lancamentos-parcelado: montarLancamentosParcelados', () => {
 
   it('parcela_atual/parcela_total numerados corretamente, datas um mes depois da outra', () => {
     const lista = montarLancamentosParcelados(dados());
-    assertEqual(lista.map((t) => t.parcela_atual), [1, 2, 3]);
+    assertDeepEqual(lista.map((t) => t.parcela_atual), [1, 2, 3]);
     assert(lista.every((t) => t.parcela_total === 3));
-    assertEqual(lista.map((t) => t.data), ['2026-06-10', '2026-07-10', '2026-08-10']);
+    assertDeepEqual(lista.map((t) => t.data), ['2026-06-10', '2026-07-10', '2026-08-10']);
   });
 
   it('so a parcela 2+ ganha o sufixo "(parcela prevista)" na descricao', () => {
@@ -1181,7 +1181,7 @@ describe('lancamentos-parcelado: montarLancamentosParcelados', () => {
 
   it('dia 31 clampado corretamente ao virar mes mais curto (fevereiro)', () => {
     const lista = montarLancamentosParcelados(dados({ data: '2026-01-31', numParcelas: 3 }));
-    assertEqual(lista.map((t) => t.data), ['2026-01-31', '2026-02-28', '2026-03-31']);
+    assertDeepEqual(lista.map((t) => t.data), ['2026-01-31', '2026-02-28', '2026-03-31']);
   });
 });
 ```
@@ -1366,7 +1366,7 @@ export const LINHAS_FATURA_SINTETICA = [
 Crie `tests/santander-cartao-pdf.test.js`:
 
 ```js
-import { describe, it, assert, assertEqual } from './harness.js';
+import { describe, it, assert, assertEqual, assertDeepEqual } from './harness.js';
 import { parseFaturaTexto, resolveDate } from '../src/importers/santander-cartao-pdf.js';
 import { LINHAS_FATURA_SINTETICA } from './fixtures/fatura-texto-sintetica.js';
 
@@ -1451,7 +1451,7 @@ describe('santander-cartao-pdf: parseFaturaTexto — nucleo (secoes, checksum, p
   it('id de cada linha e determinístico: reparsear o MESMO texto gera os MESMOS ids', () => {
     const r1 = parseFaturaTexto(LINHAS_FATURA_SINTETICA, 'fatura-teste.pdf', VENCIMENTO);
     const r2 = parseFaturaTexto(LINHAS_FATURA_SINTETICA, 'fatura-teste.pdf', VENCIMENTO);
-    assertEqual(r1.rows.map((r) => r.id), r2.rows.map((r) => r.id));
+    assertDeepEqual(r1.rows.map((r) => r.id), r2.rows.map((r) => r.id));
   });
 
   it('duas linhas de mesma data/valor/descricao (raro, mas possivel) geram ids DIFERENTES pelo ordinal', () => {
@@ -1973,7 +1973,7 @@ Diferente da Task 5, este adaptador é **novo** — o app anterior não lia extr
 Crie `tests/santander-extrato-xls.test.js`:
 
 ```js
-import { describe, it, assert, assertEqual } from './harness.js';
+import { describe, it, assert, assertEqual, assertDeepEqual } from './harness.js';
 import { parseLinhasExtrato } from '../src/importers/santander-extrato-xls.js';
 
 // Matriz sintética no formato de linhas/células que sheet_to_json({header:1})
@@ -2064,7 +2064,7 @@ describe('santander-extrato-xls: parseLinhasExtrato', () => {
   it('id de cada linha e deterministico entre duas chamadas iguais', () => {
     const r1 = parseLinhasExtrato(planilhaSintetica(), 'acc_1', 'extrato.xls');
     const r2 = parseLinhasExtrato(planilhaSintetica(), 'acc_1', 'extrato.xls');
-    assertEqual(r1.rows.map((r) => r.id), r2.rows.map((r) => r.id));
+    assertDeepEqual(r1.rows.map((r) => r.id), r2.rows.map((r) => r.id));
   });
 
   it('contaId se propaga pra cada linha (necessario pro casamento por conta na conciliacao)', () => {
@@ -2240,7 +2240,7 @@ Diferente das Tasks 5-6, este adaptador nunca tenta adivinhar o formato — o us
 Crie `tests/generic-table.test.js`:
 
 ```js
-import { describe, it, assert, assertEqual } from './harness.js';
+import { describe, it, assert, assertEqual, assertDeepEqual } from './harness.js';
 import { parseLinhasGenerico } from '../src/importers/generic-table.js';
 
 function mapeamentoPadrao() {
@@ -2288,7 +2288,7 @@ describe('generic-table: parseLinhasGenerico', () => {
   it('id deterministico entre duas chamadas iguais', () => {
     const r1 = parseLinhasGenerico(linhas, mapeamentoPadrao(), 'acc_1', 'generico.csv');
     const r2 = parseLinhasGenerico(linhas, mapeamentoPadrao(), 'acc_1', 'generico.csv');
-    assertEqual(r1.rows.map((r) => r.id), r2.rows.map((r) => r.id));
+    assertDeepEqual(r1.rows.map((r) => r.id), r2.rows.map((r) => r.id));
   });
 });
 ```
@@ -2404,7 +2404,7 @@ git commit -m "Adiciona adaptador generico de planilha com mapeamento manual"
 Crie `tests/reconcile-card.test.js`:
 
 ```js
-import { describe, it, assert, assertEqual } from './harness.js';
+import { describe, it, assert, assertEqual, assertDeepEqual } from './harness.js';
 import { getReconciliationWindow, runReconciliation, buildFullReconciliationRows } from '../src/domain/reconcile-card.js';
 
 const TITULAR = 'acc_cartao_titular';
@@ -2452,7 +2452,7 @@ describe('reconcile-card: runReconciliation — isolamento por cartao', () => {
       { id: 't3', previsto: false, contaId: OUTRO_CARTAO, data: '2026-05-12', valor: 40 },
     ];
     const { appUnmatched } = runReconciliation(fatura, [fatura], transactions, contas);
-    assertEqual(appUnmatched.map((t) => t.id).sort(), ['t1', 't2'], 't3 (outro cartao) nunca pode aparecer aqui, mesmo estando na janela de datas certa');
+    assertDeepEqual(appUnmatched.map((t) => t.id).sort(), ['t1', 't2'], 't3 (outro cartao) nunca pode aparecer aqui, mesmo estando na janela de datas certa');
   });
 
   it('linha da secao pagamentos_creditos NUNCA entra nos baldes de despesa, so em pagamentosCreditos', () => {
@@ -2693,7 +2693,7 @@ git commit -m "Porta conciliacao de fatura com isolamento por cartao e janela de
 Crie `tests/reconcile-bank.test.js`:
 
 ```js
-import { describe, it, assert, assertEqual } from './harness.js';
+import { describe, it, assert, assertEqual, assertDeepEqual } from './harness.js';
 import { atribuirNatureza, confrontarFaturaDebito, runReconciliationBank } from '../src/domain/reconcile-bank.js';
 import { TIPO_CARTAO, TIPO_CONTA } from '../src/domain/accounts.js';
 
@@ -2815,7 +2815,7 @@ describe('reconcile-bank: runReconciliationBank — 4 baldes e idempotencia', ()
     const extrato = { contaId: 'acc_corrente_1', rows: [rowFixo] };
     const r1 = runReconciliationBank(extrato, [], accounts, apelidos, []);
     const r2 = runReconciliationBank(extrato, [], accounts, apelidos, []);
-    assertEqual(r1.extratoUnmatched.map((l) => l.id), r2.extratoUnmatched.map((l) => l.id));
+    assertDeepEqual(r1.extratoUnmatched.map((l) => l.id), r2.extratoUnmatched.map((l) => l.id));
   });
 });
 ```
