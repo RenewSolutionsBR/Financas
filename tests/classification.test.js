@@ -97,6 +97,20 @@ describe('classification: aplicarRegra (precedencia)', () => {
     assertEqual(aplicarRegra(linha, regras).id, 'r2');
   });
 
+  it('contaId vence mesmo empatado no nivel de escopo com uma regra de muitos acertos', () => {
+    // Sem isso, as duas regras abaixo empatam no nivel 2 (mesmo escopo ===
+    // origem da linha), e o desempate por acertos elegeria a regra SEM
+    // contaId — errado, porque contaId e mais especifico e deve vencer
+    // independente de acertos. O teste anterior ("vence sobre qualquer
+    // outra") nao pega essa regressao porque la a regra com contaId tambem
+    // e a unica que bate no nivel 2, entao venceria de qualquer jeito.
+    const regras = [
+      { id: 'r_conta', padrao: 'PADARIA XYZ', tipoMatch: 'exato', escopo: 'extrato', contaId: 'acc_1', categoriaId: 'x', ativa: true, acertos: 1 },
+      { id: 'r_sem_conta', padrao: 'PADARIA XYZ', tipoMatch: 'exato', escopo: 'extrato', categoriaId: 'y', ativa: true, acertos: 50 },
+    ];
+    assertEqual(aplicarRegra(linha, regras).id, 'r_conta');
+  });
+
   it('exata vence sobre contem, contem vence sobre regex', () => {
     const regras = [
       { id: 'r_regex', padrao: 'PADARIA', tipoMatch: 'regex', escopo: 'ambos', categoriaId: 'x', ativa: true, acertos: 99 },
@@ -109,6 +123,16 @@ describe('classification: aplicarRegra (precedencia)', () => {
 
   it('regra de escopo incompativel (fatura, numa linha de extrato) nunca casa', () => {
     const regras = [{ id: 'r1', padrao: 'PADARIA XYZ', tipoMatch: 'exato', escopo: 'fatura', categoriaId: 'x', ativa: true, acertos: 0 }];
+    assertEqual(aplicarRegra(linha, regras), null);
+  });
+
+  it('regra contem/regex de escopo incompativel tambem nunca casa (niveis 4 e 5 nao re-checam escopo sozinhos)', () => {
+    // Os niveis 4 (contem) e 5 (regex) nao re-filtram por escopo — dependem
+    // inteiramente de escopoCompativel ja ter tirado a regra de `ativas`. O
+    // teste analogo de tipoMatch 'exato' (acima) nao pega uma regressao
+    // aqui, porque ele e protegido redundantemente pelos filtros de escopo
+    // dos niveis 2/3; 'contem' e 'regex' nao tem essa rede de seguranca.
+    const regras = [{ id: 'r1', padrao: 'PADAR', tipoMatch: 'contem', escopo: 'fatura', categoriaId: 'x', ativa: true, acertos: 0 }];
     assertEqual(aplicarRegra(linha, regras), null);
   });
 
@@ -192,6 +216,19 @@ describe('classification: candidatosRetroativos', () => {
 
   it('regra nao-exata (contem/regex) nunca reaplica retroativamente — risco de falso positivo em massa', () => {
     const regra = { padrao: 'PADAR', tipoMatch: 'contem' };
+    const t1 = { id: 't1', categoria: CATEGORIA_A_CLASSIFICAR, origemRef: { statementId: 's1', linhaId: 'l1' } };
+    const mapa = new Map([['t1', 'PADARIA XYZ']]);
+    assertDeepEqual(candidatosRetroativos([t1], regra, mapa), []);
+  });
+
+  it('regra contem cujo padrao e IGUAL a descricao canonica tambem nao reaplica — a guarda e por tipoMatch, nao por coincidencia de string', () => {
+    // candidatosRetroativos faz igualdade estrita (===) contra regra.padrao,
+    // nunca "contains". No teste anterior, padrao 'PADAR' != 'PADARIA XYZ'
+    // ja falha essa igualdade sozinho, entao ele nao prova que a guarda de
+    // tipoMatch existe. Aqui o padrao bate exatamente com a descricao
+    // canonica mesmo a regra sendo 'contem' — so a guarda de tipoMatch
+    // impede a reaplicacao em massa.
+    const regra = { padrao: 'PADARIA XYZ', tipoMatch: 'contem' };
     const t1 = { id: 't1', categoria: CATEGORIA_A_CLASSIFICAR, origemRef: { statementId: 's1', linhaId: 'l1' } };
     const mapa = new Map([['t1', 'PADARIA XYZ']]);
     assertDeepEqual(candidatosRetroativos([t1], regra, mapa), []);
