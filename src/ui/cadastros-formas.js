@@ -2,11 +2,12 @@
 // validatePaymentMethod() e mostra os erros devolvidos.
 
 import { el, toast, abrirModal, confirmar } from './components.js';
-import { secao, campo, mostrarErros } from './cadastros-comuns.js';
+import { secao, campo, mostrarErros, opcoesAtivas, rotuloComStatus } from './cadastros-comuns.js';
 import {
   TIPOS_FORMA, listFormas, saveForma, removeForma, validatePaymentMethod, novaForma,
 } from '../domain/payment-methods.js';
 import { listTransactions } from '../domain/transactions.js';
+import { TIPO_CONTA, listAccounts } from '../domain/accounts.js';
 
 export async function secaoFormas(aoMudar) {
   const todas = await listFormas();
@@ -34,10 +35,24 @@ async function editarForma(pm, todas, aoMudar) {
   ));
   const inputPadroes = el('input', { type: 'text', value: (pm.padroesExtrato || []).join(', ') });
 
+  // Conta padrão: ao lançar com esta forma, o formulário de Lançamentos
+  // preenche a conta sozinho a partir daqui. opcoesAtivas: uma conta
+  // desativada some da lista, exceto se for a já gravada nesta forma — mesma
+  // regra usada em Lançamentos e em "conta que paga a fatura" do cartão.
+  const contas = opcoesAtivas(
+    (await listAccounts()).filter((a) => a.tipo === TIPO_CONTA),
+    pm.contaPadraoId
+  );
+  const selContaPadrao = el('select', {}, [
+    el('option', { value: '', text: '— nenhuma —' }),
+    ...contas.map((c) => el('option', { value: c.id, text: rotuloComStatus(c), ...(c.id === pm.contaPadraoId ? { selected: 'selected' } : {}) })),
+  ]);
+
   const corpo = el('div', { class: 'form' }, [
     campo('Nome', inputNome),
     campo('Tipo (define o comportamento)', selTipo),
     campo('Prefixos no extrato (separados por vírgula)', inputPadroes),
+    campo('Conta padrão (preenche a conta ao lançar)', selContaPadrao),
   ]);
 
   const escolha = await abrirModal({
@@ -51,6 +66,7 @@ async function editarForma(pm, todas, aoMudar) {
   atualizado.id = pm.id;
   atualizado.ordem = pm.ordem;
   atualizado.padroesExtrato = inputPadroes.value.split(',').map((s) => s.trim()).filter(Boolean);
+  atualizado.contaPadraoId = selContaPadrao.value || undefined;
 
   const erros = validatePaymentMethod(atualizado, todas);
   if (erros.length) return mostrarErros(erros);

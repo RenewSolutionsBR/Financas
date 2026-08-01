@@ -127,15 +127,39 @@ async function formulario(ctx, transacoes) {
     el('option', { value: f.id, text: rotuloComStatus(f), ...(f.id === formaSelecionada ? { selected: 'selected' } : {}) })
   ));
 
-  const contaAtualId = emEdicao ? emEdicao.contaId : null;
+  // Conta padrão da forma já pré-selecionada (ultimaFormaUsada, num novo
+  // lançamento): precisa ser calculada aqui, não só reagir ao `change` do
+  // seletor de forma — senão o preenchimento automático só valia se o
+  // usuário trocasse a forma à mão, e nunca no caso comum (forma já vem
+  // certa, usuário só confere e lança). Só considera a forma que REALMENTE
+  // vai aparecer selecionada no <select> (presente em formasOpcoes) — uma
+  // `ultimaFormaUsada` desativada não fica selecionada (comentário acima), e
+  // não pode emprestar sua conta padrão para uma seleção que não é a dela.
+  const formaPreSelecionada = !emEdicao && formasOpcoes.some((f) => f.id === formaSelecionada)
+    ? ctx.formas.find((f) => f.id === formaSelecionada)
+    : null;
+  const contaPadraoInicial = formaPreSelecionada ? formaPreSelecionada.contaPadraoId : null;
+
+  // A conta padrão de uma forma pode estar desativada sem que ninguém tenha
+  // desativado a forma junto — opcoesAtivas precisa contar essa conta como
+  // "idAtual" também, senão ela fica de fora das opções e o preenchimento
+  // automático abaixo não encontra option nenhuma para selecionar, deixando
+  // o select em branco.
+  const contaAtualId = emEdicao ? emEdicao.contaId : contaPadraoInicial;
   const contasOpcoes = opcoesAtivas(ctx.contas, contaAtualId);
   const selConta = el('select', {}, [
     el('option', { value: '', text: '— sem conta —' }),
-    ...contasOpcoes.map((a) => el('option', { value: a.id, text: rotuloComStatus(a), ...(emEdicao && emEdicao.contaId === a.id ? { selected: 'selected' } : {}) })),
+    ...contasOpcoes.map((a) => el('option', {
+      value: a.id,
+      text: rotuloComStatus(a),
+      ...((emEdicao ? emEdicao.contaId === a.id : a.id === contaPadraoInicial) ? { selected: 'selected' } : {}),
+    })),
   ]);
 
   // Escolher a forma preenche a conta automaticamente pelo padrão dela, sem
-  // travar a escolha: o usuário ainda pode trocar depois.
+  // travar a escolha: o usuário ainda pode trocar depois. O mesmo
+  // preenchimento no render inicial já está coberto acima (contaPadraoInicial
+  // marca a option "selected" direto), este listener só cobre a troca manual.
   selForma.addEventListener('change', () => {
     const forma = ctx.formas.find((f) => f.id === selForma.value);
     if (forma && forma.contaPadraoId) selConta.value = forma.contaPadraoId;

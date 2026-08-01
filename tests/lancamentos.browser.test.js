@@ -6,9 +6,12 @@
 // funções puras não alcança nenhum dos dois — por isso moram aqui, não em
 // lancamentos.test.js.
 
-import { describe, it, assertEqual } from './harness.js';
+import { describe, it, assertEqual, assert } from './harness.js';
 import { renderLancamentos, resetLancamentos } from '../src/ui/lancamentos.js';
 import { listTransactions, saveTransaction, removeTransaction } from '../src/domain/transactions.js';
+import { TIPO_CONTA, saveAccount } from '../src/domain/accounts.js';
+import { saveForma } from '../src/domain/payment-methods.js';
+import * as storage from '../src/core/storage.js';
 
 function montarPainel() {
   // renderLancamentos() precisa de #tabLancamentos para montar a tela e de
@@ -113,6 +116,59 @@ describe('lancamentos (DOM real): barra de filtros reflete o estado depois do re
       await esperar();
       assertEqual(selForma().value, '', 'voltar para "Todas as formas" precisa aparecer selecionado, não ficar preso em Pix');
       assertEqual(total(), 'Total de gastos no período: R$ 30,00');
+    });
+  });
+});
+
+// Reproduz o furo achado na revisão final: contaPadraoId era consumido só
+// pelo evento `change` do seletor de forma, então a forma pré-selecionada
+// automaticamente (por ultimaFormaUsada, o caso comum de uso diário) nunca
+// disparava o preenchimento — só valia se o usuário trocasse a forma à mão.
+describe('lancamentos (DOM real): conta padrão da forma pré-selecionada (contaPadraoId)', () => {
+  const CONTA_ID = 'acc_teste_conta_padrao';
+  const FORMA_ID = 'pm_teste_conta_padrao';
+
+  async function comFormaEContaDeTeste(fn) {
+    const ultimaFormaOriginal = await storage.getMeta('ultimaFormaUsada', null);
+    await saveAccount({ id: CONTA_ID, tipo: TIPO_CONTA, nome: 'Conta teste padrão', ativo: true, agencia: '1', numero: '2' });
+    await saveForma({
+      id: FORMA_ID, nome: 'Forma teste padrão', tipo: 'outro', ativo: true,
+      padroesExtrato: [], ordem: 999, conciliaCom: 'nenhum', contaPadraoId: CONTA_ID,
+    });
+    await storage.setMeta('ultimaFormaUsada', FORMA_ID);
+    try {
+      await fn();
+    } finally {
+      await storage.setMeta('ultimaFormaUsada', ultimaFormaOriginal);
+      await storage.remove('paymentMethods', FORMA_ID);
+      await storage.remove('accounts', CONTA_ID);
+    }
+  }
+
+  it('preenche a conta no RENDER INICIAL, sem precisar de change manual no seletor de forma', async () => {
+    await comFormaEContaDeTeste(async () => {
+      montarPainel();
+      resetLancamentos();
+      await renderLancamentos();
+      const selects = document.querySelectorAll('.form-lancamento select');
+      const selForma = selects[1];
+      const selConta = selects[2];
+      assertEqual(selForma.value, FORMA_ID, 'a forma de teste precisa vir pré-selecionada (ultimaFormaUsada)');
+      assertEqual(selConta.value, CONTA_ID, 'a conta padrão da forma precisa vir preenchida sem nenhum evento change');
+    });
+  });
+
+  it('conta padrão desativada continua selecionada e marcada, em vez de deixar o select em branco', async () => {
+    await comFormaEContaDeTeste(async () => {
+      await storage.put('accounts', { id: CONTA_ID, tipo: TIPO_CONTA, nome: 'Conta teste padrão', ativo: false, agencia: '1', numero: '2' });
+      montarPainel();
+      resetLancamentos();
+      await renderLancamentos();
+      const selects = document.querySelectorAll('.form-lancamento select');
+      const selConta = selects[2];
+      assertEqual(selConta.value, CONTA_ID, 'a conta desativada ainda precisa ser a selecionada, nao cair para "sem conta"');
+      const opcaoSelecionada = [...selConta.options].find((o) => o.value === CONTA_ID);
+      assert(opcaoSelecionada.textContent.includes('desativada'), `esperava marca de desativada, achei "${opcaoSelecionada.textContent}"`);
     });
   });
 });
