@@ -2,6 +2,7 @@ import { describe, it, assert, assertEqual, assertDeepEqual } from './harness.js
 import {
   TIPO_CONTA, TIPO_CARTAO, validateAccount, suggestMatchers, isAdicional,
   plasticosDoTitular, contaPagadoraEfetiva, contaQueCasaDescricao, novaConta, novoCartao,
+  removeAccount,
 } from '../src/domain/accounts.js';
 
 const CONTA = { id: 'acc_cc', tipo: TIPO_CONTA, nome: 'Conta Corrente', instituicao: 'Banco X', agencia: '0001', numero: '12345-6' };
@@ -126,5 +127,24 @@ describe('accounts: casos-limite que a suite nao cobria', () => {
 
   it('novaConta nao carrega matchers, que e campo de cartao', () => {
     assertEqual(novaConta({ nome: 'C' }).matchers, undefined);
+  });
+});
+
+// (transactions || []) virava lista vazia quando o segundo argumento vinha
+// undefined, e a guarda de "em uso" abaixo nunca disparava — uma conta em
+// uso era excluida em silencio. O throw acontece antes de qualquer storage,
+// entao roda no Node mesmo sem IndexedDB.
+describe('accounts: exclusao recusa transactions ausente, para nao silenciar a guarda de em-uso', () => {
+  it('lanca quando transactions e undefined', async () => {
+    let erro = null;
+    try { await removeAccount('acc_x'); } catch (e) { erro = e; }
+    assert(erro !== null, 'deveria ter recusado');
+    assert(/lançamentos/i.test(erro.message), erro.message);
+  });
+
+  it('lanca quando transactions e null', async () => {
+    let erro = null;
+    try { await removeAccount('acc_x', null); } catch (e) { erro = e; }
+    assert(erro !== null, 'deveria ter recusado');
   });
 });

@@ -9,9 +9,6 @@ import { stableHash } from './ids.js';
 export const DB_NAME = 'financas';
 export const DB_VERSION = 2;
 
-// Banco do app anterior, lido apenas para migrar. Mesma origem no GitHub Pages.
-export const LEGACY_DB_NAME = 'livro-de-gastos';
-
 export const STORES = [
   {
     nome: 'transactions',

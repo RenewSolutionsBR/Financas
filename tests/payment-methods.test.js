@@ -117,4 +117,14 @@ describe('payment-methods: exclusão', () => {
     assert(erro.message.includes('2'), `mensagem não diz quantos: ${erro.message}`);
     assert(/desative/i.test(erro.message), 'mensagem não oferece a saída de desativar');
   });
+
+  // (transactions || []) virava lista vazia quando o segundo argumento vinha
+  // undefined, e a guarda de "em uso" nunca disparava — uma forma em uso era
+  // excluida em silencio.
+  it('recusa excluir sem a lista de transacoes, para nao silenciar a guarda de em-uso', async () => {
+    let erro = null;
+    try { await removeForma('pm_pix'); } catch (e) { erro = e; }
+    assert(erro !== null, 'deveria ter recusado');
+    assert(/lançamentos/i.test(erro.message), erro.message);
+  });
 });

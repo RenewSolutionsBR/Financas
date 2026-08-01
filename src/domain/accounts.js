@@ -123,6 +123,13 @@ export async function saveAccount(a) {
 }
 
 export async function removeAccount(id, transactions) {
+  // Sem `transactions` (undefined), (transactions || []) virava lista vazia
+  // e a guarda de "em uso" abaixo nunca disparava — exclusao em silencio.
+  // Exige o array explicitamente: quem chama precisa passar [] de proposito,
+  // nunca deixar o parametro ausente silenciar a guarda.
+  if (!Array.isArray(transactions)) {
+    throw new Error('removeAccount precisa da lista de lançamentos (passe [] se não houver nenhum) para checar se a conta está em uso.');
+  }
   const todas = await listAccounts();
   const filhos = todas.filter((a) => a.cartaoPaiId === id);
   if (filhos.length) {
@@ -130,7 +137,7 @@ export async function removeAccount(id, transactions) {
   }
   // A guarda de integridade mora aqui, e nao na tela: senao qualquer outro
   // chamador apaga um cadastro em uso e deixa lancamento apontando para nada.
-  const emUso = (transactions || []).filter((t) => t.contaId === id).length;
+  const emUso = transactions.filter((t) => t.contaId === id).length;
   if (emUso) {
     throw new Error(`Não dá para excluir: ${emUso} lançamento(s) usam esta conta ou cartão. Desative-o em vez de excluir, para não perder o histórico.`);
   }

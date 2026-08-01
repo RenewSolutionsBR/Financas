@@ -99,7 +99,14 @@ export async function saveForma(pm) {
 }
 
 export async function removeForma(id, transactions) {
-  const emUso = (transactions || []).filter((t) => t.formaPagamentoId === id).length;
+  // Sem `transactions` (undefined), (transactions || []) virava lista vazia
+  // e a guarda de "em uso" abaixo nunca disparava — exclusao em silencio.
+  // Exige o array explicitamente: quem chama precisa passar [] de proposito,
+  // nunca deixar o parametro ausente silenciar a guarda.
+  if (!Array.isArray(transactions)) {
+    throw new Error('removeForma precisa da lista de lançamentos (passe [] se não houver nenhum) para checar se a forma está em uso.');
+  }
+  const emUso = transactions.filter((t) => t.formaPagamentoId === id).length;
   if (emUso) {
     throw new Error(`Esta forma de pagamento está em uso por ${emUso} lançamento(s). Desative-a em vez de excluir, para não perder o histórico.`);
   }

@@ -91,4 +91,14 @@ describe('categories', () => {
     assert(a.id !== b.id);
     assert(a.id.startsWith('cat_'));
   });
+
+  // (transactions || []) virava lista vazia quando o segundo argumento vinha
+  // undefined, e a guarda de "em uso" nunca disparava — uma categoria em uso
+  // era excluida em silencio.
+  it('recusa excluir sem a lista de transacoes, para nao silenciar a guarda de em-uso', async () => {
+    let erro = null;
+    try { await removeCategoria('casa'); } catch (e) { erro = e; }
+    assert(erro !== null, 'deveria ter recusado');
+    assert(/lançamentos/i.test(erro.message), erro.message);
+  });
 });

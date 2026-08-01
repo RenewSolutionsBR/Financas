@@ -76,9 +76,16 @@ export async function removeCategoria(id, transactions) {
   if (id === CATEGORIA_A_CLASSIFICAR) {
     throw new Error('A categoria "A Classificar" não pode ser excluída: ela é o destino de tudo que ainda não foi classificado.');
   }
+  // Sem `transactions` (undefined), (transactions || []) virava lista vazia
+  // e a guarda de "em uso" abaixo nunca disparava — exclusao em silencio.
+  // Exige o array explicitamente: quem chama precisa passar [] de proposito,
+  // nunca deixar o parametro ausente silenciar a guarda.
+  if (!Array.isArray(transactions)) {
+    throw new Error('removeCategoria precisa da lista de lançamentos (passe [] se não houver nenhum) para checar se a categoria está em uso.');
+  }
   // A guarda de integridade mora aqui, e nao na tela: senao qualquer outro
   // chamador apaga uma categoria em uso e deixa lancamento apontando para nada.
-  const emUso = (transactions || []).filter((t) => t.categoria === id).length;
+  const emUso = transactions.filter((t) => t.categoria === id).length;
   if (emUso) {
     throw new Error(`Não dá para excluir: ${emUso} lançamento(s) usam esta categoria. Reclassifique-os antes de excluir.`);
   }
