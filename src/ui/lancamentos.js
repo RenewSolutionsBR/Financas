@@ -93,6 +93,21 @@ export function contasParaForma(contas, tipoForma, idAtual) {
   return (contas || []).filter((c) => c.id === idAtual || (tipoEsperado !== null && c.tipo === tipoEsperado));
 }
 
+// Pura: a conta padrão de uma forma só serve de preenchimento automático se o
+// TIPO dela bater com o que a forma espera. O editor de forma
+// (cadastros-formas.js) hoje só deixa escolher conta corrente como "conta
+// padrão", mesmo para uma forma do tipo crédito — sem esta checagem, um
+// cartão de crédito podia herdar conta corrente como padrão, e o dado errado
+// era exatamente o que a conciliação fatura/extrato da Fase 2 vai precisar
+// ler certo.
+export function contaPadraoValidaParaForma(contas, forma) {
+  if (!forma || !forma.contaPadraoId) return null;
+  const conta = (contas || []).find((c) => c.id === forma.contaPadraoId);
+  if (!conta) return null;
+  const tipoEsperado = tipoContaParaForma(forma.tipo);
+  return tipoEsperado !== null && conta.tipo === tipoEsperado ? conta : null;
+}
+
 // Puras: derivam o que a barra de filtros deve mostrar a partir de `filtros`,
 // para o controle nunca divergir do estado que ele supostamente representa.
 // A barra inteira é reconstruída a cada renderLancamentos() (mesmo padrão de
@@ -160,7 +175,23 @@ async function formulario(ctx, transacoes) {
   const formaPreSelecionada = !emEdicao && formasOpcoes.some((f) => f.id === formaSelecionada)
     ? ctx.formas.find((f) => f.id === formaSelecionada)
     : null;
-  const contaPadraoInicial = formaPreSelecionada ? formaPreSelecionada.contaPadraoId : null;
+
+  // A conta padrão só se aplica quando a pré-seleção é genuína (ultimaFormaUsada
+  // realmente presente e ativa, comentário acima) — e só se o TIPO dela bater
+  // com o que a forma espera (contaPadraoValidaParaForma), senão um cartão de
+  // crédito podia herdar conta corrente como padrão.
+  const contaPadraoValida = formaPreSelecionada ? contaPadraoValidaParaForma(ctx.contas, formaPreSelecionada) : null;
+  const contaPadraoInicial = contaPadraoValida ? contaPadraoValida.id : null;
+
+  // A forma que o <select> vai REALMENTE exibir selecionada: se `formaSelecionada`
+  // não está entre as opções (primeira instalação, sem ultimaFormaUsada ainda,
+  // ou ela foi desativada), o navegador cai sozinho na primeira option da
+  // lista — e o filtro de tipo de conta abaixo precisa refletir ESSA forma,
+  // não só a pré-seleção genuína, senão o campo de conta mostra o tipo errado
+  // para a forma que está visivelmente marcada no formulário.
+  const formaExibidaId = emEdicao ? emEdicao.formaPagamentoId
+    : (formasOpcoes.some((f) => f.id === formaSelecionada) ? formaSelecionada : (formasOpcoes[0] || {}).id);
+  const formaExibida = ctx.formas.find((f) => f.id === formaExibidaId) || null;
 
   // A conta padrão de uma forma pode estar desativada sem que ninguém tenha
   // desativado a forma junto — opcoesAtivas precisa contar essa conta como
@@ -168,10 +199,7 @@ async function formulario(ctx, transacoes) {
   // automático abaixo não encontra option nenhuma para selecionar, deixando
   // o select em branco.
   const contaAtualId = emEdicao ? emEdicao.contaId : contaPadraoInicial;
-  const tipoFormaSelecionada = formaPreSelecionada
-    ? formaPreSelecionada.tipo
-    : (emEdicao ? (ctx.formas.find((f) => f.id === emEdicao.formaPagamentoId) || {}).tipo : null);
-  const contasOpcoes = opcoesAtivas(contasParaForma(ctx.contas, tipoFormaSelecionada, contaAtualId), contaAtualId);
+  const contasOpcoes = opcoesAtivas(contasParaForma(ctx.contas, formaExibida ? formaExibida.tipo : null, contaAtualId), contaAtualId);
   const selConta = el('select', {}, [
     el('option', { value: '', text: '— sem conta —' }),
     ...contasOpcoes.map((a) => el('option', {
@@ -181,19 +209,27 @@ async function formulario(ctx, transacoes) {
     })),
   ]);
 
+  // Só preserva a conta atual ao trocar de forma quando o USUÁRIO a escolheu
+  // à mão: sem essa distinção, uma conta que só estava lá porque a forma
+  // ANTERIOR a preencheu automaticamente "vazava" para a forma seguinte,
+  // mesmo quando as duas têm contas padrão diferentes — configurar padrões
+  // diferentes por forma parava de funcionar depois da primeira troca.
+  let contaEditadaManualmente = false;
+  selConta.addEventListener('change', () => { contaEditadaManualmente = true; });
+
   // Trocar a forma refaz a LISTA de opções de conta (não só o valor
   // selecionado): cartão de crédito só pode oferecer cartão, dinheiro não
   // oferece conta nenhuma, o resto oferece conta corrente — ver
-  // tipoContaParaForma. Mantém a conta já escolhida se ela continuar fazendo
-  // sentido pro novo tipo (trocar entre duas formas de conta corrente não
-  // precisa perder a seleção); senão cai na conta padrão da nova forma, ou em
-  // branco.
+  // tipoContaParaForma. Mantém a conta já escolhida pelo usuário se ela
+  // continuar fazendo sentido pro novo tipo; senão cai na conta padrão
+  // (válida) da nova forma, ou em branco.
   selForma.addEventListener('change', () => {
     const forma = ctx.formas.find((f) => f.id === selForma.value) || null;
     const tipoEsperado = tipoContaParaForma(forma ? forma.tipo : null);
-    const contaContinuaValida = selConta.value && tipoEsperado !== null &&
+    const contaEscolhidaContinuaValida = contaEditadaManualmente && selConta.value && tipoEsperado !== null &&
       ctx.contas.some((c) => c.id === selConta.value && c.tipo === tipoEsperado);
-    const novoValor = contaContinuaValida ? selConta.value : ((forma && forma.contaPadraoId) || '');
+    const contaPadrao = contaPadraoValidaParaForma(ctx.contas, forma);
+    const novoValor = contaEscolhidaContinuaValida ? selConta.value : (contaPadrao ? contaPadrao.id : '');
     const novasOpcoes = opcoesAtivas(contasParaForma(ctx.contas, forma ? forma.tipo : null, novoValor), novoValor);
     selConta.innerHTML = '';
     selConta.append(

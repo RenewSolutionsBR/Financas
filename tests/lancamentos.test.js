@@ -14,7 +14,7 @@
 import { describe, it, assert, assertEqual, assertDeepEqual } from './harness.js';
 import {
   interpretarValor, classeDoItem, formaFiltroAtual, somenteAutoFiltroAtual,
-  tipoContaParaForma, contasParaForma,
+  tipoContaParaForma, contasParaForma, contaPadraoValidaParaForma,
 } from '../src/ui/lancamentos.js';
 import { TIPO_CONTA, TIPO_CARTAO } from '../src/domain/accounts.js';
 
@@ -113,6 +113,36 @@ describe('lancamentos: contasParaForma (filtra o seletor Conta/cartão pelo tipo
 
   it('pix com cartao ja gravado (idAtual de tipo errado) preserva o cartao junto com as contas corrente', () => {
     assertDeepEqual(contasParaForma(contas, 'pix', 'acc_cartao'), [contaCorrente, cartao]);
+  });
+});
+
+describe('lancamentos: contaPadraoValidaParaForma (a conta padrao so vale se o tipo bater)', () => {
+  const contaCorrente = { id: 'acc_cc', tipo: TIPO_CONTA, nome: 'Conta corrente' };
+  const cartao = { id: 'acc_cartao', tipo: TIPO_CARTAO, nome: 'Cartao' };
+  const contas = [contaCorrente, cartao];
+
+  it('forma de conta corrente com contaPadraoId de conta corrente: valida', () => {
+    const forma = { tipo: 'pix', contaPadraoId: 'acc_cc' };
+    assertDeepEqual(contaPadraoValidaParaForma(contas, forma), contaCorrente);
+  });
+
+  it('forma de credito com contaPadraoId de CONTA CORRENTE (tipo errado): invalida', () => {
+    // O editor de forma hoje so oferece conta corrente como padrao, mesmo
+    // para credito - sem esta checagem, um cartao de credito herdaria uma
+    // conta corrente como padrao, contrariando o proprio pedido do usuario.
+    const forma = { tipo: 'credito', contaPadraoId: 'acc_cc' };
+    assertEqual(contaPadraoValidaParaForma(contas, forma), null);
+  });
+
+  it('forma de dinheiro nunca tem padrao valido, mesmo com contaPadraoId preenchido', () => {
+    const forma = { tipo: 'dinheiro', contaPadraoId: 'acc_cc' };
+    assertEqual(contaPadraoValidaParaForma(contas, forma), null);
+  });
+
+  it('sem contaPadraoId, sem forma, ou apontando pra conta inexistente: null', () => {
+    assertEqual(contaPadraoValidaParaForma(contas, null), null);
+    assertEqual(contaPadraoValidaParaForma(contas, { tipo: 'pix' }), null);
+    assertEqual(contaPadraoValidaParaForma(contas, { tipo: 'pix', contaPadraoId: 'nao_existe' }), null);
   });
 });
 

@@ -9,7 +9,7 @@
 import { describe, it, assertEqual, assert } from './harness.js';
 import { renderLancamentos, resetLancamentos } from '../src/ui/lancamentos.js';
 import { listTransactions, saveTransaction, removeTransaction } from '../src/domain/transactions.js';
-import { TIPO_CONTA, saveAccount } from '../src/domain/accounts.js';
+import { TIPO_CONTA, TIPO_CARTAO, saveAccount } from '../src/domain/accounts.js';
 import { saveForma } from '../src/domain/payment-methods.js';
 import * as storage from '../src/core/storage.js';
 
@@ -169,6 +169,160 @@ describe('lancamentos (DOM real): conta padrão da forma pré-selecionada (conta
       assertEqual(selConta.value, CONTA_ID, 'a conta desativada ainda precisa ser a selecionada, nao cair para "sem conta"');
       const opcaoSelecionada = [...selConta.options].find((o) => o.value === CONTA_ID);
       assert(opcaoSelecionada.textContent.includes('desativada'), `esperava marca de desativada, achei "${opcaoSelecionada.textContent}"`);
+    });
+  });
+});
+
+// Reproduz o furo do Critico 1 da revisao: sem ultimaFormaUsada valida, o
+// <select> de forma cai sozinho (comportamento padrao do navegador) na
+// PRIMEIRA option da lista - e o filtro de tipo de conta precisa refletir
+// essa forma EXIBIDA, nao so uma pre-selecao genuina que nao existe neste
+// caso. Sem a correcao, o campo de conta oferecia so conta corrente mesmo
+// com "Cartao de Credito" visivelmente marcado no formulario.
+describe('lancamentos (DOM real): filtro de conta reflete a forma que o select REALMENTE exibe (Critico 1)', () => {
+  const FORMA_ID = 'pm_teste_fallback_credito';
+  const CARTAO_ID = 'acc_teste_fallback_cartao';
+  const CONTA_ID = 'acc_teste_fallback_conta';
+
+  async function comFallbackParaCredito(fn) {
+    const ultimaFormaOriginal = await storage.getMeta('ultimaFormaUsada', null);
+    // ordem bem negativa: garante que esta forma vem ANTES de qualquer forma
+    // real do seed (ordem 1..7) ou criada pelo usuario, entao ela e sempre a
+    // primeira option da lista, independente do que mais exista no banco.
+    await saveForma({
+      id: FORMA_ID, nome: 'Forma teste fallback credito', tipo: 'credito', ativo: true,
+      padroesExtrato: [], ordem: -999, conciliaCom: 'fatura',
+    });
+    await saveAccount({ id: CARTAO_ID, tipo: TIPO_CARTAO, nome: 'Cartao teste fallback', ativo: true, final: '1234' });
+    await saveAccount({ id: CONTA_ID, tipo: TIPO_CONTA, nome: 'Conta teste fallback', ativo: true, agencia: '1', numero: '2' });
+    // Aponta para uma forma que nao existe: a pre-selecao genuina falha, e o
+    // <select> precisa cair na primeira option sozinho (fallback do navegador).
+    await storage.setMeta('ultimaFormaUsada', 'forma_que_nao_existe_mais');
+    try {
+      await fn();
+    } finally {
+      await storage.setMeta('ultimaFormaUsada', ultimaFormaOriginal);
+      await storage.remove('paymentMethods', FORMA_ID);
+      await storage.remove('accounts', CARTAO_ID);
+      await storage.remove('accounts', CONTA_ID);
+    }
+  }
+
+  it('sem pre-selecao valida, o select cai na primeira forma (credito) e o campo de conta oferece so cartao', async () => {
+    await comFallbackParaCredito(async () => {
+      montarPainel();
+      resetLancamentos();
+      await renderLancamentos();
+      const selects = document.querySelectorAll('.form-lancamento select');
+      const selForma = selects[1];
+      const selConta = selects[2];
+      assertEqual(selForma.value, FORMA_ID, 'a forma de ordem mais baixa precisa aparecer selecionada por padrao do navegador');
+      const valores = [...selConta.options].map((o) => o.value);
+      assert(valores.includes(CARTAO_ID), `esperava o cartao entre as opcoes, achei ${JSON.stringify(valores)}`);
+      assert(!valores.includes(CONTA_ID), `a conta corrente NAO deveria aparecer com credito selecionado, achei ${JSON.stringify(valores)}`);
+    });
+  });
+});
+
+// Reproduz o Critico 2 (mensagem de erro) e o Importante 3 (regressao do
+// preenchimento automatico) da revisao: a conta padrao so pode vir de uma
+// forma cujo TIPO bate com o da conta, e so deve ser sobrescrita ao trocar de
+// forma quando o usuario NAO escolheu a conta manualmente.
+describe('lancamentos (DOM real): troca de forma no formulario (change do seletor)', () => {
+  const FORMA_A_ID = 'pm_teste_troca_a';
+  const FORMA_B_ID = 'pm_teste_troca_b';
+  const FORMA_CREDITO_ID = 'pm_teste_troca_credito';
+  const CONTA_A_ID = 'acc_teste_troca_a';
+  const CONTA_B_ID = 'acc_teste_troca_b';
+  const CONTA_MANUAL_ID = 'acc_teste_troca_manual';
+  const CARTAO_ID = 'acc_teste_troca_cartao';
+
+  async function comFormasDeTeste(fn) {
+    await saveAccount({ id: CONTA_A_ID, tipo: TIPO_CONTA, nome: 'Conta teste A', ativo: true, agencia: '1', numero: '1' });
+    await saveAccount({ id: CONTA_B_ID, tipo: TIPO_CONTA, nome: 'Conta teste B', ativo: true, agencia: '1', numero: '2' });
+    await saveAccount({ id: CONTA_MANUAL_ID, tipo: TIPO_CONTA, nome: 'Conta teste manual', ativo: true, agencia: '1', numero: '3' });
+    await saveAccount({ id: CARTAO_ID, tipo: TIPO_CARTAO, nome: 'Cartao teste troca', ativo: true, final: '9999' });
+    await saveForma({ id: FORMA_A_ID, nome: 'Forma teste A', tipo: 'outro', ativo: true, padroesExtrato: [], ordem: 900, conciliaCom: 'nenhum', contaPadraoId: CONTA_A_ID });
+    await saveForma({ id: FORMA_B_ID, nome: 'Forma teste B', tipo: 'outro', ativo: true, padroesExtrato: [], ordem: 901, conciliaCom: 'nenhum', contaPadraoId: CONTA_B_ID });
+    // contaPadraoId de tipo ERRADO (conta corrente numa forma de credito): o
+    // editor hoje so oferece conta corrente como padrao pra qualquer forma,
+    // entao este estado e alcancavel pela UI normal, nao so por teste.
+    await saveForma({ id: FORMA_CREDITO_ID, nome: 'Forma teste credito', tipo: 'credito', ativo: true, padroesExtrato: [], ordem: 902, conciliaCom: 'fatura', contaPadraoId: CONTA_A_ID });
+    try {
+      await fn();
+    } finally {
+      await storage.remove('paymentMethods', FORMA_A_ID);
+      await storage.remove('paymentMethods', FORMA_B_ID);
+      await storage.remove('paymentMethods', FORMA_CREDITO_ID);
+      await storage.remove('accounts', CONTA_A_ID);
+      await storage.remove('accounts', CONTA_B_ID);
+      await storage.remove('accounts', CONTA_MANUAL_ID);
+      await storage.remove('accounts', CARTAO_ID);
+    }
+  }
+
+  it('trocar entre formas com contas padrao DIFERENTES aplica o padrao de cada uma (nao trava na anterior)', async () => {
+    await comFormasDeTeste(async () => {
+      montarPainel();
+      resetLancamentos();
+      await renderLancamentos();
+      const selects = document.querySelectorAll('.form-lancamento select');
+      const selForma = selects[1];
+      const selConta = selects[2];
+
+      selForma.value = FORMA_A_ID;
+      selForma.dispatchEvent(new Event('change'));
+      assertEqual(selConta.value, CONTA_A_ID, 'forma A precisa preencher a conta padrao dela');
+
+      // Troca para B SEM tocar em selConta: se a conta de A "vazasse" para B
+      // (bug do Importante 3), selConta continuaria em CONTA_A_ID aqui,
+      // porque CONTA_A_ID tambem e do tipo certo pra forma B (as duas sao
+      // conta corrente) - o teste so pega o vazamento porque os padroes sao
+      // DIFERENTES entre as duas formas.
+      selForma.value = FORMA_B_ID;
+      selForma.dispatchEvent(new Event('change'));
+      assertEqual(selConta.value, CONTA_B_ID, 'forma B precisa aplicar o PROPRIO padrao, nao manter o da forma anterior');
+    });
+  });
+
+  it('conta escolhida manualmente sobrevive a troca de forma; auto-preenchida NAO sobrevive', async () => {
+    await comFormasDeTeste(async () => {
+      montarPainel();
+      resetLancamentos();
+      await renderLancamentos();
+      const selects = document.querySelectorAll('.form-lancamento select');
+      const selForma = selects[1];
+      const selConta = selects[2];
+
+      selForma.value = FORMA_A_ID;
+      selForma.dispatchEvent(new Event('change'));
+      assertEqual(selConta.value, CONTA_A_ID);
+
+      // Usuario troca a conta A MAO (evento change real no proprio select).
+      selConta.value = CONTA_MANUAL_ID;
+      selConta.dispatchEvent(new Event('change'));
+
+      selForma.value = FORMA_B_ID;
+      selForma.dispatchEvent(new Event('change'));
+      assertEqual(selConta.value, CONTA_MANUAL_ID, 'a escolha manual do usuario precisa sobreviver a troca de forma');
+    });
+  });
+
+  it('contaPadraoId de tipo errado (conta corrente numa forma de credito) nunca preenche nem aparece', async () => {
+    await comFormasDeTeste(async () => {
+      montarPainel();
+      resetLancamentos();
+      await renderLancamentos();
+      const selects = document.querySelectorAll('.form-lancamento select');
+      const selForma = selects[1];
+      const selConta = selects[2];
+
+      selForma.value = FORMA_CREDITO_ID;
+      selForma.dispatchEvent(new Event('change'));
+      assertEqual(selConta.value, '', 'contaPadraoId de tipo errado nao pode preencher o campo — deve ficar "sem conta"');
+      const valores = [...selConta.options].map((o) => o.value);
+      assert(!valores.includes(CONTA_A_ID), `a conta corrente do padrao errado nao deveria nem aparecer nas opcoes, achei ${JSON.stringify(valores)}`);
+      assert(valores.includes(CARTAO_ID), `o cartao precisa estar entre as opcoes, achei ${JSON.stringify(valores)}`);
     });
   });
 });
