@@ -28,10 +28,19 @@ describe('parcelas: splitParcelas (divisao por centavos, resto nas primeiras)', 
     assertDeepEqual(splitParcelas(100, 3), [33.34, 33.33, 33.33]);
   });
 
-  it('soma das parcelas bate EXATO com o total, sem residuo de ponto flutuante', () => {
+  it('soma das parcelas bate EXATO com o total, centavo a centavo — sem residuo de ponto flutuante', () => {
     const vals = splitParcelas(999.97, 7);
-    const soma = vals.reduce((a, b) => a + b, 0);
-    assertEqual(Math.round(soma * 100), Math.round(999.97 * 100));
+    // Soma cada parcela JA em centavos inteiros (o que de fato seria gravado/exibido),
+    // em vez de somar os floats brutos e arredondar so no final. A segunda forma foi
+    // MEDIDA como vacua para a sabotagem "divisao float direta" (troca a aritmetica de
+    // centavos por total/n cru): o residuo de uma divisao float direta, em qualquer
+    // total/n de escala monetaria plausivel, fica bem abaixo de meio centavo, entao um
+    // unico arredondamento no fim NUNCA acusa a sabotagem (so passaria a acusar com
+    // totais na casa de dezenas de trilhoes de reais — fora de cogitacao pra este app).
+    // Somando centavo a centavo, o residuo de cada parcela sabotada (ex.: 142.85285714...
+    // em vez de 142.86/142.85) aparece na soma inteira imediatamente.
+    const somaCentavos = vals.reduce((acc, v) => acc + Math.round(v * 100), 0);
+    assertEqual(somaCentavos, Math.round(999.97 * 100));
   });
 });
 
