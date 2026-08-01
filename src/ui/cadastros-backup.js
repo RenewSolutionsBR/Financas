@@ -30,7 +30,10 @@ export function secaoBackup(aoMudar) {
       }
       const { contagens, avisos } = await importarBackup(buffer, { cartaoTitularId, formaCreditoId: 'pm_credito' });
       const total = Object.values(contagens).reduce((a, b) => a + b, 0);
-      toast(`${total} registro(s) restaurados.`, 'ok');
+      // "restaurados" sugeriria uma substituicao. importarBackup grava com
+      // putMany store a store: escreve o que esta no arquivo e nunca remove o
+      // que ja estava no aparelho - e uma mesclagem, nao uma restauracao.
+      toast(`${total} registro(s) importados. Os dados que já estavam no aparelho foram mantidos.`, 'ok');
       if (avisos.length) await abrirModal({ titulo: 'Atenção', corpo: avisos.join('\n\n') });
       await aoMudar();
     } catch (e) {
