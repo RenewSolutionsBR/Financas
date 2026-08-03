@@ -20,6 +20,7 @@
 //   tipoDetectado,       // prefixo classificador do extrato, quando houver
 //   parcela_atual, parcela_total,  // só fatura, null nas demais
 //   cartaoFinal,         // só fatura: final do plástico (titular ou adicional) de onde saiu
+//   plastico,            // só fatura: 'titular' | 'adicional', null nas demais
 //   secao,               // só fatura: 'despesas' | 'pagamentos_creditos'
 //   valorUSD,            // só fatura: coluna US$, quando != 0, senão null
 //   saldo,               // só extrato, null na fatura
