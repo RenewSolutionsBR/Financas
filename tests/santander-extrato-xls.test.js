@@ -154,4 +154,28 @@ describe('santander-extrato-xls: parseLinhasExtrato — variações observadas n
     assertEqual(statement.saldoFinal, 1150);
     assert(checksum.ok, JSON.stringify(checksum));
   });
+
+  it('arquivo sem cabecalho de tabela reconhecivel: retorno tem o mesmo formato do caminho de sucesso', () => {
+    const linhas = [
+      ['ISSO NAO E UM EXTRATO SANTANDER'],
+      ['algum outro conteudo qualquer'],
+    ];
+    const resultado = parseLinhasExtrato(linhas, 'acc_1', 'arquivo-errado.xls');
+    assertEqual(resultado.rows.length, 0);
+    assert(resultado.avisos.length > 0);
+    // checksum precisa existir e ter o mesmo shape do caminho de sucesso,
+    // senão um chamador que leia resultado.checksum.ok quebra com "undefined.ok".
+    assertEqual(resultado.checksum.ok, false);
+    assertEqual(resultado.checksum.saldoInicial, null);
+    assertEqual(resultado.checksum.saldoFinal, null);
+    assertEqual(resultado.checksum.somaCreditos, 0);
+    assertEqual(resultado.checksum.somaDebitos, 0);
+    // statement precisa ter as mesmas chaves do caminho de sucesso (agencia/numero inclusos).
+    assertEqual(resultado.statement.agencia, null);
+    assertEqual(resultado.statement.numero, null);
+    assertEqual(resultado.statement.periodoInicio, null);
+    assertEqual(resultado.statement.periodoFim, null);
+    assertEqual(resultado.statement.saldoInicial, null);
+    assertEqual(resultado.statement.saldoFinal, null);
+  });
 });

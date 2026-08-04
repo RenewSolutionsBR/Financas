@@ -45,7 +45,16 @@ export function parseLinhasExtrato(linhas, contaId, arquivo) {
     }
   }
   if (headerIdx < 0) {
-    return { statement: { periodoInicio, periodoFim, saldoInicial: null, saldoFinal: null }, rows: [], avisos: ['Não encontrei o cabeçalho de tabela do extrato — arquivo fora do formato esperado.'] };
+    // Mesmo shape do retorno de sucesso (statement com agencia/numero,
+    // checksum sempre presente) — um chamador que leia resultado.checksum.ok
+    // não pode quebrar com "undefined.ok" só porque o arquivo veio fora do
+    // formato esperado.
+    return {
+      statement: { agencia: null, numero: null, periodoInicio, periodoFim, saldoInicial: null, saldoFinal: null },
+      rows: [],
+      avisos: ['Não encontrei o cabeçalho de tabela do extrato — arquivo fora do formato esperado.'],
+      checksum: { ok: false, saldoInicial: null, saldoFinal: null, somaCreditos: 0, somaDebitos: 0 },
+    };
   }
 
   let saldoInicial = null;
