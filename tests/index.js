@@ -22,6 +22,7 @@ export const TEST_MODULES = [
   './classification.test.js',
   './parcelas.test.js',
   './lancamentos-parcelado.test.js',
+  './reconcile-card.test.js',
   './santander-cartao-pdf.test.js',
   './santander-cartao-pdf-extrair.test.js',
   './santander-extrato-xls.test.js',
