@@ -35,6 +35,17 @@ describe('reconcile-card: getReconciliationWindow — precedencia de 3 niveis', 
     assertEqual(fonte, 'estimativa');
     assertEqual(windowStart.toISOString().slice(0, 10), '2026-04-20', '35 dias antes do corte');
   });
+
+  it('regressao de fuso horario: transacao datada no PRIMEIRO dia do periodo impresso aparece em appUnmatched', () => {
+    // Se windowStart for interpretado como meia-noite LOCAL (em vez de UTC,
+    // como o resto do modulo), num fuso atras de UTC essa transacao fica
+    // "antes" da janela por algumas horas e some silenciosamente do
+    // appUnmatched — mesmo sem casar com nenhum item da fatura.
+    const fatura = fat({ periodoCompras: { inicio: '2026-04-26', fim: '2026-05-25' }, rows: [] });
+    const t = { id: 't1', previsto: false, contaId: TITULAR, data: '2026-04-26', valor: 77 };
+    const { appUnmatched } = runReconciliation(fatura, [fatura], [t], contas);
+    assertDeepEqual(appUnmatched.map((x) => x.id), ['t1'], 'transacao no primeiro dia do periodo impresso nao pode sumir por causa de fuso horario');
+  });
 });
 
 describe('reconcile-card: runReconciliation — isolamento por cartao', () => {
@@ -92,9 +103,17 @@ describe('reconcile-card: buildFullReconciliationRows', () => {
   });
 
   it('nao reaproveita o MESMO lancamento em duas faturas diferentes', () => {
-    const t = { id: 't1', previsto: false, contaId: TITULAR, data: '2026-05-10', valor: 50, descricao: 'X' };
-    const f1 = fat({ id: 'f1', dataCorte: '2026-05-25', rows: [{ tipo: 'despesa', secao: 'despesas', data: '2026-05-10', descricao: 'X', valor: 50, vencimento: '2026-06-01' }] });
-    const f2 = fat({ id: 'f2', vencimento: '2026-07-01', dataCorte: '2026-06-25', rows: [{ tipo: 'despesa', secao: 'despesas', data: '2026-05-10', descricao: 'X', valor: 50, vencimento: '2026-07-01' }] });
+    // Data escolhida propositalmente na FAIXA DE SOBREPOSICAO real do
+    // pool-slack entre f1 (janela estimativa terminando em 2026-05-25,
+    // poolEnd = 2026-05-28) e f2 (janela por encadeamento comecando em
+    // 2026-05-26, poolStart = 2026-05-23): 2026-05-24 cai dentro das DUAS
+    // janelas. Se a data ficasse fora dessa faixa (como '2026-05-10' antes),
+    // o teste passaria mesmo sem a protecao de reuso (flag `used`), so
+    // porque a janela de uma das faturas ja excluiria a transacao sozinha —
+    // o teste ficaria vacuo. Ver sabotagem no relatorio da rodada 2.
+    const t = { id: 't1', previsto: false, contaId: TITULAR, data: '2026-05-24', valor: 50, descricao: 'X' };
+    const f1 = fat({ id: 'f1', dataCorte: '2026-05-25', rows: [{ tipo: 'despesa', secao: 'despesas', data: '2026-05-24', descricao: 'X', valor: 50, vencimento: '2026-06-01' }] });
+    const f2 = fat({ id: 'f2', vencimento: '2026-07-01', dataCorte: '2026-06-25', rows: [{ tipo: 'despesa', secao: 'despesas', data: '2026-05-24', descricao: 'X', valor: 50, vencimento: '2026-07-01' }] });
     const rows = buildFullReconciliationRows([f1, f2], [t], contas);
     const conciliados = rows.filter((r) => r.status.startsWith('Conciliado'));
     assertEqual(conciliados.length, 1, 'o lancamento so pode casar com UMA das duas faturas');

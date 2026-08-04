@@ -29,8 +29,13 @@ function closestIndexByKey(pool, key, referenceDate) {
 export function getReconciliationWindow(fatura, faturasList) {
   if (fatura.periodoCompras && fatura.periodoCompras.inicio && fatura.periodoCompras.fim) {
     return {
-      windowStart: new Date(fatura.periodoCompras.inicio + 'T00:00:00'),
-      windowEnd: new Date(fatura.periodoCompras.fim + 'T00:00:00'),
+      // Sem sufixo de hora, igual ao resto do arquivo (dataCorte, vencimento,
+      // data de transação): ECMA-262 interpreta "AAAA-MM-DD" puro como meia-
+      // noite UTC. Com 'T00:00:00' virava meia-noite LOCAL, e num fuso atrás
+      // de UTC (Brasil, UTC-3) isso desalinhava a janela em 3h em relação às
+      // transações, sumindo lançamentos do primeiro dia do período impresso.
+      windowStart: new Date(fatura.periodoCompras.inicio),
+      windowEnd: new Date(fatura.periodoCompras.fim),
       fonte: 'periodo_impresso',
     };
   }
