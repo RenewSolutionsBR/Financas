@@ -23,6 +23,7 @@ export const TEST_MODULES = [
   './parcelas.test.js',
   './lancamentos-parcelado.test.js',
   './santander-cartao-pdf.test.js',
+  './santander-cartao-pdf-extrair.test.js',
 ];
 
 // Testes que dependem de IndexedDB ou DOM: só no navegador.

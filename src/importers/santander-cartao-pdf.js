@@ -1,36 +1,24 @@
 // Adaptador de fatura Santander (Visa e Mastercard). A extração de texto do
 // PDF (extractLines) usa pdf.js e só roda no navegador; o parsing em si
 // (parseFaturaTexto) é PURO — recebe linhas de texto já prontas — e é o que
-// os testes exercitam, sem nunca abrir um PDF de verdade no Node.
+// os testes exercitam, sem nunca abrir um PDF de verdade no Node. Os
+// helpers de data/vencimento/período moram em santander-cartao-pdf-datas.js
+// (arquivo irmão, mesmo teto de ~250 linhas dos Global Constraints).
 
 import { register } from './registry.js';
 import { canonicalizar } from '../domain/classification.js';
 import { stableHash } from '../core/ids.js';
 import { extractLines } from './santander-cartao-pdf-extrair.js';
+import {
+  resolveDate, toISO, toISOExportado, extractCutoffDateDeLinhas, extrairPeriodoCompras, vencimentoFromText,
+} from './santander-cartao-pdf-datas.js';
+
+export { resolveDate, toISOExportado, extractCutoffDateDeLinhas, extrairPeriodoCompras, vencimentoFromText };
 
 function moneyToNumber(str) {
   return parseFloat(String(str).trim().replace(/\./g, '').replace(',', '.'));
 }
 const MONEY_RE = /-?\d{1,3}(?:\.\d{3})*,\d{2}/g;
-
-// Resolve o ano de uma data DD/MM dada como referência o vencimento: escolhe
-// o ano mais recente que não fique DEPOIS do vencimento (+5 dias de folga) —
-// cobre tanto despesas do ciclo corrente quanto a data de compra original de
-// parcelamentos antigos (até ~3 anos atrás).
-export function resolveDate(dd, mm, vencimento) {
-  const slack = new Date(vencimento);
-  slack.setDate(slack.getDate() + 5);
-  for (let back = 0; back <= 3; back++) {
-    const year = vencimento.getFullYear() - back;
-    const candidate = new Date(year, mm - 1, dd);
-    if (!isNaN(candidate) && candidate <= slack) return candidate;
-  }
-  return new Date(vencimento.getFullYear(), mm - 1, dd);
-}
-
-function toISO(d) {
-  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-}
 
 // Cabeçalho de plástico: "[@]NOME - BBBB XXXX XXXX FFFF". Medido contra as
 // 3 faturas reais (Step 6): as duas formas aparecem de fato, uma por cartão
@@ -39,34 +27,17 @@ function toISO(d) {
 const CARD_HEADER_RE = /^(@)?[^-]*-\s*\d{4}\s*XXXX\s*XXXX\s*(\d{4})\s*$/;
 const ROW_RE = /^(?:\S+\s+)?(\d{2})\/(\d{2})\s+(.+)$/;
 const PARCELA_TAG_RE = /(\d{2})\/(\d{2})\s*$/;
-const CUTOFF_RE = /realizados?\D*?at[éeè]\s+(\d{2})\/(\d{2})|^at[éeè]\s+(\d{2})\/(\d{2})/i;
-const FAIXA_PERIODO_RE = /(\d{2})\/(\d{2})\/(\d{2})\s*a\s*(\d{2})\/(\d{2})\/(\d{2})/g;
 
-export function extractCutoffDateDeLinhas(linhas, vencimentoDate) {
-  for (const linha of (linhas || []).slice(0, 20)) {
-    const m = CUTOFF_RE.exec(linha.trim());
-    if (m) {
-      const dd = parseInt(m[1] || m[3], 10);
-      const mm = parseInt(m[2] || m[4], 10);
-      return resolveDate(dd, mm, vencimentoDate);
-    }
-  }
-  return null;
-}
-
-// Varre as primeiras linhas (mesma região onde CUTOFF_RE já procura) por
-// faixas "DD/MM/AA a DD/MM/AA" — a fatura sempre lista 4 faixas (medido nas
-// 3 reais: exatamente 4 em cada uma) — e escolhe a que TERMINA na dataCorte
-// já extraída, que é o ciclo desta fatura especificamente.
-export function extrairPeriodoCompras(linhas, dataCorteISO) {
-  if (!dataCorteISO) return null;
-  const texto = (linhas || []).slice(0, 30).join(' ');
-  const faixas = [];
-  let m;
-  while ((m = FAIXA_PERIODO_RE.exec(texto))) {
-    faixas.push({ inicio: `20${m[3]}-${m[2]}-${m[1]}`, fim: `20${m[6]}-${m[5]}-${m[4]}` });
-  }
-  return faixas.find((f) => f.fim === dataCorteISO) || null;
+// Soma só o impresso das seções de DÉBITO (despesas/parcelamento) — a seção
+// "Pagamento e Demais Créditos" (secaoTipo: 'pagamentos_creditos') é dinheiro
+// SAINDO da dívida, não compõe o total da fatura. Seções sem "VALOR TOTAL"
+// impresso (expected: null, achado da medição — ver parseFaturaTexto) também
+// ficam de fora: não dá pra somar um total que a fatura não informou.
+export function totalImpressoDeSections(sections) {
+  const soma = (sections || [])
+    .filter((s) => s.secaoTipo === 'despesas' && s.expected != null)
+    .reduce((acc, s) => acc + s.expected, 0);
+  return Math.round(soma * 100) / 100;
 }
 
 // Núcleo do parsing: state machine por linha, idêntica em espírito à do app
@@ -84,14 +55,40 @@ export function parseFaturaTexto(linhas, arquivo, vencimentoDate) {
   let cardEnding = null;
   let plastico = null;
   let sectionSum = 0;
+  let sectionCount = 0;
   let lastDate = null;
   let ordinal = 0;
 
+  // Fecha a seção corrente ao ver "VALOR TOTAL": vira entrada AVALIADA em
+  // sections[] (expected/ok preenchidos de verdade).
   const flushSection = (expected) => {
+    const secaoTipo = mode === 'credito' ? 'pagamentos_creditos' : 'despesas';
     const ok = Math.abs(sectionSum - expected) < 0.02;
-    sections.push({ cardEnding, expected, computed: Math.round(sectionSum * 100) / 100, ok });
+    sections.push({ cardEnding, secaoTipo, expected, computed: Math.round(sectionSum * 100) / 100, ok, nLinhas: sectionCount });
     if (!ok) avisos.push(`Cartão final ${cardEnding}: soma calculada (R$ ${sectionSum.toFixed(2)}) não bate com o "VALOR TOTAL" da fatura (R$ ${expected.toFixed(2)}).`);
     sectionSum = 0;
+    sectionCount = 0;
+  };
+
+  // Fecha a seção corrente ao mudar de cartão/seção SEM ter visto "VALOR
+  // TOTAL" antes — medido contra faturas reais (Step 6): a seção "Pagamento
+  // e Demais Créditos" às vezes tem só 1 lançamento e a fatura NÃO imprime
+  // "VALOR TOTAL" pra ela, o bloco seguinte ("Despesas") começa direto. Sem
+  // resetar sectionSum aqui, essa soma vazava pra dentro da seção seguinte e
+  // o flush dela comparava soma de DUAS seções contra o total de UMA só,
+  // acusando erro que não existe. A seção sem total vira entrada NÃO
+  // AVALIADA em sections[] (expected/ok: null — nem sucesso nem falha), e só
+  // gera aviso quando tem mais de 1 lançamento: o caso de 1 lançamento sem
+  // total é o observado nas 3 faturas reais, e não é um erro de parsing.
+  const abandonarSecaoAtual = () => {
+    if (sectionCount === 0) return;
+    const secaoTipo = mode === 'credito' ? 'pagamentos_creditos' : 'despesas';
+    sections.push({ cardEnding, secaoTipo, expected: null, computed: Math.round(sectionSum * 100) / 100, ok: null, nLinhas: sectionCount });
+    if (sectionCount > 1) {
+      avisos.push(`Cartão final ${cardEnding}: seção ${secaoTipo} com ${sectionCount} lançamentos não tem "VALOR TOTAL" impresso na fatura — não foi possível validar essa parte automaticamente.`);
+    }
+    sectionSum = 0;
+    sectionCount = 0;
   };
 
   for (const rawLine of linhas || []) {
@@ -102,25 +99,18 @@ export function parseFaturaTexto(linhas, arquivo, vencimentoDate) {
     if (!inDetalhamento) continue;
     if (/^Resumo da Fatura/i.test(line)) break;
 
-    // Reseta sectionSum em TODA transição de cartão/seção, não só em "VALOR
-    // TOTAL": medido contra faturas reais (Step 6), a seção "Pagamento e
-    // Demais Créditos" às vezes tem só 1 lançamento e a fatura NÃO imprime
-    // "VALOR TOTAL" pra ela — o bloco seguinte ("Despesas") começa direto.
-    // Sem o reset aqui, a soma da seção sem total impresso vazava pra dentro
-    // da soma da seção seguinte, e o flush dessa seguinte comparava soma de
-    // DUAS seções contra o total impresso de UMA só, acusando erro que não
-    // existe. Seção sem "VALOR TOTAL" próprio simplesmente não entra no
-    // checksum (não tem contra o que validar) — as linhas continuam em rows[].
     const cardMatch = CARD_HEADER_RE.exec(line);
     if (cardMatch) {
+      abandonarSecaoAtual();
       cardEnding = cardMatch[2];
       plastico = cardMatch[1] ? 'adicional' : 'titular';
-      mode = null; sectionSum = 0; continue;
+      mode = null;
+      continue;
     }
 
-    if (/^Pagamento e Demais/i.test(line)) { mode = 'credito'; sectionSum = 0; continue; }
-    if (/^Parcelamentos\s*$/i.test(line)) { mode = 'parcelamento'; sectionSum = 0; continue; }
-    if (/^Despesas\s*$/i.test(line)) { mode = 'despesa'; sectionSum = 0; continue; }
+    if (/^Pagamento e Demais/i.test(line)) { abandonarSecaoAtual(); mode = 'credito'; continue; }
+    if (/^Parcelamentos\s*$/i.test(line)) { abandonarSecaoAtual(); mode = 'parcelamento'; continue; }
+    if (/^Despesas\s*$/i.test(line)) { abandonarSecaoAtual(); mode = 'despesa'; continue; }
     if (/^Compra\s+Data\s+Descri/i.test(line)) continue;
 
     const totalMatch = /^VALOR TOTAL\s+(-?[\d.,]+)/i.exec(line);
@@ -134,6 +124,7 @@ export function parseFaturaTexto(linhas, arquivo, vencimentoDate) {
       if (!lastDate) { avisos.push(`Linha de IOF sem lançamento anterior para herdar a data: "${line}"`); continue; }
       const valor = moneyToNumber(iofMatch[1]);
       sectionSum += valor;
+      sectionCount++;
       rows.push(montarLinha({
         secao: mode === 'credito' ? 'pagamentos_creditos' : 'despesas',
         sinal: mode === 'credito' ? 'credito' : 'debito',
@@ -176,15 +167,18 @@ export function parseFaturaTexto(linhas, arquivo, vencimentoDate) {
 
     const secao = mode === 'credito' ? 'pagamentos_creditos' : 'despesas';
     sectionSum += Math.abs(valor);
+    sectionCount++;
     rows.push(montarLinha({
       secao, sinal: mode === 'credito' ? 'credito' : 'debito',
       data: toISO(dataResolvida), descricao, valor: Math.abs(valor), valorUSD,
       parcela_atual: parcelaAtual, parcela_total: parcelaTotal, cardEnding, plastico,
     }, arquivo, vencimentoDate, ordinal++));
   }
+  abandonarSecaoAtual(); // seção final, se a fatura terminou sem "VALOR TOTAL" pra ela
 
-  const checksum = { ok: sections.length > 0 && sections.every((s) => s.ok), sections };
-  if (sections.length === 0) avisos.push('Não encontrei nenhuma seção "VALOR TOTAL" pra conferir — não foi possível validar esta fatura automaticamente.');
+  const secoesAvaliadas = sections.filter((s) => s.ok !== null);
+  const checksum = { ok: secoesAvaliadas.length > 0 && secoesAvaliadas.every((s) => s.ok), sections };
+  if (secoesAvaliadas.length === 0) avisos.push('Não encontrei nenhuma seção "VALOR TOTAL" pra conferir — não foi possível validar esta fatura automaticamente.');
 
   return { rows, checksum, avisos };
 }
@@ -200,31 +194,6 @@ function montarLinha(campos, arquivo, vencimentoDate, ordinal) {
     id, documento: null, tipoDetectado: null, saldo: null, raw: campos.descricao,
     ...resto, cartaoFinal: cardEnding, descricaoCanonica,
   };
-}
-
-// O app anterior extraía o vencimento preferencialmente do NOME do arquivo
-// ("Visa-DD-MM-AAAA.pdf"), convenção pessoal de um usuário só com um cartão.
-// O app novo é multi-cartão e não pode depender de arquivo renomeado — só o
-// texto do PDF (rótulo "Vencimento" impresso), que já funcionava como
-// fallback no app anterior. Medido contra as 3 faturas reais (Step 6): o
-// rótulo aparece na página 1 (capa), no formato "Vencimento: DD/MM/AAAA" —
-// por isso `extractLines` (Step 8) expõe a página 1 sem gate.
-export function vencimentoFromText(linhas) {
-  for (let i = 0; i < linhas.length; i++) {
-    if (/^Vencimento$/i.test(linhas[i].trim())) {
-      for (let j = i + 1; j < Math.min(i + 3, linhas.length); j++) {
-        const m = /(\d{2})\/(\d{2})\/(\d{4})/.exec(linhas[j]);
-        if (m) return new Date(parseInt(m[3], 10), parseInt(m[2], 10) - 1, parseInt(m[1], 10));
-      }
-    }
-    const inline = /Vencimento\D+(\d{2})\/(\d{2})\/(\d{4})/i.exec(linhas[i]);
-    if (inline) return new Date(parseInt(inline[3], 10), parseInt(inline[2], 10) - 1, parseInt(inline[1], 10));
-  }
-  return null;
-}
-
-export function toISOExportado(d) {
-  return toISO(d);
 }
 
 async function getPdfjs() {
@@ -258,7 +227,7 @@ async function parse(arrayBuffer, opcoes) {
       vencimento: vencimentoISO,
       dataCorte: dataCorteISO,
       periodoCompras,
-      totalImpresso: checksum.sections.reduce((soma, s) => soma + s.expected, 0),
+      totalImpresso: totalImpressoDeSections(checksum.sections),
       rows,
     },
     rows, avisos, checksum,

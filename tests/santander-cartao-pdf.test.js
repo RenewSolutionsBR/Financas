@@ -1,5 +1,5 @@
 import { describe, it, assert, assertEqual, assertDeepEqual } from './harness.js';
-import { parseFaturaTexto, resolveDate, extrairPeriodoCompras, vencimentoFromText } from '../src/importers/santander-cartao-pdf.js';
+import { parseFaturaTexto, resolveDate, extrairPeriodoCompras, vencimentoFromText, totalImpressoDeSections } from '../src/importers/santander-cartao-pdf.js';
 import { LINHAS_FATURA_SINTETICA } from './fixtures/fatura-texto-sintetica.js';
 
 const VENCIMENTO = new Date(2026, 4, 1); // 01/05/2026
@@ -160,9 +160,53 @@ describe('santander-cartao-pdf: secao sem "VALOR TOTAL" proprio nao contamina a 
   it('checksum fecha considerando so a secao que TEM total impresso (Despesas), ignorando o pagamento sem total', () => {
     const { checksum, rows } = parseFaturaTexto(LINHAS_SECAO_SEM_TOTAL, 'fatura-teste.pdf', VENCIMENTO);
     assert(checksum.ok, JSON.stringify(checksum.sections));
-    assertEqual(checksum.sections.length, 1, 'so a secao Despesas teve "VALOR TOTAL" impresso pra virar entrada de checksum');
+    assertEqual(checksum.sections.length, 2, 'as DUAS secoes aparecem em sections[] agora: a com total (avaliada) e a sem total (nao avaliada, ok:null)');
+    assertEqual(checksum.sections.filter((s) => s.ok !== null).length, 1, 'so a secao Despesas foi de fato AVALIADA (ok true/false) — a de pagamento fica com ok:null');
+    const semTotal = checksum.sections.find((s) => s.secaoTipo === 'pagamentos_creditos');
+    assert(semTotal, 'a secao de pagamento sem "VALOR TOTAL" precisa aparecer em sections[], nao sumir silenciosamente');
+    assertEqual(semTotal.ok, null);
+    assertEqual(semTotal.expected, null);
+    assertEqual(semTotal.nLinhas, 1);
     const pagamento = rows.find((r) => r.secao === 'pagamentos_creditos');
     assert(pagamento, 'a linha de pagamento continua aparecendo em rows, mesmo sem "VALOR TOTAL" pra validar a secao dela');
+  });
+
+  it('secao sem total com MAIS DE 1 lancamento gera aviso nao-bloqueante (nLinhas > 1)', () => {
+    const linhas = [
+      'Detalhamento da Fatura',
+      'TITULAR EXEMPLO - 1234 XXXX XXXX 4444',
+      'Pagamento e Demais Créditos',
+      '10/04 10/04 DEB AUTOM DE FATURA EM C/ 200,00',
+      '11/04 11/04 ESTORNO DE COMPRA EXEMPLO 50,00',
+      'Despesas',
+      '12/04 12/04 LOJA EXEMPLO SEM TOTAL 30,00',
+      'VALOR TOTAL 30,00',
+      'Resumo da Fatura',
+    ];
+    const { checksum, avisos } = parseFaturaTexto(linhas, 'fatura-teste.pdf', VENCIMENTO);
+    const semTotal = checksum.sections.find((s) => s.secaoTipo === 'pagamentos_creditos');
+    assertEqual(semTotal.nLinhas, 2);
+    assertEqual(semTotal.ok, null);
+    assert(avisos.some((a) => /não tem "VALOR TOTAL" impresso/i.test(a)), 'com 2+ lancamentos sem total, precisa avisar (nao e mais o caso benigno de 1 lancamento so)');
+  });
+
+  it('secao sem total com 1 lancamento SO (caso observado nas 3 faturas reais) NAO gera aviso', () => {
+    const { avisos } = parseFaturaTexto(LINHAS_SECAO_SEM_TOTAL, 'fatura-teste.pdf', VENCIMENTO);
+    assert(!avisos.some((a) => /não tem "VALOR TOTAL" impresso/i.test(a)), '1 lancamento sem total e o caso benigno — nao deveria gerar ruido de aviso');
+  });
+});
+
+describe('santander-cartao-pdf: totalImpressoDeSections', () => {
+  it('soma so despesas/parcelamento, excluindo a secao de credito', () => {
+    const { checksum } = parseFaturaTexto(LINHAS_FATURA_SINTETICA, 'fatura-teste.pdf', VENCIMENTO);
+    // fixture sintetica: 150 (parcelamento) + 365,50 (despesas) = 515,50, SEM os 890 de pagamento
+    assertEqual(totalImpressoDeSections(checksum.sections), 515.5);
+  });
+
+  it('secao sem "VALOR TOTAL" (expected:null) nao entra na soma', () => {
+    const { checksum } = parseFaturaTexto(LINHAS_SECAO_SEM_TOTAL, 'fatura-teste.pdf', VENCIMENTO);
+    // so a secao Despesas (30) foi avaliada; a de pagamento (sem total) fica de fora por nao ter expected
+    assertEqual(totalImpressoDeSections(checksum.sections), 30);
   });
 });
 

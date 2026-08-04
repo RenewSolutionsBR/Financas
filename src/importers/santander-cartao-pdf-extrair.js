@@ -1,7 +1,10 @@
-// Extração de texto de PDF via pdf.js — browser-only, sem equivalente
-// testável em Node. A lógica de parsing de linha (que é testável) mora em
-// santander-cartao-pdf.js; este arquivo só produz as linhas de texto que
-// aquele consome.
+// Extração de texto de PDF via pdf.js. A lógica de parsing de linha (que é
+// testável) mora em santander-cartao-pdf.js; este arquivo só produz as
+// linhas de texto que aquele consome. `extractLines` recebe um `doc` que
+// satisfaz só a interface mínima usada aqui (`numPages`, `getPage(n)` com
+// `getTextContent()`) — em produção é um documento real de pdf.js, mas isso
+// permite testar `extractLines` em Node com um `doc`/`page` FALSO (ver
+// tests/santander-cartao-pdf-extrair.test.js), sem abrir PDF nenhum.
 
 function clusterRowsFromItems(items, yTol = 2.2) {
   const sorted = [...items].sort((a, b) => (b.y - a.y) || (a.x - b.x));
@@ -112,19 +115,29 @@ export async function extractLines(doc) {
   // a capa/resumo e NÃO contém "Detalhamento da Fatura" — é só a partir da
   // página 2 que esse marcador aparece. Mas é justamente na página 1 que
   // moram o rótulo "Vencimento", a frase "...até DD/MM." (data de corte) e o
-  // bloco "Período das compras" (4 faixas). Como o laço abaixo só emite
-  // linha quando `inDetail` já é true, essas três informações NUNCA
-  // apareceriam no array se a página 1 fosse processada só pelo caminho
-  // gateado — por isso a reconstrução crua da página 1 entra à parte, antes
-  // do laço principal, sem o gate: `vencimentoFromText`, `extractCutoffDateDeLinhas`
-  // e `extrairPeriodoCompras` (que procuram nas primeiras linhas do array)
-  // dependem de achar essas 3 informações logo no início.
+  // bloco "Período das compras" (4 faixas). Por isso a página 1 é
+  // reconstruída CRUA (sem o gate de "Detalhamento da Fatura"/y-band), pra
+  // essas 3 informações — que `vencimentoFromText`, `extractCutoffDateDeLinhas`
+  // e `extrairPeriodoCompras` procuram nas primeiras linhas do array —
+  // aparecerem mesmo se a fatura não tiver o marcador ali.
+  //
+  // IMPORTANTE: a página 1 é processada UMA ÚNICA VEZ aqui, fora do laço
+  // principal (que começa em pageNo=2). Numa versão anterior o laço também
+  // reprocessava pageNo=1 pelo caminho gateado — inofensivo nas 3 faturas
+  // medidas (onde a página 1 não tem "Detalhamento da Fatura", então o
+  // caminho gateado devolvia [] pra ela), mas silenciosamente duplicava
+  // TODO lançamento se uma fatura (Visa?) tivesse o detalhamento começando
+  // já na página 1: cada cópia fecharia com seu próprio "VALOR TOTAL" e o
+  // checksum abençoaria a duplicação sem aviso nenhum.
   const page1 = await doc.getPage(1);
   const page1Items = await getPageItems(page1);
-  allLines.push(...reconstructSegment(page1Items));
+  const page1Lines = reconstructSegment(page1Items);
+  allLines.push(...page1Lines);
 
-  let inDetail = false;
-  for (let pageNo = 1; pageNo <= doc.numPages; pageNo++) {
+  let inDetail = page1Lines.some((l) => /Detalhamento da Fatura/i.test(l.trim()));
+  if (page1Lines.some((l) => /^Resumo da Fatura/i.test(l.trim()))) return allLines;
+
+  for (let pageNo = 2; pageNo <= doc.numPages; pageNo++) {
     const page = await doc.getPage(pageNo);
     const items = await getPageItems(page);
     const { lines, stillInDetail } = reconstructPageLines(items, inDetail);
