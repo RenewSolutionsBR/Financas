@@ -1,0 +1,250 @@
+// Upload, deteccao/escolha de adaptador, mapeamento manual (generic-table),
+// preview com checksum e commit da importacao. commitImportacao e o coracao
+// da task: orquestra os modulos de dominio na ordem que evita estado
+// intermediario inconsistente (spec Task 12) — e e PURA (nao toca storage),
+// para poder ser testada de integracao sem IndexedDB (tests/conciliacao-import.test.js).
+// Quem persiste de fato e commitImportacaoEGravar, logo abaixo.
+
+import { el, toast, confirmar } from './components.js';
+import { uid } from '../core/ids.js';
+import * as storage from '../core/storage.js';
+import { detectarMelhorAdaptador, adaptadoresParaExtensao } from '../importers/registry.js';
+// Importados só pelo efeito colateral de register() (Task 1) — sem isto
+// nenhum adaptador aparece em adaptadoresParaExtensao.
+import '../importers/generic-table.js';
+import '../importers/santander-cartao-pdf.js';
+import '../importers/santander-extrato-xls.js';
+import { autoConfirmParcelas, syncPredictions } from '../domain/parcelas.js';
+import { atribuirNatureza, confrontarFaturaDebito } from '../domain/reconcile-bank.js';
+import { processarPagamentoFatura } from '../domain/pagamento-fatura.js';
+
+// Orquestra statement -> parcelamento (fatura) OU natureza bancaria (extrato)
+// -> regra de registro unico do pagamento de fatura -> (classificacao
+// automatica do que sobrou fica para a tela de extrato/lote, Step 3 — aqui
+// so lancamentos JA INEQUIVOCOS, pagamento_fatura e parcela confirmada, sao
+// produzidos). Devolve um PLANO de gravacao (nunca grava sozinha), para ser
+// testavel como integracao de dominio pura e para o chamador decidir a
+// ordem/atomicidade real da persistencia.
+export async function commitImportacao({ tipo, contaId, statement, rows, transactions, accounts, apelidosTitular, allStatements, regras, formas }) {
+  const statementToPut = { ...statement, id: `${contaId}|${tipo}|${statement.vencimento || statement.periodoFim}`, contaId, tipo };
+
+  const transactionsToPut = [];
+  const transactionIdsToRemove = [];
+  let baseTransactions = transactions || [];
+
+  const registrarPagamento = (linhaPagamento, origemLinha, faturaVinculadaId) => {
+    const { acao, transaction } = processarPagamentoFatura(linhaPagamento, origemLinha, baseTransactions, faturaVinculadaId);
+    if (acao === 'ja_completo') return;
+    const gravado = acao === 'criado' ? { ...transaction, id: uid('tx') } : transaction;
+    transactionsToPut.push(gravado);
+    // baseTransactions atualizado: varias linhas de pagamento no mesmo commit
+    // nao podem colidir entre si nem duplicar.
+    baseTransactions = [...baseTransactions.filter((t) => t.id !== gravado.id), gravado];
+  };
+
+  if (tipo === 'fatura') {
+    const rowsParcelamento = rows.filter((r) => r.tipo === 'parcelamento' && r.secao !== 'pagamentos_creditos');
+    const rowsPagamento = rows.filter((r) => r.secao === 'pagamentos_creditos');
+
+    // Mesma resolucao da Fase 1 (Task 14, achado #9): busca a forma ATIVA do
+    // tipo certo, nunca crava 'pm_credito' — o usuario pode ter renomeado,
+    // desativado ou excluido a forma padrao antes de importar.
+    const formaCredito = (formas || []).find((f) => f.tipo === 'credito' && f.ativo !== false);
+    if (!formaCredito) {
+      throw new Error('Cadastre uma forma de pagamento do tipo "Crédito" antes de importar uma fatura (Cadastros → Formas de pagamento).');
+    }
+
+    const { updatedTransactions, removedIds } = autoConfirmParcelas(rowsParcelamento, baseTransactions, statementToPut.dataCorte, contaId, formaCredito.id);
+    transactionIdsToRemove.push(...removedIds);
+    // updatedTransactions e o conjunto INTEIRO pos-confirmacao; so o que
+    // mudou de fato (id novo) precisa ir para o plano de gravacao.
+    const idsAntigos = new Set((baseTransactions || []).map((t) => t.id));
+    for (const t of updatedTransactions) {
+      if (!idsAntigos.has(t.id)) transactionsToPut.push(t);
+    }
+    baseTransactions = updatedTransactions;
+
+    const { toAdd, toRemoveIds } = syncPredictions(rowsParcelamento, baseTransactions, contaId, formaCredito.id);
+    transactionIdsToRemove.push(...toRemoveIds);
+    transactionsToPut.push(...toAdd);
+    baseTransactions = [...baseTransactions.filter((t) => !toRemoveIds.includes(t.id)), ...toAdd];
+
+    const statementsFaturaDoCartao = (allStatements || []).filter((s) => s.tipo === 'fatura' && s.contaId === contaId);
+    const faturaAnterior = statementsFaturaDoCartao
+      .filter((s) => s.id !== statementToPut.id && s.vencimento < statementToPut.vencimento)
+      .sort((a, b) => (a.vencimento < b.vencimento ? 1 : -1))[0];
+
+    for (const linhaPagamento of rowsPagamento) {
+      registrarPagamento({ ...linhaPagamento, statementId: statementToPut.id }, 'fatura', faturaAnterior ? faturaAnterior.id : null);
+    }
+  } else if (tipo === 'extrato') {
+    const comNatureza = rows.map((linha) => ({ ...linha, ...atribuirNatureza(linha, accounts, apelidosTitular) }));
+    for (const linha of comNatureza) {
+      if (linha.natureza !== 'pagamento_fatura') continue; // transferencia/receita/despesa esperam +lancar/+lancar em lote (Step 3)
+      const statementsFatura = (allStatements || []).filter((s) => s.tipo === 'fatura');
+      const confronto = confrontarFaturaDebito(linha, statementsFatura);
+      registrarPagamento({ ...linha, statementId: statementToPut.id, contaId }, 'extrato', confronto ? confronto.faturaId : null);
+    }
+  }
+
+  return { statementToPut, transactionsToPut, transactionIdsToRemove };
+}
+
+// Wrapper fino que persiste o plano devolvido por commitImportacao. So esta
+// funcao toca storage — commitImportacao em si permanece pura e testavel.
+export async function commitImportacaoEGravar(args) {
+  const plano = await commitImportacao(args);
+  await storage.put('statements', plano.statementToPut);
+  for (const id of plano.transactionIdsToRemove) await storage.remove('transactions', id);
+  if (plano.transactionsToPut.length) await storage.putMany('transactions', plano.transactionsToPut);
+  return plano;
+}
+
+// --- UI: upload, deteccao de adaptador, mapeamento manual, preview, commit ---
+
+export async function renderImportacao(painel, contaId, escopoSugerido, aoImportar) {
+  painel.innerHTML = '';
+  if (!contaId) {
+    painel.append(el('p', { class: 'ajuda', text: 'Escolha uma conta ou cartão acima para importar um documento.' }));
+    return;
+  }
+
+  const inputArquivo = el('input', { type: 'file', accept: '.pdf,.csv,.xls,.xlsx' });
+  const areaPreview = el('div', { class: 'preview-importacao' });
+  const areaResultado = el('div', { class: 'resultado-analise' });
+  let estado = null; // { buffer, arquivo, tipo, adaptador, candidatos, mapeamento }
+
+  inputArquivo.addEventListener('change', async (ev) => {
+    const arquivo = ev.target.files[0];
+    if (!arquivo) return;
+    const buffer = await arquivo.arrayBuffer();
+    const candidatos = adaptadoresParaExtensao(arquivo.name);
+    const melhor = await detectarMelhorAdaptador(buffer, arquivo.name);
+    estado = { buffer, arquivo: arquivo.name, candidatos, adaptadorId: melhor ? melhor.adaptador.id : (candidatos[0] || {}).id, mapeamento: null };
+    areaResultado.innerHTML = '';
+    renderEscolhaAdaptador();
+  });
+
+  function renderEscolhaAdaptador() {
+    areaPreview.innerHTML = '';
+    if (!estado || !estado.candidatos.length) {
+      areaPreview.append(el('p', { class: 'ajuda', text: 'Nenhum adaptador reconhece essa extensão de arquivo.' }));
+      return;
+    }
+    const selAdaptador = el('select', {}, estado.candidatos.map((a) =>
+      el('option', { value: a.id, text: a.label, ...(a.id === estado.adaptadorId ? { selected: 'selected' } : {}) })
+    ));
+    selAdaptador.addEventListener('change', () => { estado.adaptadorId = selAdaptador.value; estado.mapeamento = null; renderEscolhaAdaptador(); });
+
+    const adaptadorEscolhido = estado.candidatos.find((a) => a.id === estado.adaptadorId);
+    const botaoAnalisar = el('button', { class: 'btn btn-primario', text: 'Analisar arquivo', onclick: () => analisar(adaptadorEscolhido) });
+    areaPreview.append(el('div', { class: 'form' }, [
+      el('label', { class: 'campo' }, [el('span', { text: 'Adaptador' }), selAdaptador]),
+      adaptadorEscolhido && adaptadorEscolhido.id === 'generic-table' ? painelMapeamentoManual() : null,
+      el('div', { class: 'acoes' }, [botaoAnalisar]),
+    ]));
+  }
+
+  function painelMapeamentoManual() {
+    const escopoInicial = escopoSugerido || 'extrato';
+    const inpData = el('input', { type: 'number', min: '0', value: '0' });
+    const inpDescricao = el('input', { type: 'number', min: '0', value: '1' });
+    const inpValor = el('input', { type: 'number', min: '0', value: '2' });
+    const inpDocumento = el('input', { type: 'number', min: '0', placeholder: '(opcional)' });
+    const chkCabecalho = el('input', { type: 'checkbox', checked: 'checked' });
+    const selEscopo = el('select', {}, ['fatura', 'extrato'].map((v) => el('option', { value: v, text: v, ...(v === escopoInicial ? { selected: 'selected' } : {}) })));
+
+    const capturar = () => {
+      estado.mapeamento = {
+        colData: Number(inpData.value), colDescricao: Number(inpDescricao.value), colValor: Number(inpValor.value),
+        colDocumento: inpDocumento.value === '' ? null : Number(inpDocumento.value),
+        temCabecalho: chkCabecalho.checked, escopo: selEscopo.value,
+      };
+    };
+    [inpData, inpDescricao, inpValor, inpDocumento, chkCabecalho, selEscopo].forEach((c) => c.addEventListener('change', capturar));
+    capturar();
+
+    return el('div', { class: 'mapeamento-manual' }, [
+      el('p', { class: 'ajuda', text: 'Planilha sem adaptador dedicado: informe em qual coluna (0 = primeira) está cada dado.' }),
+      el('div', { class: 'linha-form' }, [
+        el('label', { class: 'campo' }, [el('span', { text: 'Coluna Data' }), inpData]),
+        el('label', { class: 'campo' }, [el('span', { text: 'Coluna Descrição' }), inpDescricao]),
+      ]),
+      el('div', { class: 'linha-form' }, [
+        el('label', { class: 'campo' }, [el('span', { text: 'Coluna Valor' }), inpValor]),
+        el('label', { class: 'campo' }, [el('span', { text: 'Coluna Documento' }), inpDocumento]),
+      ]),
+      el('div', { class: 'linha-form' }, [
+        el('label', { class: 'campo-inline' }, [chkCabecalho, el('span', { text: 'Primeira linha é cabeçalho' })]),
+        el('label', { class: 'campo' }, [el('span', { text: 'Escopo' }), selEscopo]),
+      ]),
+    ]);
+  }
+
+  async function analisar(adaptadorEscolhido) {
+    if (!adaptadorEscolhido) return;
+    if (adaptadorEscolhido.id === 'generic-table' && !estado.mapeamento) {
+      toast('Preencha o mapeamento de colunas antes de analisar.', 'erro');
+      return;
+    }
+    try {
+      const resultado = await adaptadorEscolhido.parse(estado.buffer, { contaId, arquivo: estado.arquivo, mapeamento: estado.mapeamento });
+      estado.resultado = resultado;
+      renderPreview(resultado);
+    } catch (e) {
+      toast('Não consegui ler esse arquivo: ' + e.message, 'erro');
+    }
+  }
+
+  function renderPreview(resultado) {
+    const { statement, rows, avisos, checksum } = resultado;
+    const linhasChecksum = (checksum.sections || []).map((s) =>
+      el('li', { text: `Cartão final ${s.cardEnding || '—'} (${s.secaoTipo}): ${s.ok === false ? 'DIVERGE' : s.ok === true ? 'confere' : 'sem total impresso'}` })
+    );
+
+    const botaoConfirmar = el('button', { class: 'btn btn-primario', text: 'Confirmar importação' });
+    botaoConfirmar.addEventListener('click', () => confirmarImportacao(statement, rows, checksum));
+
+    areaResultado.innerHTML = '';
+    areaResultado.append(
+      el('div', { class: 'preview-resultado' }, [
+        el('p', { text: `${rows.length} linha(s) lidas.` }),
+        el('p', { class: checksum.ok === false ? 'aviso-erro' : 'aviso-ok', text: checksum.ok === false ? 'Checksum NÃO confere.' : 'Checksum confere.' }),
+        linhasChecksum.length ? el('ul', {}, linhasChecksum) : null,
+        avisos.length ? el('ul', { class: 'lista-avisos' }, avisos.map((a) => el('li', { text: a }))) : null,
+        el('div', { class: 'acoes' }, [botaoConfirmar]),
+      ])
+    );
+  }
+
+  async function confirmarImportacao(statement, rows, checksum) {
+    if (checksum.ok === false) {
+      const seguir = await confirmar('O checksum desta importação não confere. Importar mesmo assim?');
+      if (!seguir) return;
+    }
+    try {
+      const [transactions, accounts, allStatements, regras, formas] = await Promise.all([
+        storage.getAll('transactions'), storage.getAll('accounts'), storage.getAll('statements'),
+        storage.getAll('classificationRules'), storage.getAll('paymentMethods'),
+      ]);
+      const apelidosTitular = await storage.getMeta('apelidosTitular', []);
+      await commitImportacaoEGravar({
+        tipo: statement.tipo, contaId, statement, rows, transactions, accounts, apelidosTitular, allStatements, regras, formas,
+      });
+      toast('Importação concluída.', 'ok');
+      inputArquivo.value = '';
+      estado = null;
+      areaPreview.innerHTML = '';
+      areaResultado.innerHTML = '';
+      await aoImportar();
+    } catch (e) {
+      toast('Não consegui concluir a importação: ' + e.message, 'erro');
+    }
+  }
+
+  painel.append(
+    el('div', { class: 'form' }, [el('label', { class: 'campo' }, [el('span', { text: 'Arquivo' }), inputArquivo])]),
+    areaPreview,
+    areaResultado
+  );
+}

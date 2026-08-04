@@ -8,12 +8,14 @@ import { seedFormasIfEmpty } from './domain/payment-methods.js';
 import { renderCadastros } from './ui/cadastros.js';
 import { renderLancamentos, resetLancamentos } from './ui/lancamentos.js';
 import { renderParcelas } from './ui/parcelas.js';
+import { renderConciliacao } from './ui/conciliacao.js';
 import { talvezOferecerOnboarding } from './ui/onboarding.js';
 
 const RENDERIZADORES = {
   Lancamentos: renderLancamentos,
   Cadastros: renderCadastros,
   Parcelas: renderParcelas,
+  Conciliacao: renderConciliacao,
 };
 
 async function renderizar(aba) {

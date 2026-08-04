@@ -29,6 +29,7 @@ export const TEST_MODULES = [
   './santander-cartao-pdf-extrair.test.js',
   './santander-extrato-xls.test.js',
   './generic-table.test.js',
+  './conciliacao-import.test.js',
 ];
 
 // Testes que dependem de IndexedDB ou DOM: só no navegador.
