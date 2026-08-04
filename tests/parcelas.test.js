@@ -106,6 +106,49 @@ describe('parcelas: computeParcelaGroups + syncPredictions', () => {
   });
 });
 
+describe('parcelas: computeParcelaGroups com chave pre-computada (regressao ui/parcelas.js)', () => {
+  // Duas parcelas (2/6 e 3/6) da MESMA compra, confirmadas a partir de DUAS
+  // faturas diferentes: autoConfirmParcelas grava `data` como a data de CORTE
+  // de cada fatura (ver domain/parcelas.js linha ~139), entao as duas
+  // transacoes confirmadas tem `data` DIFERENTE mesmo sendo a mesma compra.
+  // ui/parcelas.js reconstroi linhas sinteticas a partir dessas transacoes
+  // pra alimentar computeParcelaGroups — sem passar a parcelaKey real
+  // (already correta e invariante, calculada por autoConfirmParcelas a
+  // partir da data de compra ORIGINAL), computeParcelaGroups re-derivava a
+  // chave via computeParcelaKey(descricao, data, total), e como `data`
+  // diverge entre as duas faturas, as duas parcelas nunca colapsavam num
+  // grupo so — a aba Parcelas mostrava DOIS grupos pra uma unica compra.
+  it('duas parcelas confirmadas de faturas diferentes (data de corte diferente) colapsam em UM grupo quando a mesma key e passada', () => {
+    const key = computeParcelaKey('LOJA EXEMPLO', '2026-02-10', 6);
+    const rowParcela2 = {
+      tipo: 'parcelamento', descricao: 'LOJA EXEMPLO',
+      data: '2026-03-28', // data de corte da fatura de marco (nao a data de compra original)
+      vencimento: '2026-04-01', valor: 50, parcela_atual: 2, parcela_total: 6, key,
+    };
+    const rowParcela3 = {
+      tipo: 'parcelamento', descricao: 'LOJA EXEMPLO',
+      data: '2026-04-28', // data de corte da fatura de abril — diferente da de marco
+      vencimento: '2026-05-01', valor: 50, parcela_atual: 3, parcela_total: 6, key,
+    };
+    const groups = computeParcelaGroups([rowParcela2, rowParcela3]);
+    assertEqual(groups.length, 1, 'as duas parcelas da mesma compra precisam colapsar num unico grupo');
+    assertEqual(groups[0].remaining, 3, 'parcela mais avancada (3/6) manda: restam 3 (4,5,6)');
+  });
+
+  it('sem key pre-computada (so `data`, comportamento pre-fix), a mesma situacao NAO colapsa — evidencia do bug original', () => {
+    const rowParcela2 = {
+      tipo: 'parcelamento', descricao: 'LOJA EXEMPLO',
+      data: '2026-03-28', vencimento: '2026-04-01', valor: 50, parcela_atual: 2, parcela_total: 6,
+    };
+    const rowParcela3 = {
+      tipo: 'parcelamento', descricao: 'LOJA EXEMPLO',
+      data: '2026-04-28', vencimento: '2026-05-01', valor: 50, parcela_atual: 3, parcela_total: 6,
+    };
+    const groups = computeParcelaGroups([rowParcela2, rowParcela3]);
+    assertEqual(groups.length, 2, 'sem key estavel, a divergencia de `data` entre faturas gera duas chaves e dois grupos — este e o bug que o fix resolve');
+  });
+});
+
 describe('parcelas: autoConfirmParcelas', () => {
   const CONTA = 'acc_cartao_1';
   const FORMA = 'pm_credito';

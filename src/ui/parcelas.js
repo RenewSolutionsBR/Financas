@@ -21,7 +21,7 @@ export async function renderParcelas() {
   for (const c of cartoes) {
     const rowsDoGrupo = transactions
       .filter((t) => !t.previsto && t.parcelaKey && t.parcela_total && t.contaId === c.id)
-      .map((t) => ({ tipo: 'parcelamento', descricao: t.descricao.replace(/\s*\(parcela prevista\)\s*$/i, ''), data: t.data, vencimento: t.data, parcela_atual: t.parcela_atual, parcela_total: t.parcela_total, valor: t.valor }));
+      .map((t) => ({ tipo: 'parcelamento', descricao: t.descricao.replace(/\s*\(parcela prevista\)\s*$/i, ''), data: t.data, vencimento: t.data, parcela_atual: t.parcela_atual, parcela_total: t.parcela_total, valor: t.valor, key: t.parcelaKey }));
     porCartao.set(c.id, computeParcelaGroups(rowsDoGrupo));
   }
 

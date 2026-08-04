@@ -42,7 +42,7 @@ export function computeParcelaGroups(allFaturaRows) {
   const map = new Map();
   for (const r of allFaturaRows || []) {
     if (r.tipo !== 'parcelamento' || !r.parcela_total) continue;
-    const key = computeParcelaKey(r.descricao, r.data, r.parcela_total);
+    const key = r.key || computeParcelaKey(r.descricao, r.data, r.parcela_total);
     const cur = map.get(key);
     if (!cur || r.parcela_atual > cur.parcela_atual) map.set(key, { ...r, key });
   }
