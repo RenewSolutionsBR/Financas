@@ -122,7 +122,17 @@ async function lancarEmLote(linhasFormulario, ctx, aoConcluir) {
     const regra = aprenderRegra({ descricaoCanonica: lf.linha.descricaoCanonica, escopo: 'extrato', categoriaId: lf.estado.categoria, contaId: null }, ctx.regras);
     await storage.put('classificationRules', regra);
 
-    const descricaoCanonicaPorTransacao = new Map(ctx.transactions.map((t) => [t.id, t.origemRef ? lf.linha.descricaoCanonica : null]));
+    // Cada transaction precisa da descricaoCanonica da SUA PRÓPRIA linha de
+    // origem, não da linha que está sendo lançada agora — usar a mesma
+    // descricaoCanonica pra toda transaction com origemRef super-casaria
+    // candidatosRetroativos (reclassificaria lançamentos não relacionados).
+    // Resolve só contra as linhas DESTE extrato (ctx.linhasPorId); uma
+    // transaction cuja origemRef aponta pra outro statement não resolve aqui
+    // — fica de fora (null), mais seguro que casar errado.
+    const descricaoCanonicaPorTransacao = new Map(ctx.transactions.map((t) => {
+      const linhaOrigem = t.origemRef && t.origemRef.statementId === ctx.statementId ? ctx.linhasPorId.get(t.origemRef.linhaId) : null;
+      return [t.id, linhaOrigem ? linhaOrigem.descricaoCanonica : null];
+    }));
     const candidatos = candidatosRetroativos(ctx.transactions, regra, descricaoCanonicaPorTransacao);
     if (candidatos.length) {
       const aplicar = await abrirModal({
@@ -144,7 +154,8 @@ export async function renderBaldesExtrato(painel, extrato, transactions, account
   const statementsFatura = (await storage.getAll('statements')).filter((s) => s.tipo === 'fatura');
   const { autoMatched, matched, extratoUnmatched, appUnmatched } = runReconciliationBank(extrato, transactions, accounts, apelidosTitular, statementsFatura);
 
-  const ctx = { contaId: extrato.contaId, statementId: extrato.id, categorias, formas, regras, transactions };
+  const linhasPorId = new Map((extrato.rows || []).map((linha) => [linha.id, linha]));
+  const ctx = { contaId: extrato.contaId, statementId: extrato.id, categorias, formas, regras, transactions, linhasPorId };
   const linhasFormulario = extratoUnmatched.map((linha) => montarLinhaFormulario(linha, ctx));
 
   const botaoLote = el('button', { class: 'btn btn-primario', text: '+ lançar em lote', disabled: 'disabled' });

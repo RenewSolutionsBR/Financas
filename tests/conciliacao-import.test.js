@@ -133,3 +133,32 @@ describe('commitImportacao: reimportar a MESMA fatura duas vezes nao duplica nad
     assertEqual(pagamentosNovosEmR2.length, 0, 'reimportar nao pode criar um SEGUNDO lancamento de pagamento_fatura');
   });
 });
+
+describe('commitImportacao: reimportar fatura corrigida (mesmo vencimento, valor diferente) ATUALIZA a parcela ja confirmada', () => {
+  it('a 2a chamada com valor corrigido produz uma transaction confirmada com o valor NOVO no estado final aplicado', async () => {
+    const aplicarPlano = (estadoAnterior, plano) => {
+      const semRemovidos = estadoAnterior.filter((t) => !plano.transactionIdsToRemove.includes(t.id));
+      const porId = new Map(semRemovidos.map((t) => [t.id, t]));
+      for (const t of plano.transactionsToPut) porId.set(t.id, t);
+      return [...porId.values()];
+    };
+
+    const statementOriginal = faturaStatement({ rows: [rowParcelamento({ valor: 33.33 }), rowPagamento()] });
+    const base1 = {
+      tipo: 'fatura', contaId: CONTA_CARTAO, statement: statementOriginal, rows: statementOriginal.rows,
+      accounts: [], apelidosTitular: [], allStatements: [], regras: [], formas: FORMAS,
+    };
+    const r1 = await commitImportacao({ ...base1, transactions: [] });
+    const estadoAposR1 = aplicarPlano([], r1);
+
+    // Mesmo vencimento/parcela_total (mesma id determinística), valor CORRIGIDO
+    // de 33.33 para 35.00 — cenario real: fatura reemitida com encargo/correcao.
+    const statementCorrigido = faturaStatement({ rows: [rowParcelamento({ valor: 35.00 }), rowPagamento()] });
+    const base2 = { ...base1, statement: statementCorrigido, rows: statementCorrigido.rows };
+    const r2 = await commitImportacao({ ...base2, transactions: estadoAposR1, allStatements: [r1.statementToPut] });
+    const estadoAposR2 = aplicarPlano(estadoAposR1, r2);
+
+    const confirmadaFinal = estadoAposR2.find((t) => t.parcela_atual === 2 && !t.previsto);
+    assertEqual(confirmadaFinal.valor, 35.00, 'a reimportacao com valor corrigido precisa atualizar a transaction ja confirmada, nao descarta-la em silencio');
+  });
+});

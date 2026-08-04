@@ -54,14 +54,14 @@ export async function commitImportacao({ tipo, contaId, statement, rows, transac
       throw new Error('Cadastre uma forma de pagamento do tipo "Crédito" antes de importar uma fatura (Cadastros → Formas de pagamento).');
     }
 
-    const { updatedTransactions, removedIds } = autoConfirmParcelas(rowsParcelamento, baseTransactions, statementToPut.dataCorte, contaId, formaCredito.id);
+    const { updatedTransactions, confirmed, removedIds } = autoConfirmParcelas(rowsParcelamento, baseTransactions, statementToPut.dataCorte, contaId, formaCredito.id);
     transactionIdsToRemove.push(...removedIds);
-    // updatedTransactions e o conjunto INTEIRO pos-confirmacao; so o que
-    // mudou de fato (id novo) precisa ir para o plano de gravacao.
-    const idsAntigos = new Set((baseTransactions || []).map((t) => t.id));
-    for (const t of updatedTransactions) {
-      if (!idsAntigos.has(t.id)) transactionsToPut.push(t);
-    }
+    // `confirmed` (nao "id e novo"): reimportar uma fatura corrigida gera um
+    // registro com o MESMO id determinístico (confirmed_${key}_${vencimento})
+    // mas valor/categoria/dataCorte atualizados — filtrar por "id ja existia"
+    // descartava essa correcao em silencio. putMany e idempotente por id,
+    // entao regravar um registro inalterado nao tem custo real.
+    for (const { after } of confirmed) transactionsToPut.push(after);
     baseTransactions = updatedTransactions;
 
     const { toAdd, toRemoveIds } = syncPredictions(rowsParcelamento, baseTransactions, contaId, formaCredito.id);
