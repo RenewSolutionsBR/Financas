@@ -11,13 +11,16 @@
 // tests/cadastros-comuns.test.js. formaFiltroAtual, contaFiltroAtual e
 // somenteAutoFiltroAtual foram extraídas para ui/lancamentos-filtros.js
 // junto com a barra de filtros e são testadas em
-// tests/lancamentos-filtros.test.js.
+// tests/lancamentos-filtros.test.js. interpretarValor, tipoContaParaForma,
+// contasParaForma e contaPadraoValidaParaForma foram extraídas para
+// ui/lancamentos-form-helpers.js junto com o formulário de lançar/editar.
 
 import { describe, it, assert, assertEqual, assertDeepEqual } from './harness.js';
+import { classeDoItem } from '../src/ui/lancamentos.js';
 import {
-  interpretarValor, classeDoItem,
+  interpretarValor,
   tipoContaParaForma, contasParaForma, contaPadraoValidaParaForma,
-} from '../src/ui/lancamentos.js';
+} from '../src/ui/lancamentos-form-helpers.js';
 import { TIPO_CONTA, TIPO_CARTAO } from '../src/domain/accounts.js';
 
 function t(over) {
