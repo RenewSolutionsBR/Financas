@@ -11,6 +11,17 @@ import { el, abrirModal } from './components.js';
 import { formatDateBR } from '../core/dates.js';
 import { fmtBRL } from '../core/money.js';
 
+// Pura: o texto de prévia mostrado abaixo dos campos "Valor total"/"Nº de
+// parcelas" — mesma mensagem do app anterior. `null` quando os dados ainda
+// não são suficientes pra calcular (campo vazio, número < 2), pra quem
+// chama decidir esconder o preview em vez de mostrar um texto quebrado.
+export function textoPreviewParcela(valorTotal, numParcelas) {
+  if (valorTotal === null || valorTotal === undefined || !Number.isFinite(valorTotal)) return null;
+  if (!numParcelas || numParcelas < 2) return null;
+  const vals = splitParcelas(valorTotal, numParcelas);
+  return `${numParcelas}x de ${fmtBRL(vals[0])} (total ${fmtBRL(valorTotal)}) — um lançamento por mês a partir da data escolhida.`;
+}
+
 export function montarLancamentosParcelados(dados) {
   const { descricao, data, valorTotal, numParcelas, categoria, formaPagamentoId, contaId } = dados;
   const vals = splitParcelas(valorTotal, numParcelas);
@@ -64,12 +75,24 @@ export function campoParceladoEModal(ctx) {
   const chkParcelado = el('input', { type: 'checkbox' });
   const inpValorTotal = el('input', { type: 'text', inputmode: 'decimal', placeholder: '0,00' });
   const inpNumParcelas = el('input', { type: 'text', inputmode: 'numeric', placeholder: '2' });
-  const painelExtra = el('div', { class: 'linha-form', style: 'display:none' }, [
-    ctx.campo('Valor total', inpValorTotal), ctx.campo('Nº de parcelas', inpNumParcelas),
+  const previewParcela = el('div', { class: 'preview-parcela', style: 'display:none' });
+  const painelExtra = el('div', { class: 'painel-parcelado', style: 'display:none' }, [
+    el('div', { class: 'linha-form' }, [ctx.campo('Valor total', inpValorTotal), ctx.campo('Nº de parcelas', inpNumParcelas)]),
+    previewParcela,
   ]);
   chkParcelado.addEventListener('change', () => {
     painelExtra.style.display = chkParcelado.checked ? '' : 'none';
   });
+
+  const atualizarPreview = () => {
+    const valorTotal = ctx.parseMoneyBR(inpValorTotal.value);
+    const numParcelas = parseInt(inpNumParcelas.value, 10);
+    const texto = textoPreviewParcela(valorTotal, numParcelas);
+    previewParcela.textContent = texto || '';
+    previewParcela.style.display = texto ? '' : 'none';
+  };
+  inpValorTotal.addEventListener('input', atualizarPreview);
+  inpNumParcelas.addEventListener('input', atualizarPreview);
 
   async function confirmarEObterLancamentos(transactions, allFaturaRows, base) {
     const valorTotal = ctx.parseMoneyBR(inpValorTotal.value);

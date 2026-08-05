@@ -1,5 +1,5 @@
 import { describe, it, assert, assertEqual, assertDeepEqual } from './harness.js';
-import { montarLancamentosParcelados } from '../src/ui/lancamentos-parcelado.js';
+import { montarLancamentosParcelados, textoPreviewParcela } from '../src/ui/lancamentos-parcelado.js';
 import { computeParcelaKey } from '../src/domain/parcelas.js';
 import { CATEGORIA_A_CLASSIFICAR } from '../src/domain/categories.js';
 
@@ -62,5 +62,28 @@ describe('lancamentos-parcelado: montarLancamentosParcelados', () => {
   it('dia 31 clampado corretamente ao virar mes mais curto (fevereiro)', () => {
     const lista = montarLancamentosParcelados(dados({ data: '2026-01-31', numParcelas: 3 }));
     assertDeepEqual(lista.map((t) => t.data), ['2026-01-31', '2026-02-28', '2026-03-31']);
+  });
+});
+
+describe('lancamentos-parcelado: textoPreviewParcela', () => {
+  it('formata Nx de R$Y (total R$Z) quando valor e parcelas são válidos', () => {
+    const texto = textoPreviewParcela(1200, 6);
+    assertEqual(texto, '6x de R$ 200,00 (total R$ 1.200,00) — um lançamento por mês a partir da data escolhida.');
+  });
+
+  it('divide por centavos, primeira parcela absorve o resto', () => {
+    const texto = textoPreviewParcela(100, 3);
+    assertEqual(texto, '3x de R$ 33,34 (total R$ 100,00) — um lançamento por mês a partir da data escolhida.');
+  });
+
+  it('devolve null quando valor total é inválido', () => {
+    assertEqual(textoPreviewParcela(null, 6), null);
+    assertEqual(textoPreviewParcela(NaN, 6), null);
+  });
+
+  it('devolve null quando número de parcelas é menor que 2', () => {
+    assertEqual(textoPreviewParcela(1200, 1), null);
+    assertEqual(textoPreviewParcela(1200, 0), null);
+    assertEqual(textoPreviewParcela(1200, null), null);
   });
 });

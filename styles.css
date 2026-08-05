@@ -685,3 +685,10 @@ button { cursor: pointer; }
   min-width: 160px;
   text-align: center;
 }
+
+.preview-parcela {
+  flex: 1 1 100%;
+  font-size: 0.78rem;
+  color: var(--latao);
+  padding: 2px 0;
+}
