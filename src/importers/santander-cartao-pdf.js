@@ -46,6 +46,15 @@ export function totalImpressoDeSections(sections) {
 // Créditos") não são mais descartadas, viram linha normalizada com
 // secao:'pagamentos_creditos' e sinal:'credito' (spec 6.4/7.1c: a
 // atribuição de natureza real acontece em reconcile-card.js, não aqui).
+// Agrupa 'parcelamento' e 'despesa' num único grupo ('despesa-like'), já
+// que a fatura Santander pode imprimir um "VALOR TOTAL" combinado pros dois
+// — ver comentário na leitura dos rótulos de seção, dentro do loop.
+function grupoAtual(mode) {
+  if (mode === 'credito') return 'credito';
+  if (mode === 'despesa' || mode === 'parcelamento') return 'despesa-like';
+  return null;
+}
+
 export function parseFaturaTexto(linhas, arquivo, vencimentoDate) {
   const avisos = [];
   const rows = [];
@@ -108,9 +117,34 @@ export function parseFaturaTexto(linhas, arquivo, vencimentoDate) {
       continue;
     }
 
-    if (/^Pagamento e Demais/i.test(line)) { abandonarSecaoAtual(); mode = 'credito'; continue; }
-    if (/^Parcelamentos\s*$/i.test(line)) { abandonarSecaoAtual(); mode = 'parcelamento'; continue; }
-    if (/^Despesas\s*$/i.test(line)) { abandonarSecaoAtual(); mode = 'despesa'; continue; }
+    // Rótulos de seção só disparam abandonarSecaoAtual() quando o GRUPO
+    // muda de verdade (credito <-> despesa-like). Medido contra fatura Visa
+    // real: 'Parcelamentos' e 'Despesas' do mesmo cartão às vezes
+    // compartilham UM "VALOR TOTAL" combinado no final — flush a cada rótulo
+    // descartava a soma do Parcelamentos como "sem total impresso" e o
+    // checksum comparava só Despesas contra o total dos dois, sempre
+    // acusando soma calculada menor que a impressa. Além disso, quando um
+    // cartão tem 'Despesas' cruzando quebra de página, a palavra 'Despesas'
+    // reaparece como cabeçalho de continuação — tratar isso como nova seção
+    // partia uma listagem contínua em duas. Solução: só reseta ao trocar de
+    // GRUPO (credito vs. despesa-like = despesa ou parcelamento); dentro do
+    // mesmo grupo (parcelamento<->despesa, ou repetição do mesmo rótulo) só
+    // atualiza `mode` e continua acumulando em sectionSum/sectionCount.
+    if (/^Pagamento e Demais/i.test(line)) {
+      abandonarSecaoAtual();
+      mode = 'credito';
+      continue;
+    }
+    if (/^Parcelamentos\s*$/i.test(line)) {
+      abandonarSecaoAtual();
+      mode = 'parcelamento';
+      continue;
+    }
+    if (/^Despesas\s*$/i.test(line)) {
+      abandonarSecaoAtual();
+      mode = 'despesa';
+      continue;
+    }
     if (/^Compra\s+Data\s+Descri/i.test(line)) continue;
 
     const totalMatch = /^VALOR TOTAL\s+(-?[\d.,]+)/i.exec(line);

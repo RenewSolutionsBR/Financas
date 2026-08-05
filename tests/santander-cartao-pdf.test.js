@@ -196,6 +196,83 @@ describe('santander-cartao-pdf: secao sem "VALOR TOTAL" proprio nao contamina a 
   });
 });
 
+// Fixtures sintéticas reproduzindo a divergência medida contra fatura Visa
+// real: 'abandonarSecaoAtual()' disparando em toda transição de rótulo de
+// seção é agressivo demais quando dois blocos TIPADOS (Parcelamentos e
+// Despesas) do mesmo cartão compartilham um único "VALOR TOTAL" impresso no
+// fim — ou quando o rótulo 'Despesas' se repete como cabeçalho de
+// continuação de página. Dados 100% fictícios.
+const LINHAS_PARCELAMENTO_DESPESA_TOTAL_UNICO = [
+  'Detalhamento da Fatura',
+  'TITULAR EXEMPLO - 1234 XXXX XXXX 6666',
+  'Parcelamentos',
+  '20/04 20/04 LOJA MOVEIS EXEMPLO 02/06 150,00',
+  'Despesas',
+  '22/04 22/04 SUPERMERCADO EXEMPLO 320,50',
+  '23/04 23/04 FARMACIA EXEMPLO 45,00',
+  'VALOR TOTAL 515,50',
+  'Resumo da Fatura',
+];
+
+const LINHAS_DESPESAS_ROTULO_REPETIDO = [
+  'Detalhamento da Fatura',
+  'TITULAR EXEMPLO - 1234 XXXX XXXX 7777',
+  'Despesas',
+  '01/04 01/04 LOJA PAGINA UM EXEMPLO 100,00',
+  'Despesas',
+  '02/04 02/04 LOJA PAGINA DOIS EXEMPLO 200,00',
+  'VALOR TOTAL 300,00',
+  'Resumo da Fatura',
+];
+
+describe('santander-cartao-pdf: blocos tipados compartilhando um "VALOR TOTAL" combinado (medido contra fatura Visa real)', () => {
+  it('Parcelamentos seguido de Despesas, com UM só "VALOR TOTAL" pros dois: checksum bate e a soma combina os dois blocos', () => {
+    const { checksum, rows } = parseFaturaTexto(LINHAS_PARCELAMENTO_DESPESA_TOTAL_UNICO, 'fatura-teste.pdf', VENCIMENTO);
+    assert(checksum.ok, JSON.stringify(checksum.sections));
+    assertEqual(checksum.sections.length, 1, 'os dois blocos (Parcelamentos + Despesas) viram UMA seção avaliada, nao duas — compartilham o total impresso');
+    const secao = checksum.sections[0];
+    assertEqual(secao.expected, 515.5);
+    assertEqual(secao.computed, 515.5, 'soma tem que incluir o lancamento do bloco Parcelamentos (150) + os dois de Despesas (320,50 + 45,00)');
+    assertEqual(secao.nLinhas, 3);
+    assertEqual(rows.filter((r) => r.secao === 'despesas').length, 3);
+  });
+
+  it('rótulo "Despesas" repetido (simulando cabeçalho de continuação de página): checksum bate e a soma combina os dois lados', () => {
+    const { checksum, rows } = parseFaturaTexto(LINHAS_DESPESAS_ROTULO_REPETIDO, 'fatura-teste.pdf', VENCIMENTO);
+    assert(checksum.ok, JSON.stringify(checksum.sections));
+    assertEqual(checksum.sections.length, 1, 'a repeticao do rotulo Despesas nao pode criar uma segunda secao — e o mesmo bloco continuando');
+    const secao = checksum.sections[0];
+    assertEqual(secao.expected, 300);
+    assertEqual(secao.computed, 300, 'soma tem que incluir o lancamento ANTES e DEPOIS do rotulo repetido');
+    assertEqual(secao.nLinhas, 2);
+    assertEqual(rows.filter((r) => r.secao === 'despesas').length, 2);
+  });
+});
+
+// Guarda extra de regressao pro caso ORIGINAL medido em Mastercard
+// (LINHAS_SECAO_SEM_TOTAL acima já cobre isso, mas este teste isola
+// especificamente o risco de vazamento credito -> despesa-like através da
+// mudanca de GRUPO, que é o mecanismo que a mudanca acima preservou).
+describe('santander-cartao-pdf: guarda de regressao — credito nao vaza pra despesa-like na troca de GRUPO', () => {
+  it('Pagamento e Demais Creditos (sem total) seguido de Parcelamentos (com total proprio): soma do credito nao contamina o parcelamento', () => {
+    const linhas = [
+      'Detalhamento da Fatura',
+      'TITULAR EXEMPLO - 1234 XXXX XXXX 8888',
+      'Pagamento e Demais Créditos',
+      '10/04 10/04 DEB AUTOM DE FATURA EM C/ 700,00',
+      'Parcelamentos',
+      '15/04 15/04 LOJA MOVEIS EXEMPLO 01/03 90,00',
+      'VALOR TOTAL 90,00',
+      'Resumo da Fatura',
+    ];
+    const { checksum } = parseFaturaTexto(linhas, 'fatura-teste.pdf', VENCIMENTO);
+    assert(checksum.ok, JSON.stringify(checksum.sections));
+    const avaliada = checksum.sections.find((s) => s.ok !== null);
+    assertEqual(avaliada.computed, 90, 'os 700 do credito nao podem vazar pra dentro da soma do parcelamento');
+    assertEqual(avaliada.secaoTipo, 'despesas');
+  });
+});
+
 describe('santander-cartao-pdf: totalImpressoDeSections', () => {
   it('soma so despesas/parcelamento, excluindo a secao de credito', () => {
     const { checksum } = parseFaturaTexto(LINHAS_FATURA_SINTETICA, 'fatura-teste.pdf', VENCIMENTO);
