@@ -6,6 +6,7 @@ import { el } from './components.js';
 import { fmtBRL } from '../core/money.js';
 import { formatDateBR } from '../core/dates.js';
 import { runReconciliation } from '../domain/reconcile-card.js';
+import { computeParcelaKey } from '../domain/parcelas.js';
 import { irParaAba } from './tabs.js';
 
 // Estado de modulo lido por ui/lancamentos.js no proximo render, mesmo
@@ -30,7 +31,18 @@ function itemFatura(item) {
       class: 'btn btn-mini',
       text: '+ lançar',
       onclick: () => {
-        rascunhoLancamento = { descricao: item.descricao, data: item.data, valor: item.valor, natureza: 'despesa' };
+        rascunhoLancamento = {
+          descricao: item.descricao, data: item.data, valor: item.valor, natureza: 'despesa',
+          // Linha de parcelamento carrega parcela_atual/parcela_total: sem
+          // propagar isso pro rascunho, o lançamento manual saía "solto"
+          // (sem número de parcela nem parcelaKey), diferente do lançamento
+          // que a mesma compra teria se tivesse sido auto-confirmada.
+          ...(item.parcela_atual ? {
+            parcela_atual: item.parcela_atual,
+            parcela_total: item.parcela_total,
+            parcelaKey: computeParcelaKey(item.descricao, item.data, item.parcela_total),
+          } : {}),
+        };
         irParaAba('Lancamentos');
       },
     }),

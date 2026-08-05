@@ -205,6 +205,15 @@ export async function montarFormularioLancamento(ctx, transacoes, editandoId, de
         formaPagamentoId: selForma.value,
         contaId: selConta.value || undefined,
         natureza: selNatureza.value,
+        // Rascunho do "+lançar" (Conciliação) carrega parcela_atual/
+        // parcela_total/parcelaKey quando o item é parcela de uma compra
+        // parcelada — nunca se aplica em edição (rascunho só existe pra
+        // lançamento novo).
+        ...(!emEdicao && rascunho && rascunho.parcela_atual ? {
+          parcela_atual: rascunho.parcela_atual,
+          parcela_total: rascunho.parcela_total,
+          parcelaKey: rascunho.parcelaKey,
+        } : {}),
       };
       const registro = emEdicao ? { ...emEdicao, ...base } : novaTransaction(base);
 
