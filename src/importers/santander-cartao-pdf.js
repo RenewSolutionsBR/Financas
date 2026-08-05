@@ -131,17 +131,17 @@ export function parseFaturaTexto(linhas, arquivo, vencimentoDate) {
     // mesmo grupo (parcelamento<->despesa, ou repetição do mesmo rótulo) só
     // atualiza `mode` e continua acumulando em sectionSum/sectionCount.
     if (/^Pagamento e Demais/i.test(line)) {
-      abandonarSecaoAtual();
+      if (grupoAtual(mode) !== 'credito') abandonarSecaoAtual();
       mode = 'credito';
       continue;
     }
     if (/^Parcelamentos\s*$/i.test(line)) {
-      abandonarSecaoAtual();
+      if (grupoAtual(mode) !== 'despesa-like') abandonarSecaoAtual();
       mode = 'parcelamento';
       continue;
     }
     if (/^Despesas\s*$/i.test(line)) {
-      abandonarSecaoAtual();
+      if (grupoAtual(mode) !== 'despesa-like') abandonarSecaoAtual();
       mode = 'despesa';
       continue;
     }
