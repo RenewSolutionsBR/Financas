@@ -197,3 +197,41 @@ describe('commitImportacao: reimportar fatura corrigida (mesmo vencimento, valor
     assertEqual(confirmadaFinal.valor, 35.00, 'a reimportacao com valor corrigido precisa atualizar a transaction ja confirmada, nao descarta-la em silencio');
   });
 });
+
+describe('commitImportacao: linhas do adaptador SEM vencimento proprio (formato real de PDF)', () => {
+  it('carimba row.vencimento a partir do statement antes de confirmar/prever — sem isso toda fatura colidia no mesmo id "..._undefined" e as previsoes nasciam com data NaN-NaN', async () => {
+    const aplicarPlano = (estadoAnterior, plano) => {
+      const semRemovidos = estadoAnterior.filter((t) => !plano.transactionIdsToRemove.includes(t.id));
+      const porId = new Map(semRemovidos.map((t) => [t.id, t]));
+      for (const t of plano.transactionsToPut) porId.set(t.id, t);
+      return [...porId.values()];
+    };
+    const base = {
+      tipo: 'fatura', contaId: CONTA_CARTAO, accounts: [], apelidosTitular: [], regras: [], formas: FORMAS,
+    };
+
+    // Duas faturas de meses DIFERENTES para a MESMA compra parcelada — a
+    // linha (row), como o adaptador real devolve, nao tem campo vencimento
+    // proprio, so `data` (data da compra).
+    const rowSemVencimento = (over) => {
+      const r = rowParcelamento(over);
+      delete r.vencimento;
+      return r;
+    };
+
+    const statementMaio = faturaStatement({ vencimento: '2026-05-01', dataCorte: '2026-04-28', rows: [rowSemVencimento({ parcela_atual: 2 }), rowPagamento()] });
+    const r1 = await commitImportacao({ ...base, statement: statementMaio, rows: statementMaio.rows, transactions: [], allStatements: [] });
+    const estadoAposR1 = aplicarPlano([], r1);
+
+    const statementJunho = faturaStatement({ vencimento: '2026-06-01', dataCorte: '2026-05-28', rows: [rowSemVencimento({ parcela_atual: 3 }), rowPagamento()] });
+    const r2 = await commitImportacao({ ...base, statement: statementJunho, rows: statementJunho.rows, transactions: estadoAposR1, allStatements: [r1.statementToPut] });
+    const estadoAposR2 = aplicarPlano(estadoAposR1, r2);
+
+    const confirmadas = estadoAposR2.filter((t) => !t.previsto && t.natureza === 'despesa');
+    assertEqual(confirmadas.length, 2, 'parcela 2/3 (maio) e 3/3 (junho) sao confirmacoes DISTINTAS — sem o carimbo de vencimento, a de junho sobrescrevia a de maio (mesmo id "..._undefined")');
+    assert(confirmadas.every((t) => t.id !== undefined && !t.id.endsWith('_undefined')), 'nenhum id de confirmacao pode terminar em "_undefined"');
+
+    const previsoes = estadoAposR2.filter((t) => t.previsto);
+    assert(previsoes.every((t) => /^\d{4}-\d{2}-\d{2}$/.test(t.data)), 'toda previsao precisa de uma data ISO valida, nunca "NaN-NaN-01"');
+  });
+});

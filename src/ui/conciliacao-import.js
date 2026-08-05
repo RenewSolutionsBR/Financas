@@ -60,8 +60,18 @@ export async function commitImportacao({ tipo, contaId, statement, rows, transac
   };
 
   if (tipo === 'fatura') {
-    const rowsParcelamento = rows.filter((r) => r.tipo === 'parcelamento' && r.secao !== 'pagamentos_creditos');
-    const rowsPagamento = rows.filter((r) => r.secao === 'pagamentos_creditos');
+    // As linhas devolvidas pelo adaptador (rows) carregam a data da COMPRA
+    // (r.data), nao a data de VENCIMENTO da fatura — so o statement tem essa
+    // informacao. autoConfirmParcelas/syncPredictions (domain/parcelas.js)
+    // precisam de row.vencimento pra gerar o id da parcela confirmada e a
+    // data de cada previsao futura; sem esse carimbo, row.vencimento vinha
+    // undefined, toda fatura gerava o MESMO id de confirmacao para uma dada
+    // parcelaKey (colidindo entre faturas de meses diferentes via putMany) e
+    // toda previsao futura nascia com data 'NaN-NaN-01', invisivel em
+    // qualquer filtro por mes.
+    const rowsComVencimento = rows.map((r) => ({ ...r, vencimento: r.vencimento || statementToPut.vencimento }));
+    const rowsParcelamento = rowsComVencimento.filter((r) => r.tipo === 'parcelamento' && r.secao !== 'pagamentos_creditos');
+    const rowsPagamento = rowsComVencimento.filter((r) => r.secao === 'pagamentos_creditos');
 
     // Mesma resolucao da Fase 1 (Task 14, achado #9): busca a forma ATIVA do
     // tipo certo, nunca crava 'pm_credito' — o usuario pode ter renomeado,
