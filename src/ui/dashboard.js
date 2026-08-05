@@ -5,8 +5,9 @@
 // seção 3).
 
 import { el } from './components.js';
+import { campo } from './cadastros-comuns.js';
 import { fmtBRL } from '../core/money.js';
-import { monthKey, todayISO } from '../core/dates.js';
+import { todayISO } from '../core/dates.js';
 import {
   listTransactions, filterTransactions, sumDespesas, totaisPorCategoria, totaisPorMes,
 } from '../domain/transactions.js';
@@ -17,8 +18,12 @@ import { listAccounts } from '../domain/accounts.js';
 // Estado de módulo, mesmo padrão de ui/lancamentos.js: sobrevive a
 // re-renders internos (troca de filtro), reseta ao entrar na aba vindo de
 // outro lugar não é necessário aqui (dashboard não tem edição em curso para
-// perder).
-let filtros = { ano: todayISO().slice(0, 4) };
+// perder). `ano` NÃO é inicializado aqui de propósito: o módulo pode ficar
+// carregado (PWA) atravessando a virada de ano, então o ano-padrão é
+// resolvido a cada render em painelFiltros/tileTotal via `?? todayISO()`,
+// nunca gravado de volta a não ser que o usuário escolha explicitamente no
+// select (inclusive a opção "Todos os anos", que grava '').
+let filtros = {};
 
 function nomeMes(ym) {
   return new Date(ym + '-01T00:00:00').toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
@@ -26,7 +31,8 @@ function nomeMes(ym) {
 
 function tileTotal(visiveis) {
   const total = sumDespesas(visiveis);
-  const rotulo = filtros.mes ? nomeMes(filtros.mes) : `Ano de ${filtros.ano || '—'}`;
+  const anoRotulo = filtros.ano ?? todayISO().slice(0, 4);
+  const rotulo = filtros.mes ? nomeMes(filtros.mes) : (anoRotulo ? `Ano de ${anoRotulo}` : 'Todos os anos');
   return el('div', { class: 'dash-tile-total' }, [
     el('span', { class: 'dash-tile-rotulo', text: rotulo }),
     el('span', { class: 'dash-tile-valor', text: fmtBRL(total) }),
@@ -85,11 +91,21 @@ function barrasMensais(visiveisSemFiltroDeMes) {
 
 function painelFiltros(ctx, transacoes) {
   const anos = [...new Set(transacoes.map((t) => String(t.data || '').slice(0, 4)).filter(Boolean))].sort();
-  const anoAtual = filtros.ano || anos[anos.length - 1] || todayISO().slice(0, 4);
+  // `??` (não `||`): filtros.ano pode ser '' de propósito (usuário escolheu
+  // "Todos os anos"), e isso é diferente de nunca ter sido definido.
+  const anoAtual = filtros.ano ?? todayISO().slice(0, 4);
 
-  const selAno = el('select', {}, anos.map((a) =>
-    el('option', { value: a, text: a, ...(a === anoAtual ? { selected: 'selected' } : {}) })
-  ));
+  const selAno = el('select', {}, [
+    el('option', { value: '', text: 'Todos os anos', ...(anoAtual === '' ? { selected: 'selected' } : {}) }),
+    ...anos.map((a) =>
+      el('option', { value: a, text: a, ...(a === anoAtual ? { selected: 'selected' } : {}) })
+    ),
+  ]);
+  // Grava '' (não `undefined`) quando o usuário escolhe "Todos os anos": é
+  // preciso distinguir essa escolha explícita de "nunca escolhido" para que
+  // o próprio select continue mostrando "Todos os anos" selecionado nos
+  // próximos renders (ver `anoAtual` acima). Para filterTransactions() isso
+  // não muda nada — lá `''` e `undefined` já são tratados como "sem filtro".
   selAno.addEventListener('change', async () => { filtros.ano = selAno.value; await renderDashboard(); });
 
   const inpMes = el('input', { type: 'month', value: filtros.mes || '' });
@@ -110,10 +126,10 @@ function painelFiltros(ctx, transacoes) {
   selConta.addEventListener('change', async () => { filtros.contas = selConta.value ? [selConta.value] : []; await renderDashboard(); });
 
   return el('div', { class: 'filtros' }, [
-    el('label', { class: 'campo' }, [el('span', { text: 'Ano' }), selAno]),
-    el('label', { class: 'campo' }, [el('span', { text: 'Mês' }), inpMes]),
-    el('label', { class: 'campo' }, [el('span', { text: 'Forma' }), selForma]),
-    el('label', { class: 'campo' }, [el('span', { text: 'Conta/cartão' }), selConta]),
+    campo('Ano', selAno),
+    campo('Mês', inpMes),
+    campo('Forma', selForma),
+    campo('Conta/cartão', selConta),
   ]);
 }
 
