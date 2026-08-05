@@ -120,6 +120,10 @@ export function formaFiltroAtual(filtros) {
   return ((filtros || {}).formas || [])[0] || '';
 }
 
+export function contaFiltroAtual(filtros) {
+  return ((filtros || {}).contas || [])[0] || '';
+}
+
 export function somenteAutoFiltroAtual(filtros) {
   return !!(filtros || {}).somenteAuto;
 }
@@ -377,12 +381,25 @@ function barraFiltros(ctx) {
     await renderLancamentos();
   });
 
+  // Mesmo raciocínio do filtro de forma: mostra contas/cartões desativados
+  // também, para não esconder o histórico de algo que o usuário já não usa.
+  const contaAtual = contaFiltroAtual(filtros);
+  const selConta = el('select', {}, [
+    el('option', { value: '', text: 'Todas as contas/cartões', ...(contaAtual === '' ? { selected: 'selected' } : {}) }),
+    ...ctx.contas.map((c) => el('option', { value: c.id, text: rotuloComStatus(c), ...(c.id === contaAtual ? { selected: 'selected' } : {}) })),
+  ]);
+  selConta.addEventListener('change', async () => {
+    filtros.contas = selConta.value ? [selConta.value] : [];
+    await renderLancamentos();
+  });
+
   const chkAuto = el('input', { type: 'checkbox', ...(somenteAutoFiltroAtual(filtros) ? { checked: 'checked' } : {}) });
   chkAuto.addEventListener('change', async () => { filtros.somenteAuto = chkAuto.checked; await renderLancamentos(); });
 
   return el('div', { class: 'filtros' }, [
     campo('Mês', inpMes),
     campo('Forma', selForma),
+    campo('Conta/cartão', selConta),
     el('label', { class: 'campo-inline' }, [chkAuto, el('span', { text: 'Só classificados automaticamente' })]),
   ]);
 }

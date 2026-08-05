@@ -13,7 +13,7 @@
 
 import { describe, it, assert, assertEqual, assertDeepEqual } from './harness.js';
 import {
-  interpretarValor, classeDoItem, formaFiltroAtual, somenteAutoFiltroAtual,
+  interpretarValor, classeDoItem, formaFiltroAtual, somenteAutoFiltroAtual, contaFiltroAtual,
   tipoContaParaForma, contasParaForma, contaPadraoValidaParaForma,
 } from '../src/ui/lancamentos.js';
 import { TIPO_CONTA, TIPO_CARTAO } from '../src/domain/accounts.js';
@@ -162,5 +162,16 @@ describe('lancamentos: estado da barra de filtros', () => {
     assertEqual(somenteAutoFiltroAtual({ somenteAuto: true }), true);
     assertEqual(somenteAutoFiltroAtual({ somenteAuto: false }), false);
     assertEqual(somenteAutoFiltroAtual(undefined), false);
+  });
+});
+
+describe('lancamentos: filtro de conta', () => {
+  it('contaFiltroAtual lê o primeiro item de filtros.contas', () => {
+    assertEqual(contaFiltroAtual({ contas: ['acc_1'] }), 'acc_1');
+  });
+
+  it('contaFiltroAtual devolve string vazia sem filtro', () => {
+    assertEqual(contaFiltroAtual({}), '');
+    assertEqual(contaFiltroAtual({ contas: [] }), '');
   });
 });
