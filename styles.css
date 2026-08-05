@@ -667,3 +667,21 @@ button { cursor: pointer; }
   .dash-rosca { width: 130px; height: 130px; }
   .item-form-lote > select { flex-basis: 100%; }
 }
+
+/* --- Navegação de mês (Lançamentos) --- */
+
+.nav-mes {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 10px 0 4px;
+}
+.nav-mes-label {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--tinta);
+  min-width: 160px;
+  text-align: center;
+}
