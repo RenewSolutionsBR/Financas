@@ -5,7 +5,7 @@
 import { el } from './components.js';
 import { fmtBRL } from '../core/money.js';
 import { formatDateBR } from '../core/dates.js';
-import { runReconciliation, buildFullReconciliationRows } from '../domain/reconcile-card.js';
+import { runReconciliation } from '../domain/reconcile-card.js';
 import { irParaAba } from './tabs.js';
 
 // Estado de modulo lido por ui/lancamentos.js no proximo render, mesmo
@@ -52,21 +52,11 @@ function balde(titulo, itens, vazio) {
   ]);
 }
 
-async function exportarConciliacaoCompleta(faturasList, transactions, accounts) {
-  const rows = buildFullReconciliationRows(faturasList, transactions, accounts);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'Conciliacao');
-  XLSX.writeFile(wb, `conciliacao-fatura-${new Date().toISOString().slice(0, 10)}.xlsx`);
-}
-
 export async function renderBaldesFatura(painel, fatura, faturasList, transactions, accounts) {
   const { autoMatched, matched, faturaUnmatched, appUnmatched } = runReconciliation(fatura, faturasList, transactions, accounts);
 
   painel.innerHTML = '';
   painel.append(
-    el('div', { class: 'acoes' }, [
-      el('button', { class: 'btn', text: 'Exportar conciliação completa', onclick: () => exportarConciliacaoCompleta(faturasList, transactions, accounts) }),
-    ]),
     balde('Conciliado automaticamente', autoMatched.map(itemMatched), 'Nenhum item conciliado automaticamente.'),
     balde('Conciliado', matched.map(itemMatched), 'Nenhum item conciliado.'),
     balde('Na fatura, não lançado no app', faturaUnmatched.map(itemFatura), 'Tudo da fatura já está lançado no app.'),

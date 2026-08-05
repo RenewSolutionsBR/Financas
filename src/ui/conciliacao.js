@@ -8,6 +8,7 @@ import { listTransactions } from '../domain/transactions.js';
 import { listCategorias } from '../domain/categories.js';
 import { listFormas } from '../domain/payment-methods.js';
 import { listRegras } from '../domain/classification.js';
+import { buildFullReconciliationRows } from '../domain/reconcile-card.js';
 import * as storage from '../core/storage.js';
 import { renderImportacao } from './conciliacao-import.js';
 import { renderBaldesFatura } from './conciliacao-fatura.js';
@@ -16,15 +17,37 @@ import { renderBaldesExtrato } from './conciliacao-extrato.js';
 let contaSelecionadaId = null;
 let documentoSelecionadoId = null;
 
+async function exportarConciliacaoCompleta(faturasList, transactions, accounts) {
+  const rows = buildFullReconciliationRows(faturasList, transactions, accounts);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'Conciliacao');
+  XLSX.writeFile(wb, `conciliacao-fatura-${new Date().toISOString().slice(0, 10)}.xlsx`);
+}
+
 export async function renderConciliacao() {
   const painel = document.getElementById('tabConciliacao');
   const contas = await listAccounts();
   const documentos = contaSelecionadaId ? await storage.getByIndex('statements', 'by_contaId', contaSelecionadaId) : [];
 
   painel.innerHTML = '';
+  const painelAcoes = contas.length
+    ? el('div', { class: 'acoes' }, [
+        el('button', {
+          class: 'btn', text: 'Exportar conciliação completa',
+          onclick: async () => {
+            const [transactions, todasFaturas] = await Promise.all([
+              listTransactions(),
+              storage.getAll('statements').then((lista) => lista.filter((s) => s.tipo === 'fatura')),
+            ]);
+            await exportarConciliacaoCompleta(todasFaturas, transactions, contas);
+          },
+        }),
+      ])
+    : null;
   painel.append(
     montarSeletorContaCartao(contas),
     montarSeletorDocumento(documentos),
+    painelAcoes,
     el('div', { id: 'painelImportacao' }),
     el('div', { id: 'painelBaldes' })
   );
