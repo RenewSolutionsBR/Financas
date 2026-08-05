@@ -81,7 +81,13 @@ export function syncPredictions(allFaturaRows, existingTransactions, contaId, fo
   const toAdd = [];
   groups.forEach((g) => {
     g.months.forEach((m) => {
-      const safeKey = (g.descricao + '|' + m.valor.toFixed(2) + '|' + m.ym).replace(/[^a-zA-Z0-9]/g, '_');
+      // Chave do id inclui g.key (parcelaKey, unico por compra): so
+      // descricao+valor+mes colidia entre parcelamentos DIFERENTES com a
+      // mesma descricao e mesmo valor de parcela caindo no mesmo mes -
+      // putMany por id sobrescrevia uma previsao com a outra em silencio,
+      // fazendo a tela de Lancamentos "pular" pro numero da compra que
+      // venceu por ultimo no syncPredictions.
+      const safeKey = (g.key + '|' + m.ym).replace(/[^a-zA-Z0-9]/g, '_');
       toAdd.push({
         id: 'seed_' + safeKey,
         descricao: `${g.descricao} (parcela prevista)`,

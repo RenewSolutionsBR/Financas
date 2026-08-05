@@ -85,6 +85,17 @@ describe('parcelas: computeParcelaGroups + syncPredictions', () => {
     assert(comHistorico.toAdd.every((t) => t.categoria === 'alimentacao'));
   });
 
+  it('duas compras DIFERENTES, mesma descricao e mesmo valor de parcela caindo no mesmo mes, geram ids DISTINTOS — sem isso putMany por id sobrescrevia uma previsao com a outra', () => {
+    const compraA = rowParcelamento({ data: '2026-02-10', vencimento: '2026-03-01', parcela_atual: 1, parcela_total: 6 });
+    const compraB = rowParcelamento({ data: '2026-04-10', vencimento: '2026-05-01', parcela_atual: 1, parcela_total: 4 });
+    const { toAdd } = syncPredictions([compraA, compraB], [], CONTA, FORMA);
+    const ids = toAdd.map((t) => t.id);
+    assertEqual(new Set(ids).size, ids.length, 'nenhum id colidiu entre as duas compras');
+    const porMes = new Map();
+    toAdd.forEach((t) => { const chave = t.data.slice(0, 7); porMes.set(chave, (porMes.get(chave) || 0) + 1); });
+    assert([...porMes.values()].some((n) => n > 1), 'o cenario precisa ter pelo menos um mes com previsao de AMBAS as compras, senao o teste nao cobre a colisao');
+  });
+
   it('marca pra remover previsoes ANTIGAS (previsto true, sem origemManual) — wipe-and-regenerate', () => {
     const antiga = { id: 'seed_velho', previsto: true, origemManual: false };
     const { toRemoveIds } = syncPredictions([rowParcelamento()], [antiga], CONTA, FORMA);
