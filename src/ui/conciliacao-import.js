@@ -7,6 +7,7 @@
 
 import { el, toast, confirmar } from './components.js';
 import { fmtBRL } from '../core/money.js';
+import { formatDateBR } from '../core/dates.js';
 import { uid } from '../core/ids.js';
 import * as storage from '../core/storage.js';
 import { detectarMelhorAdaptador, adaptadoresParaExtensao } from '../importers/registry.js';
@@ -26,8 +27,23 @@ import { processarPagamentoFatura } from '../domain/pagamento-fatura.js';
 // produzidos). Devolve um PLANO de gravacao (nunca grava sozinha), para ser
 // testavel como integracao de dominio pura e para o chamador decidir a
 // ordem/atomicidade real da persistencia.
+// Mesma montagem de id usada em commitImportacao (statementToPut.id,
+// abaixo) — extraída pra função própria pra não duplicar a fórmula entre
+// o commit de verdade e o aviso de "já importado" na tela de análise.
+export function idDeterministicoDoDocumento(contaId, tipo, statement) {
+  return `${contaId}|${tipo}|${statement.vencimento || statement.periodoFim}`;
+}
+
+// Devolve o documento já salvo com o MESMO id determinístico, ou null.
+// `documentosExistentes` é a lista de statements já salvos da MESMA conta
+// (quem chama já filtra por contaId antes de passar aqui).
+export function documentoJaImportado(contaId, tipo, statement, documentosExistentes) {
+  const id = idDeterministicoDoDocumento(contaId, tipo, statement);
+  return (documentosExistentes || []).find((d) => d.id === id) || null;
+}
+
 export async function commitImportacao({ tipo, contaId, statement, rows, transactions, accounts, apelidosTitular, allStatements, regras, formas }) {
-  const statementToPut = { ...statement, id: `${contaId}|${tipo}|${statement.vencimento || statement.periodoFim}`, contaId, tipo };
+  const statementToPut = { ...statement, id: idDeterministicoDoDocumento(contaId, tipo, statement), contaId, tipo };
 
   const transactionsToPut = [];
   const transactionIdsToRemove = [];
@@ -190,14 +206,16 @@ export async function renderImportacao(painel, contaId, escopoSugerido, aoImport
     }
     try {
       const resultado = await adaptadorEscolhido.parse(estado.buffer, { contaId, arquivo: estado.arquivo, mapeamento: estado.mapeamento });
+      const documentosExistentes = await storage.getByIndex('statements', 'by_contaId', contaId);
+      const duplicata = documentoJaImportado(contaId, resultado.statement.tipo, resultado.statement, documentosExistentes);
       estado.resultado = resultado;
-      renderPreview(resultado);
+      renderPreview(resultado, duplicata);
     } catch (e) {
       toast('Não consegui ler esse arquivo: ' + e.message, 'erro');
     }
   }
 
-  function renderPreview(resultado) {
+  function renderPreview(resultado, duplicata) {
     const { statement, rows, avisos, checksum } = resultado;
     const linhasChecksum = (checksum.sections || []).map((s) =>
       el('li', { text: `Cartão final ${s.cardEnding || '—'} (${s.secaoTipo}): ${s.ok === false ? 'DIVERGE' : s.ok === true ? 'confere' : 'sem total impresso'}` })
@@ -211,6 +229,7 @@ export async function renderImportacao(painel, contaId, escopoSugerido, aoImport
       el('div', { class: 'preview-resultado' }, [
         el('p', { text: `${rows.length} linha(s) lidas.` }),
         statement.totalImpresso != null ? el('p', { text: `Total da fatura: ${fmtBRL(statement.totalImpresso)}` }) : null,
+        duplicata ? el('p', { class: 'aviso-erro', text: `Este documento (vencimento ${formatDateBR(statement.vencimento) || statement.vencimento || statement.periodoFim}) já foi importado${duplicata.importadoEm ? ' em ' + new Date(duplicata.importadoEm).toLocaleDateString('pt-BR') : ''}. Confirmar agora vai substituir os dados anteriores por este novo arquivo.` }) : null,
         el('p', { class: checksum.ok === false ? 'aviso-erro' : 'aviso-ok', text: checksum.ok === false ? 'Checksum NÃO confere.' : 'Checksum confere.' }),
         linhasChecksum.length ? el('ul', {}, linhasChecksum) : null,
         avisos.length ? el('ul', { class: 'lista-avisos' }, avisos.map((a) => el('li', { text: a }))) : null,

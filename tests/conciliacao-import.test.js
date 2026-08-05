@@ -5,8 +5,43 @@
 // que SERIA gravado — exatamente o pedido do brief (Step 1, parágrafo final).
 
 import { describe, it, assert, assertEqual, assertDeepEqual } from './harness.js';
-import { commitImportacao } from '../src/ui/conciliacao-import.js';
+import { commitImportacao, idDeterministicoDoDocumento, documentoJaImportado } from '../src/ui/conciliacao-import.js';
 import { CATEGORIA_A_CLASSIFICAR } from '../src/domain/categories.js';
+
+describe('conciliacao-import: idDeterministicoDoDocumento', () => {
+  it('monta o id a partir de conta, tipo e vencimento', () => {
+    const id = idDeterministicoDoDocumento('acc_1', 'fatura', { vencimento: '2026-08-10' });
+    assertEqual(id, 'acc_1|fatura|2026-08-10');
+  });
+
+  it('cai em periodoFim quando não há vencimento (extrato)', () => {
+    const id = idDeterministicoDoDocumento('acc_1', 'extrato', { periodoFim: '2026-08-31' });
+    assertEqual(id, 'acc_1|extrato|2026-08-31');
+  });
+});
+
+describe('conciliacao-import: documentoJaImportado', () => {
+  const doc1 = { id: 'acc_1|fatura|2026-08-10', tipo: 'fatura', contaId: 'acc_1', vencimento: '2026-08-10', importadoEm: 1000 };
+
+  it('encontra o documento existente pelo mesmo id determinístico', () => {
+    const encontrado = documentoJaImportado('acc_1', 'fatura', { vencimento: '2026-08-10' }, [doc1]);
+    assertEqual(encontrado, doc1);
+  });
+
+  it('não encontra nada quando o vencimento é diferente', () => {
+    const encontrado = documentoJaImportado('acc_1', 'fatura', { vencimento: '2026-09-10' }, [doc1]);
+    assertEqual(encontrado, null);
+  });
+
+  it('não encontra nada quando a conta é diferente', () => {
+    const encontrado = documentoJaImportado('acc_2', 'fatura', { vencimento: '2026-08-10' }, [doc1]);
+    assertEqual(encontrado, null);
+  });
+
+  it('lista vazia de documentos não encontra nada', () => {
+    assertEqual(documentoJaImportado('acc_1', 'fatura', { vencimento: '2026-08-10' }, []), null);
+  });
+});
 
 const CONTA_CARTAO = 'acc_cartao_1';
 const FORMA_CREDITO = { id: 'pm_credito', tipo: 'credito', ativo: true };
