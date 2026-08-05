@@ -9,6 +9,7 @@ import { renderCadastros } from './ui/cadastros.js';
 import { renderLancamentos, resetLancamentos } from './ui/lancamentos.js';
 import { renderParcelas } from './ui/parcelas.js';
 import { renderConciliacao } from './ui/conciliacao.js';
+import { renderDashboard } from './ui/dashboard.js';
 import { talvezOferecerOnboarding } from './ui/onboarding.js';
 
 const RENDERIZADORES = {
@@ -16,6 +17,7 @@ const RENDERIZADORES = {
   Cadastros: renderCadastros,
   Parcelas: renderParcelas,
   Conciliacao: renderConciliacao,
+  Dashboard: renderDashboard,
 };
 
 async function renderizar(aba) {
