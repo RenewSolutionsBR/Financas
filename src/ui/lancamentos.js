@@ -26,6 +26,8 @@ import { listAccounts, TIPO_CONTA, TIPO_CARTAO } from '../domain/accounts.js';
 import { fmtBRL, parseMoneyBR } from '../core/money.js';
 import { formatDateBR, parseDateBR, todayISO, monthKey } from '../core/dates.js';
 import * as storage from '../core/storage.js';
+import { resetAllData } from '../core/storage.js';
+import { baixarBackup, montarInputImportarBackup } from './backup-comum.js';
 
 let viewDate = mesParaViewDate(monthKey(todayISO()));
 let filtros = {};
@@ -130,8 +132,43 @@ export async function renderLancamentos() {
     await formulario(ctx, transacoes),
     montarBarraFiltros(ctx, filtros, renderLancamentos),
     el('div', { class: 'total-periodo', text: `Total de gastos no período: ${fmtBRL(sumDespesas(visiveis))}` }),
-    listagem(visiveis, ctx)
+    listagem(visiveis, ctx),
+    rodape(renderLancamentos)
   );
+}
+
+// Atalhos de backup/importar/apagar tudo, disponíveis direto na aba de uso
+// diário — sem precisar ir até Cadastros. Reusa a mesma lógica de
+// exportar/importar de backup-comum.js (ver seção "Backup" de Cadastros),
+// pra não duplicar tratamento de erro de leitura de arquivo.
+function rodape(aoMudar) {
+  const inputImportar = montarInputImportarBackup(aoMudar);
+  inputImportar.id = 'inputImportarBackupLancamentos';
+  return el('div', { class: 'rodape-lancamentos' }, [
+    el('div', { class: 'acoes' }, [
+      el('button', { class: 'btn', type: 'button', text: 'Backup completo', onclick: baixarBackup }),
+      el('label', { class: 'btn', for: 'inputImportarBackupLancamentos', style: 'text-align:center; cursor:pointer;' }, ['Importar backup']),
+    ]),
+    inputImportar,
+    el('button', {
+      class: 'link-perigo', type: 'button', text: 'Apagar todos os dados do app',
+      onclick: () => apagarTudo(aoMudar),
+    }),
+  ]);
+}
+
+// window.confirm (não o confirmar() genérico de components.js) porque o
+// aviso precisa do texto específico de "sem volta" e "já fez backup?" — um
+// diálogo de uma linha não é suficiente pra uma ação que apaga tudo.
+async function apagarTudo(aoMudar) {
+  const ok = window.confirm(
+    'Isso apaga TODOS os lançamentos, categorias, contas, formas de pagamento e faturas ' +
+    'importadas deste aparelho, sem volta. Já fez backup? Toque OK só se tiver certeza.'
+  );
+  if (!ok) return;
+  await resetAllData();
+  toast('Todos os dados foram apagados.', 'ok');
+  await aoMudar();
 }
 
 async function formulario(ctx, transacoes) {

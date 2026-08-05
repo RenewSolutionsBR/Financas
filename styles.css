@@ -703,3 +703,24 @@ button { cursor: pointer; }
   flex: 0 0 auto;
 }
 .item-lancamento-acoes .btn { flex: 0 0 auto; }
+
+/* Rodapé de Lançamentos: atalhos de backup/importar/apagar tudo direto na
+   aba de uso diário, sem precisar ir até Cadastros. */
+.rodape-lancamentos {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px dashed var(--linha);
+}
+.link-perigo {
+  background: none;
+  border: none;
+  color: var(--erro);
+  font-size: 0.72rem;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 6px 0 0;
+  align-self: center;
+}
