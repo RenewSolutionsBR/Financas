@@ -51,6 +51,23 @@ describe('storage', () => {
   });
 });
 
+describe('storage: resetTransacoes', () => {
+  it('apaga transactions e statements, preserva cadastros (categories)', async () => {
+    await storage.put('transactions', { id: 'teste_rt1', data: '2026-06-10', descricao: 'x', valor: 1, categoria: 'casa', natureza: 'despesa' });
+    await storage.put('statements', { id: 'teste_rt_st1', tipo: 'fatura', contaId: 'acc_x' });
+    await storage.put('categories', { id: 'teste_rt_cat1', nome: 'Categoria Teste', cor: '#000' });
+
+    await storage.resetTransacoes();
+
+    assertDeepEqual(await storage.getAll('transactions'), []);
+    assertDeepEqual(await storage.getAll('statements'), []);
+    const categoriaPreservada = await storage.get('categories', 'teste_rt_cat1');
+    assertEqual(categoriaPreservada.nome, 'Categoria Teste');
+
+    await storage.remove('categories', 'teste_rt_cat1');
+  });
+});
+
 // IDBObjectStore.put() lança SINCRONAMENTE (não via request.onerror) quando o
 // valor não tem uma chave válida para o keyPath do store — put({}) num store
 // com keyPath 'id' é o caso mais comum. Isso importa porque uma sabotagem

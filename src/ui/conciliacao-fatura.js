@@ -15,10 +15,16 @@ import { irParaAba } from './tabs.js';
 export let rascunhoLancamento = null;
 export function limparRascunhoLancamento() { rascunhoLancamento = null; }
 
+// Mesmo sufixo "(atual/total)" nos três baldes que mostram lançamento de
+// parcelamento — sem ele, uma parcela e sua irmã de outro mês apareciam
+// como itens idênticos na tela, sem nenhuma pista de qual é qual.
+function sufixoParcela(item) {
+  return item.parcela_atual ? ` (${item.parcela_atual}/${item.parcela_total})` : '';
+}
+
 function itemFatura(item) {
-  const parcela = item.parcela_atual ? ` (${item.parcela_atual}/${item.parcela_total})` : '';
   return el('div', { class: 'item-balde' }, [
-    el('span', { class: 'item-descricao', text: `${item.descricao}${parcela}` }),
+    el('span', { class: 'item-descricao', text: `${item.descricao}${sufixoParcela(item)}` }),
     el('span', { class: 'item-meta', text: `${formatDateBR(item.data)} · ${fmtBRL(item.valor)}` }),
     el('button', {
       class: 'btn btn-mini',
@@ -33,14 +39,14 @@ function itemFatura(item) {
 
 function itemMatched(par) {
   return el('div', { class: 'item-balde item-conciliado' }, [
-    el('span', { class: 'item-descricao', text: par.fatura.descricao }),
+    el('span', { class: 'item-descricao', text: `${par.fatura.descricao}${sufixoParcela(par.fatura)}` }),
     el('span', { class: 'item-meta', text: `${formatDateBR(par.fatura.data)} · ${fmtBRL(par.fatura.valor)}` }),
   ]);
 }
 
 function itemApp(t) {
   return el('div', { class: 'item-balde' }, [
-    el('span', { class: 'item-descricao', text: t.descricao }),
+    el('span', { class: 'item-descricao', text: `${t.descricao}${sufixoParcela(t)}` }),
     el('span', { class: 'item-meta', text: `${formatDateBR(t.data)} · ${fmtBRL(t.valor)}` }),
   ]);
 }

@@ -99,16 +99,34 @@ function rodape(aoMudar) {
       el('label', { class: 'btn', for: 'inputImportarBackupLancamentos', style: 'text-align:center; cursor:pointer;' }, ['Importar backup']),
     ]),
     inputImportar,
-    el('button', {
-      class: 'link-perigo', type: 'button', text: 'Apagar todos os dados do app',
-      onclick: () => apagarTudo(aoMudar),
-    }),
+    el('div', { class: 'links-perigo' }, [
+      el('button', {
+        class: 'link-perigo', type: 'button', text: 'Apagar todas as transações',
+        onclick: () => apagarTransacoes(aoMudar),
+      }),
+      el('button', {
+        class: 'link-perigo', type: 'button', text: 'Apagar todos os dados do app',
+        onclick: () => apagarTudo(aoMudar),
+      }),
+    ]),
   ]);
 }
 
 // window.confirm (não o confirmar() genérico de components.js) porque o
 // aviso precisa do texto específico de "sem volta" e "já fez backup?" — um
-// diálogo de uma linha não é suficiente pra uma ação que apaga tudo.
+// diálogo de uma linha não é suficiente pra uma ação destrutiva.
+async function apagarTransacoes(aoMudar) {
+  const ok = window.confirm(
+    'Isso apaga TODOS os lançamentos e documentos importados (faturas/extratos) deste ' +
+    'aparelho, sem volta. Contas, formas de pagamento, categorias e regras cadastradas ' +
+    'são preservadas. Já fez backup? Toque OK só se tiver certeza.'
+  );
+  if (!ok) return;
+  await storage.resetTransacoes();
+  toast('Lançamentos e documentos importados foram apagados.', 'ok');
+  await aoMudar();
+}
+
 async function apagarTudo(aoMudar) {
   const ok = window.confirm(
     'Isso apaga TODOS os lançamentos, categorias, contas, formas de pagamento e faturas ' +
@@ -127,14 +145,14 @@ function listagem(visiveis, ctx) {
   return el('div', { class: 'lista-lancamentos' }, visiveis.map((t) =>
     el('div', { class: classeDoItem(t) }, [
       el('div', { class: 'lanc-principal' }, [
-        el('span', { class: 'lanc-descricao', text: t.descricao }),
+        el('span', { class: 'lanc-descricao', text: `${t.descricao}${t.parcela_atual ? ` (${t.parcela_atual}/${t.parcela_total})` : ''}` }),
         t.classificadoAutomaticamente ? el('span', { class: 'selo-auto', title: 'Categoria aplicada automaticamente', text: 'auto' }) : null,
       ]),
       el('div', { class: 'lanc-meta', text: `${formatDateBR(t.data)} · ${nome(ctx.categorias, t.categoria)} · ${nome(ctx.formas, t.formaPagamentoId)}` }),
       el('div', { class: 'lanc-valor', text: fmtBRL(t.valor) }),
       el('div', { class: 'item-lancamento-acoes' }, [
-        el('button', { class: 'btn btn-mini', text: 'Editar', onclick: async () => { editandoId = t.id; await renderLancamentos(); window.scrollTo({ top: 0, behavior: 'smooth' }); } }),
-        el('button', { class: 'btn btn-mini btn-perigo', text: 'Excluir', onclick: () => excluir(t) }),
+        el('button', { class: 'btn btn-mini', text: '✎', 'aria-label': 'Editar', title: 'Editar', onclick: async () => { editandoId = t.id; await renderLancamentos(); window.scrollTo({ top: 0, behavior: 'smooth' }); } }),
+        el('button', { class: 'btn btn-mini btn-perigo', text: '✕', 'aria-label': 'Excluir', title: 'Excluir', onclick: () => excluir(t) }),
       ]),
     ])
   ));

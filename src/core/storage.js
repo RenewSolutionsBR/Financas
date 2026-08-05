@@ -164,6 +164,15 @@ export async function resetAllData() {
   for (const def of STORES) await clearStore(def.nome);
 }
 
+// Apaga só o histórico de uso (lançamentos e documentos importados),
+// preservando cadastros (contas, formas, categorias, regras de
+// classificação) — para quem quer recomeçar o registro de gastos sem
+// perder a configuração já feita.
+export async function resetTransacoes() {
+  await clearStore('transactions');
+  await clearStore('statements');
+}
+
 export async function getByIndex(nome, indice, valor) {
   const s = store(await openDB(), nome, 'readonly');
   return promessa(s.index(indice).getAll(valor));
