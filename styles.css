@@ -638,7 +638,10 @@ button { cursor: pointer; }
   gap: 8px;
   padding: 12px 0;
   overflow-x: auto;
-  min-height: 160px;
+  /* height explicito, nao so min-height: um filho com height:100% (a coluna
+     abaixo) so resolve percentual contra um ancestral de altura DEFINIDA —
+     min-height sozinho deixa a base do calculo em 0 e a barra colapsava. */
+  height: 160px;
 }
 .dash-barra-col {
   flex: 1 0 44px;
