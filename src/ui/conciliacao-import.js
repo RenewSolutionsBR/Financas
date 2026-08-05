@@ -6,6 +6,7 @@
 // Quem persiste de fato e commitImportacaoEGravar, logo abaixo.
 
 import { el, toast, confirmar } from './components.js';
+import { fmtBRL } from '../core/money.js';
 import { uid } from '../core/ids.js';
 import * as storage from '../core/storage.js';
 import { detectarMelhorAdaptador, adaptadoresParaExtensao } from '../importers/registry.js';
@@ -209,6 +210,7 @@ export async function renderImportacao(painel, contaId, escopoSugerido, aoImport
     areaResultado.append(
       el('div', { class: 'preview-resultado' }, [
         el('p', { text: `${rows.length} linha(s) lidas.` }),
+        statement.totalImpresso != null ? el('p', { text: `Total da fatura: ${fmtBRL(statement.totalImpresso)}` }) : null,
         el('p', { class: checksum.ok === false ? 'aviso-erro' : 'aviso-ok', text: checksum.ok === false ? 'Checksum NÃO confere.' : 'Checksum confere.' }),
         linhasChecksum.length ? el('ul', {}, linhasChecksum) : null,
         avisos.length ? el('ul', { class: 'lista-avisos' }, avisos.map((a) => el('li', { text: a }))) : null,

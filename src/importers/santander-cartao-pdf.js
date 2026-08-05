@@ -162,6 +162,7 @@ export function parseFaturaTexto(linhas, arquivo, vencimentoDate) {
       rows.push(montarLinha({
         secao: mode === 'credito' ? 'pagamentos_creditos' : 'despesas',
         sinal: mode === 'credito' ? 'credito' : 'debito',
+        tipo: mode === 'parcelamento' ? 'parcelamento' : 'compra',
         data: toISO(lastDate), descricao: 'IOF DESPESA NO EXTERIOR', valor,
         parcela_atual: null, parcela_total: null, cardEnding, plastico,
       }, arquivo, vencimentoDate, ordinal++));
@@ -204,6 +205,7 @@ export function parseFaturaTexto(linhas, arquivo, vencimentoDate) {
     sectionCount++;
     rows.push(montarLinha({
       secao, sinal: mode === 'credito' ? 'credito' : 'debito',
+      tipo: mode === 'parcelamento' ? 'parcelamento' : 'compra',
       data: toISO(dataResolvida), descricao, valor: Math.abs(valor), valorUSD,
       parcela_atual: parcelaAtual, parcela_total: parcelaTotal, cardEnding, plastico,
     }, arquivo, vencimentoDate, ordinal++));

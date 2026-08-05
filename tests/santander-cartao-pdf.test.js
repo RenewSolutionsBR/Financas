@@ -248,6 +248,8 @@ describe('santander-cartao-pdf: blocos tipados compartilhando um "VALOR TOTAL" c
     assertEqual(secao.computed, 515.5, 'soma tem que incluir o lancamento do bloco Parcelamentos (150) + os dois de Despesas (320,50 + 45,00)');
     assertEqual(secao.nLinhas, 3);
     assertEqual(rows.filter((r) => r.secao === 'despesas').length, 3);
+    assertEqual(rows.filter((r) => r.tipo === 'parcelamento').length, 1, 'a linha do bloco Parcelamentos tem que sair marcada tipo:"parcelamento" — e o campo que domain/parcelas.js usa pra gerar previsoes futuras');
+    assertEqual(rows.filter((r) => r.tipo === 'compra').length, 2, 'as linhas do bloco Despesas saem marcadas tipo:"compra"');
   });
 
   it('rótulo "Despesas" repetido (simulando cabeçalho de continuação de página): checksum bate e a soma combina os dois lados', () => {
