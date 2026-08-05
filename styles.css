@@ -540,3 +540,45 @@ button { cursor: pointer; }
   font-size: 0.72rem;
   color: var(--latao);
 }
+
+/* --- Aba Parcelas --- */
+
+.secao-parcelas h3 {
+  margin: 16px 0 6px;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--tinta-fraca);
+}
+
+.previsao-mensal-linha {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 0;
+  font-size: 0.88rem;
+  border-bottom: 1px solid var(--linha);
+}
+.previsao-mensal-mes { text-transform: capitalize; color: var(--tinta); }
+.previsao-mensal-valor { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-weight: 600; }
+
+.grupo-parcela {
+  margin: 0 0 12px;
+  padding: 12px 14px;
+  background: var(--papel);
+  border: 1px solid var(--linha);
+  border-radius: 6px;
+}
+.grupo-parcela-titulo {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+.grupo-parcela ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  font-size: 0.78rem;
+  color: var(--tinta-fraca);
+}

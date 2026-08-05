@@ -1,6 +1,12 @@
 // Aba Parcelas: vitrine de computeParcelaGroups (domain/parcelas.js). Não
-// escreve nada — só lê transactions e mostra o que ainda falta pagar de
-// cada compra parcelada, agrupado por cartão.
+// escreve nada — só lê transactions e mostra (1) a previsão de parcelas
+// somada por mês, em todos os cartões, e (2) o detalhe de cada parcelamento
+// em aberto, agrupado por cartão. Layout portado do app anterior
+// (renderParcelas em app.js: monthForecast + parcelasList).
+
+function formatMesAno(ym) {
+  return new Date(ym + '-01T00:00:00').toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+}
 
 import { el } from './components.js';
 import { fmtBRL } from '../core/money.js';
@@ -25,7 +31,26 @@ export async function renderParcelas() {
     porCartao.set(c.id, computeParcelaGroups(rowsDoGrupo));
   }
 
+  const todosGrupos = cartoes.flatMap((c) => porCartao.get(c.id));
+
   painel.innerHTML = '';
+  if (!todosGrupos.length) {
+    painel.append(el('p', { class: 'vazio', text: 'Nenhuma parcela futura no momento.' }));
+    return;
+  }
+
+  const porMes = new Map();
+  todosGrupos.forEach((g) => g.months.forEach((m) => porMes.set(m.ym, (porMes.get(m.ym) || 0) + m.valor)));
+  const meses = [...porMes.keys()].sort();
+
+  const previsao = el('div', { class: 'secao-parcelas' }, [
+    el('h3', { text: 'Previsão de parcelas por mês' }),
+    el('div', { class: 'previsao-mensal' }, meses.map((ym) => el('div', { class: 'previsao-mensal-linha' }, [
+      el('span', { class: 'previsao-mensal-mes', text: formatMesAno(ym) }),
+      el('span', { class: 'previsao-mensal-valor', text: fmtBRL(porMes.get(ym)) }),
+    ]))),
+  ]);
+
   const secoes = cartoes
     .filter((c) => porCartao.get(c.id).length)
     .map((c) => el('div', { class: 'secao-parcelas' }, [
@@ -36,5 +61,5 @@ export async function renderParcelas() {
       ])),
     ]));
 
-  painel.append(secoes.length ? el('div', {}, secoes) : el('p', { class: 'vazio', text: 'Nenhuma parcela futura no momento.' }));
+  painel.append(previsao, el('h3', { text: 'Parcelamentos em aberto' }), ...secoes);
 }
