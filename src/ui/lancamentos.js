@@ -14,6 +14,9 @@ import { el, toast, confirmar } from './components.js';
 import { campo, mostrarErros, opcoesAtivas, rotuloComStatus } from './cadastros-comuns.js';
 import { campoParceladoEModal } from './lancamentos-parcelado.js';
 import {
+  viewDateParaMes, mesParaViewDate, montarNavegacaoMes, montarBarraFiltros,
+} from './lancamentos-filtros.js';
+import {
   listTransactions, saveTransaction, saveTransactions, removeTransaction,
   novaTransaction, validateTransaction, filterTransactions, sumDespesas, contaComoGasto, NATUREZAS,
 } from '../domain/transactions.js';
@@ -24,7 +27,8 @@ import { fmtBRL, parseMoneyBR } from '../core/money.js';
 import { formatDateBR, parseDateBR, todayISO, monthKey } from '../core/dates.js';
 import * as storage from '../core/storage.js';
 
-let filtros = { mes: monthKey(todayISO()) };
+let viewDate = mesParaViewDate(monthKey(todayISO()));
+let filtros = {};
 let editandoId = null;
 
 // Chamado pelo roteador (app.js) ao entrar na aba vindo de outro lugar —
@@ -35,7 +39,8 @@ let editandoId = null;
 // sem nenhum indício.
 export function resetLancamentos() {
   editandoId = null;
-  filtros = { mes: monthKey(todayISO()) };
+  viewDate = mesParaViewDate(monthKey(todayISO()));
+  filtros = {};
 }
 
 // opcoesAtivas e rotuloComStatus moraram aqui e foram extraídas para
@@ -109,38 +114,21 @@ export function contaPadraoValidaParaForma(contas, forma) {
   return tipoEsperado !== null && conta.tipo === tipoEsperado ? conta : null;
 }
 
-// Puras: derivam o que a barra de filtros deve mostrar a partir de `filtros`,
-// para o controle nunca divergir do estado que ele supostamente representa.
-// A barra inteira é reconstruída a cada renderLancamentos() (mesmo padrão de
-// `inpMes`, que já lia `filtros.mes` no value); sem espelhar esses dois
-// também, marcar/desmarcar "só automático" ou trocar a forma no filtro
-// parecia não ter efeito nenhum no controle, mesmo afetando o total de
-// verdade — um total que mente sobre o que está filtrando.
-export function formaFiltroAtual(filtros) {
-  return ((filtros || {}).formas || [])[0] || '';
-}
-
-export function contaFiltroAtual(filtros) {
-  return ((filtros || {}).contas || [])[0] || '';
-}
-
-export function somenteAutoFiltroAtual(filtros) {
-  return !!(filtros || {}).somenteAuto;
-}
-
 export async function renderLancamentos() {
   const painel = document.getElementById('tabLancamentos');
   const [transacoes, categorias, formas, contas] = await Promise.all([
     listTransactions(), listCategorias(), listFormas(), listAccounts(),
   ]);
   const ctx = { categorias, formas, contas };
+  filtros.mes = viewDateParaMes(viewDate);
   const visiveis = filterTransactions(transacoes, filtros)
     .sort((a, b) => (a.data < b.data ? 1 : -1));
 
   painel.innerHTML = '';
   painel.append(
+    montarNavegacaoMes(viewDate, async (novoViewDate) => { viewDate = novoViewDate; await renderLancamentos(); }),
     await formulario(ctx, transacoes),
-    barraFiltros(ctx),
+    montarBarraFiltros(ctx, filtros, renderLancamentos),
     el('div', { class: 'total-periodo', text: `Total de gastos no período: ${fmtBRL(sumDespesas(visiveis))}` }),
     listagem(visiveis, ctx)
   );
@@ -363,45 +351,6 @@ function rotuloNatureza(n) {
     transferencia: 'Transferência entre contas próprias',
     pagamento_fatura: 'Pagamento de fatura',
   }[n];
-}
-
-function barraFiltros(ctx) {
-  const inpMes = el('input', { type: 'month', value: filtros.mes || '' });
-  inpMes.addEventListener('change', async () => { filtros.mes = inpMes.value || undefined; await renderLancamentos(); });
-
-  // A barra de filtro mostra todas as formas, inclusive desativadas: o usuário
-  // pode querer olhar o histórico de uma forma que não usa mais.
-  const formaAtual = formaFiltroAtual(filtros);
-  const selForma = el('select', {}, [
-    el('option', { value: '', text: 'Todas as formas', ...(formaAtual === '' ? { selected: 'selected' } : {}) }),
-    ...ctx.formas.map((f) => el('option', { value: f.id, text: rotuloComStatus(f), ...(f.id === formaAtual ? { selected: 'selected' } : {}) })),
-  ]);
-  selForma.addEventListener('change', async () => {
-    filtros.formas = selForma.value ? [selForma.value] : [];
-    await renderLancamentos();
-  });
-
-  // Mesmo raciocínio do filtro de forma: mostra contas/cartões desativados
-  // também, para não esconder o histórico de algo que o usuário já não usa.
-  const contaAtual = contaFiltroAtual(filtros);
-  const selConta = el('select', {}, [
-    el('option', { value: '', text: 'Todas as contas/cartões', ...(contaAtual === '' ? { selected: 'selected' } : {}) }),
-    ...ctx.contas.map((c) => el('option', { value: c.id, text: rotuloComStatus(c), ...(c.id === contaAtual ? { selected: 'selected' } : {}) })),
-  ]);
-  selConta.addEventListener('change', async () => {
-    filtros.contas = selConta.value ? [selConta.value] : [];
-    await renderLancamentos();
-  });
-
-  const chkAuto = el('input', { type: 'checkbox', ...(somenteAutoFiltroAtual(filtros) ? { checked: 'checked' } : {}) });
-  chkAuto.addEventListener('change', async () => { filtros.somenteAuto = chkAuto.checked; await renderLancamentos(); });
-
-  return el('div', { class: 'filtros' }, [
-    campo('Mês', inpMes),
-    campo('Forma', selForma),
-    campo('Conta/cartão', selConta),
-    el('label', { class: 'campo-inline' }, [chkAuto, el('span', { text: 'Só classificados automaticamente' })]),
-  ]);
 }
 
 function listagem(visiveis, ctx) {

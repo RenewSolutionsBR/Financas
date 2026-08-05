@@ -15,6 +15,7 @@ export const TEST_MODULES = [
   './transactions.test.js',
   './backup.test.js',
   './lancamentos.test.js',
+  './lancamentos-filtros.test.js',
   './cadastros-comuns.test.js',
   './origem-teste.test.js',
   './cache-policy.test.js',

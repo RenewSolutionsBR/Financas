@@ -63,15 +63,22 @@ async function comLancamentosDeTeste(fn) {
 
 // Deixa a tela num estado conhecido: mês = julho/2026 (mês dos dados de
 // teste), forma e "só automático" desligados — independente do que uma
-// suíte anterior tenha deixado ligado.
+// suíte anterior tenha deixado ligado. resetLancamentos() sempre parte do
+// mês atual (hoje); a navegação por setas (‹ ›) é a única forma de chegar a
+// julho/2026 a partir daí, então calcula a diferença de meses até o alvo e
+// clica a seta certa esse número de vezes.
 async function estadoConhecido() {
   montarPainel();
   resetLancamentos();
   await renderLancamentos();
-  const inpMes = document.querySelector('.filtros input[type="month"]');
-  inpMes.value = '2026-07';
-  inpMes.dispatchEvent(new Event('change'));
-  await esperar();
+  const hoje = new Date();
+  const diferencaMeses = (2026 - hoje.getFullYear()) * 12 + (6 - hoje.getMonth()); // 6 = julho (0-indexado)
+  const botoes = document.querySelectorAll('.nav-mes button');
+  const botao = diferencaMeses < 0 ? botoes[0] : botoes[1];
+  for (let i = 0; i < Math.abs(diferencaMeses); i++) {
+    botao.click();
+    await esperar();
+  }
 }
 
 describe('lancamentos (DOM real): barra de filtros reflete o estado depois do re-render', () => {

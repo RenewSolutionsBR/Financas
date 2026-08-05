@@ -1,19 +1,21 @@
 // Só a parte pura da tela de Lançamentos entra aqui: renderLancamentos() e o
 // formulário tocam o DOM direto (document.getElementById, addEventListener),
 // então não podem ser exercitados num teste que roda em Node. As funções
-// testadas aqui — interpretarValor, classeDoItem, formaFiltroAtual,
-// somenteAutoFiltroAtual — são lógica pura extraída de dentro das funções
-// que tocam DOM exatamente para isso: cada uma delas foi achado real de
-// revisão (barra de filtros presa ligada, regra de ouro copiada pela
-// metade, valor ilegível virando 0) que a suíte original não alcançava.
+// testadas aqui — interpretarValor, classeDoItem — são lógica pura extraída
+// de dentro das funções que tocam DOM exatamente para isso: cada uma delas
+// foi achado real de revisão (regra de ouro copiada pela metade, valor
+// ilegível virando 0) que a suíte original não alcançava.
 //
 // opcoesAtivas e rotuloComStatus, que moravam aqui, foram extraídas para
 // ui/cadastros-comuns.js (revisão final da fase) e são testadas em
-// tests/cadastros-comuns.test.js.
+// tests/cadastros-comuns.test.js. formaFiltroAtual, contaFiltroAtual e
+// somenteAutoFiltroAtual foram extraídas para ui/lancamentos-filtros.js
+// junto com a barra de filtros e são testadas em
+// tests/lancamentos-filtros.test.js.
 
 import { describe, it, assert, assertEqual, assertDeepEqual } from './harness.js';
 import {
-  interpretarValor, classeDoItem, formaFiltroAtual, somenteAutoFiltroAtual, contaFiltroAtual,
+  interpretarValor, classeDoItem,
   tipoContaParaForma, contasParaForma, contaPadraoValidaParaForma,
 } from '../src/ui/lancamentos.js';
 import { TIPO_CONTA, TIPO_CARTAO } from '../src/domain/accounts.js';
@@ -143,35 +145,5 @@ describe('lancamentos: contaPadraoValidaParaForma (a conta padrao so vale se o t
     assertEqual(contaPadraoValidaParaForma(contas, null), null);
     assertEqual(contaPadraoValidaParaForma(contas, { tipo: 'pix' }), null);
     assertEqual(contaPadraoValidaParaForma(contas, { tipo: 'pix', contaPadraoId: 'nao_existe' }), null);
-  });
-});
-
-describe('lancamentos: estado da barra de filtros', () => {
-  it('formaFiltroAtual devolve vazio quando não há filtro de forma', () => {
-    assertEqual(formaFiltroAtual({}), '');
-    assertEqual(formaFiltroAtual({ formas: [] }), '');
-    assertEqual(formaFiltroAtual(undefined), '');
-  });
-
-  it('formaFiltroAtual devolve a forma filtrada', () => {
-    assertEqual(formaFiltroAtual({ formas: ['pm_pix'] }), 'pm_pix');
-  });
-
-  it('somenteAutoFiltroAtual reflete true e false, não só a ausência da chave', () => {
-    assertEqual(somenteAutoFiltroAtual({}), false);
-    assertEqual(somenteAutoFiltroAtual({ somenteAuto: true }), true);
-    assertEqual(somenteAutoFiltroAtual({ somenteAuto: false }), false);
-    assertEqual(somenteAutoFiltroAtual(undefined), false);
-  });
-});
-
-describe('lancamentos: filtro de conta', () => {
-  it('contaFiltroAtual lê o primeiro item de filtros.contas', () => {
-    assertEqual(contaFiltroAtual({ contas: ['acc_1'] }), 'acc_1');
-  });
-
-  it('contaFiltroAtual devolve string vazia sem filtro', () => {
-    assertEqual(contaFiltroAtual({}), '');
-    assertEqual(contaFiltroAtual({ contas: [] }), '');
   });
 });
