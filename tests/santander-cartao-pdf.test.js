@@ -225,6 +225,19 @@ const LINHAS_DESPESAS_ROTULO_REPETIDO = [
   'Resumo da Fatura',
 ];
 
+// Ordem inversa do primeiro caso (Despesas antes de Parcelamentos) — prova
+// que o guard por GRUPO não depende de qual dos dois rótulos vem primeiro.
+const LINHAS_DESPESA_PARCELAMENTO_TOTAL_UNICO = [
+  'Detalhamento da Fatura',
+  'TITULAR EXEMPLO - 1234 XXXX XXXX 9999',
+  'Despesas',
+  '22/04 22/04 SUPERMERCADO EXEMPLO 320,50',
+  'Parcelamentos',
+  '20/04 20/04 LOJA MOVEIS EXEMPLO 02/06 150,00',
+  'VALOR TOTAL 470,50',
+  'Resumo da Fatura',
+];
+
 describe('santander-cartao-pdf: blocos tipados compartilhando um "VALOR TOTAL" combinado (medido contra fatura Visa real)', () => {
   it('Parcelamentos seguido de Despesas, com UM só "VALOR TOTAL" pros dois: checksum bate e a soma combina os dois blocos', () => {
     const { checksum, rows } = parseFaturaTexto(LINHAS_PARCELAMENTO_DESPESA_TOTAL_UNICO, 'fatura-teste.pdf', VENCIMENTO);
@@ -244,6 +257,17 @@ describe('santander-cartao-pdf: blocos tipados compartilhando um "VALOR TOTAL" c
     const secao = checksum.sections[0];
     assertEqual(secao.expected, 300);
     assertEqual(secao.computed, 300, 'soma tem que incluir o lancamento ANTES e DEPOIS do rotulo repetido');
+    assertEqual(secao.nLinhas, 2);
+    assertEqual(rows.filter((r) => r.secao === 'despesas').length, 2);
+  });
+
+  it('ordem invertida (Despesas antes de Parcelamentos), mesmo total combinado: guard por grupo nao depende de qual rotulo vem primeiro', () => {
+    const { checksum, rows } = parseFaturaTexto(LINHAS_DESPESA_PARCELAMENTO_TOTAL_UNICO, 'fatura-teste.pdf', VENCIMENTO);
+    assert(checksum.ok, JSON.stringify(checksum.sections));
+    assertEqual(checksum.sections.length, 1);
+    const secao = checksum.sections[0];
+    assertEqual(secao.expected, 470.5);
+    assertEqual(secao.computed, 470.5, 'soma tem que incluir Despesas (320,50) + Parcelamentos (150,00), nessa ordem');
     assertEqual(secao.nLinhas, 2);
     assertEqual(rows.filter((r) => r.secao === 'despesas').length, 2);
   });
