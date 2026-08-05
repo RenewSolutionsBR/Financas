@@ -47,7 +47,7 @@ export async function renderConciliacao() {
   painel.append(
     montarSeletorContaCartao(contas),
     montarSeletorDocumento(documentos),
-    painelAcoes,
+    ...(painelAcoes ? [painelAcoes] : []),
     el('div', { id: 'painelImportacao' }),
     el('div', { id: 'painelBaldes' })
   );
