@@ -582,3 +582,85 @@ button { cursor: pointer; }
   font-size: 0.78rem;
   color: var(--tinta-fraca);
 }
+
+/* --- Aba Dashboard --- */
+
+.dash-tile-total {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 16px 0;
+}
+.dash-tile-rotulo { font-size: 0.8rem; text-transform: capitalize; color: var(--tinta-fraca); }
+.dash-tile-valor { font-family: var(--font-mono); font-size: 1.8rem; font-weight: 700; }
+
+.dash-rosca-bloco {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 24px;
+  padding: 12px 0;
+}
+.dash-rosca {
+  flex: 0 0 auto;
+  width: 160px;
+  height: 160px;
+  border-radius: 50%;
+}
+.dash-legenda {
+  flex: 1 1 200px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.dash-legenda li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+}
+.dash-legenda-cor {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+.dash-legenda-nome { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--tinta); }
+.dash-legenda-valor { flex: 0 0 auto; font-family: var(--font-mono); font-weight: 600; }
+
+.dash-barras {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 12px 0;
+  overflow-x: auto;
+  min-height: 160px;
+}
+.dash-barra-col {
+  flex: 1 0 44px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  height: 100%;
+  justify-content: flex-end;
+}
+.dash-barra-valor { font-size: 0.65rem; color: var(--tinta-fraca); white-space: nowrap; }
+.dash-barra {
+  width: 100%;
+  min-height: 2px;
+  background: var(--latao);
+  border-radius: 3px 3px 0 0;
+}
+.dash-barra-rotulo { font-size: 0.72rem; text-transform: capitalize; color: var(--tinta-fraca); }
+
+@media (max-width: 480px) {
+  .tabbar { flex-wrap: wrap; }
+  .dash-rosca-bloco { flex-direction: column; align-items: flex-start; }
+  .dash-rosca { width: 130px; height: 130px; }
+  .item-form-lote > select { flex-basis: 100%; }
+}
