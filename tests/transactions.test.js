@@ -245,4 +245,16 @@ describe('transactions: totais por mês', () => {
   it('lista vazia devolve Map vazio', () => {
     assertEqual(totaisPorMes([]).size, 0);
   });
+
+  it('data inválida, undefined ou null não contaminam o Map', () => {
+    const lista = [
+      t({ id: 'a', data: '2026-05-10', valor: 10 }),
+      t({ id: 'b', data: undefined, valor: 5 }),
+      t({ id: 'c', data: null, valor: 7 }),
+      t({ id: 'd', data: '99/99/9999', valor: 3 }),
+    ];
+    const totais = totaisPorMes(lista);
+    assertEqual(totais.get('2026-05'), 10);
+    assertEqual(totais.size, 1);
+  });
 });

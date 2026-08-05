@@ -104,8 +104,8 @@ export function totaisPorMes(transactions) {
     if (!contaComoGasto(t)) continue;
     const valor = Number(t.valor);
     if (!Number.isFinite(valor)) continue;
+    if (!isValidISO(t.data)) continue;
     const chave = monthKey(t.data);
-    if (!chave) continue;
     mapa.set(chave, round2((mapa.get(chave) || 0) + valor));
   }
   return mapa;
