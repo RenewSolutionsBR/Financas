@@ -7,7 +7,7 @@
 
 import { el } from './components.js';
 import { campo, rotuloComStatus } from './cadastros-comuns.js';
-import { NATUREZAS } from '../domain/transactions.js';
+import { NATUREZAS, rotuloNatureza } from '../domain/transactions.js';
 
 export function viewDateParaMes(viewDate) {
   return viewDate.getFullYear() + '-' + String(viewDate.getMonth() + 1).padStart(2, '0');
@@ -37,15 +37,6 @@ export function naturezaFiltroAtual(filtros) {
 
 export function somenteAutoFiltroAtual(filtros) {
   return !!(filtros || {}).somenteAuto;
-}
-
-function rotuloNatureza(n) {
-  return {
-    despesa: 'Gasto',
-    receita: 'Recebimento (não conta como gasto)',
-    transferencia: 'Transferência entre contas próprias',
-    pagamento_fatura: 'Pagamento de fatura',
-  }[n];
 }
 
 // `aoMudar(novoViewDate)` é chamado com o mês já ajustado — quem chama

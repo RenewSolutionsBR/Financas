@@ -9,11 +9,9 @@ import { formatDateBR } from '../core/dates.js';
 import { runReconciliationBank } from '../domain/reconcile-bank.js';
 import { aplicarRegra, aprenderRegra, candidatosRetroativos } from '../domain/classification.js';
 import { formaPorPrefixoExtrato } from '../domain/payment-methods.js';
-import { novaTransaction, saveTransactions } from '../domain/transactions.js';
+import { novaTransaction, saveTransactions, NATUREZAS } from '../domain/transactions.js';
 import { CATEGORIA_A_CLASSIFICAR } from '../domain/categories.js';
 import * as storage from '../core/storage.js';
-
-const NATUREZAS = ['despesa', 'receita', 'transferencia', 'pagamento_fatura'];
 
 function itemMatched(par) {
   return el('div', { class: 'item-balde item-conciliado' }, [

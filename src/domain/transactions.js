@@ -11,6 +11,18 @@ import { CATEGORIA_A_CLASSIFICAR } from './categories.js';
 
 export const NATUREZAS = ['despesa', 'receita', 'transferencia', 'pagamento_fatura'];
 
+// Rótulo de exibição de cada natureza — única fonte para os seletores de
+// Lançamentos (formulário e barra de filtros) e da conciliação de extrato,
+// que antes tinham cada um sua própria cópia desta tabela.
+export function rotuloNatureza(n) {
+  return {
+    despesa: 'Gasto',
+    receita: 'Recebimento (não conta como gasto)',
+    transferencia: 'Transferência entre contas próprias',
+    pagamento_fatura: 'Pagamento de fatura',
+  }[n];
+}
+
 // Chave usada em totaisPorForma para lançamentos sem forma de pagamento
 // definida: agrupar sob a string literal "undefined" deixaria a tela sem
 // rótulo para mostrar; agrupar sob um nome próprio permite exibir "Sem forma".
