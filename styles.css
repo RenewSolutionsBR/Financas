@@ -427,3 +427,116 @@ button { cursor: pointer; }
   font-size: 0.9rem;
   font-weight: 600;
 }
+
+/* --- Aba Conciliação --- */
+
+.aviso-erro { color: var(--erro); font-weight: 600; }
+.aviso-ok { color: var(--ok); font-weight: 600; }
+
+.preview-importacao, .resultado-analise, .mapeamento-manual {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 0;
+}
+
+.preview-resultado {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.lista-avisos {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 0.82rem;
+  color: var(--tinta-fraca);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Cada balde é um bloco visualmente separado dos outros (título + lista),
+   em vez de tudo empilhado sem fronteira — era exatamente essa falta de
+   separação que tornava a tela de Conciliação difícil de operar. */
+.balde {
+  padding: 16px 0;
+  border-bottom: 1px dashed var(--linha);
+}
+.balde:last-child { border-bottom: none; }
+.balde h3 {
+  margin: 0 0 10px;
+  font-size: 0.95rem;
+  color: var(--tinta-fraca);
+}
+
+.lista-balde {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.item-balde {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--linha);
+}
+.item-balde:last-child { border-bottom: none; }
+
+/* Item só informativo (já conciliado) não precisa da mesma ênfase visual de
+   um item que ainda pede decisão do usuário — mesmo princípio de opacidade
+   reduzida já usado em .item-lancamento.nao-gasto. */
+.item-balde.item-conciliado { opacity: 0.7; }
+
+.item-descricao {
+  flex: 1 1 100%;
+  font-size: 0.92rem;
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.item-meta {
+  flex: 1 1 auto;
+  font-size: 0.78rem;
+  color: var(--tinta-fraca);
+}
+
+/* A linha de "+ lançar em lote" é a mais carregada da tela: checkbox +
+   descrição/meta + 3 seletores (natureza/categoria/forma). Em vez de cada
+   <select> ocupar 100% de largura e empilhar um embaixo do outro (o problema
+   relatado), eles dividem uma faixa própria abaixo da descrição, lado a
+   lado quando cabe e quebrando em grade 2-a-2 em telas estreitas — nunca um
+   por linha inteira. */
+.item-form-lote {
+  align-items: flex-start;
+  gap: 6px 10px;
+}
+.item-form-lote > input[type=checkbox] {
+  flex: 0 0 auto;
+  margin-top: 3px;
+}
+.item-form-lote > .item-descricao {
+  flex: 1 1 calc(100% - 30px);
+}
+.item-form-lote > .item-meta {
+  flex: 1 1 100%;
+  margin-left: 30px;
+}
+.item-form-lote > select {
+  flex: 1 1 140px;
+  min-width: 0;
+  margin-left: 30px;
+  font-size: 0.82rem;
+  padding: 6px 8px;
+}
+.item-form-lote > select:first-of-type { margin-left: 30px; }
+
+.selo-categoria-sugerida {
+  flex: 1 1 100%;
+  margin-left: 30px;
+  font-size: 0.72rem;
+  color: var(--latao);
+}
