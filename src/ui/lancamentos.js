@@ -15,6 +15,7 @@ import {
   viewDateParaMes, mesParaViewDate, montarNavegacaoMes, montarBarraFiltros,
 } from './lancamentos-filtros.js';
 import { montarFormularioLancamento } from './lancamentos-form.js';
+import { rascunhoLancamento, limparRascunhoLancamento } from './conciliacao-fatura.js';
 import {
   listTransactions, removeTransaction, filterTransactions, sumDespesas, contaComoGasto,
 } from '../domain/transactions.js';
@@ -75,10 +76,17 @@ export async function renderLancamentos() {
   const visiveis = filterTransactions(transacoes, filtros)
     .sort((a, b) => (a.data < b.data ? 1 : -1));
 
+  // O rascunho vindo do botão "+lançar" da Conciliação (conciliacao-fatura.js)
+  // só serve UMA vez: lido aqui e limpo na hora, senão ele voltaria a
+  // preencher o formulário em todo re-render seguinte (trocar filtro, navegar
+  // de mês, editar outro lançamento) até o usuário sair da aba.
+  const rascunho = editandoId ? null : rascunhoLancamento;
+  if (rascunho) limparRascunhoLancamento();
+
   painel.innerHTML = '';
   painel.append(
     montarNavegacaoMes(viewDate, async (novoViewDate) => { viewDate = novoViewDate; await renderLancamentos(); }),
-    await montarFormularioLancamento(ctx, transacoes, editandoId, (novoId) => { editandoId = novoId; }, renderLancamentos),
+    await montarFormularioLancamento(ctx, transacoes, editandoId, (novoId) => { editandoId = novoId; }, renderLancamentos, rascunho),
     montarBarraFiltros(ctx, filtros, renderLancamentos),
     el('div', { class: 'total-periodo', text: `Total de gastos no período: ${fmtBRL(sumDespesas(visiveis))}` }),
     listagem(visiveis, ctx),

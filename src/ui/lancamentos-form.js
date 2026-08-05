@@ -27,14 +27,17 @@ import * as storage from '../core/storage.js';
 // volta via `definirEditandoId` nos pontos em que o fluxo termina (salvar,
 // cancelar) ou começa (chamado por lancamentos.js na listagem, fora daqui).
 // `aoMudar` é o mesmo callback de re-render que lancamentos.js já usa em
-// outros pontos da tela.
-export async function montarFormularioLancamento(ctx, transacoes, editandoId, definirEditandoId, aoMudar) {
+// outros pontos da tela. `rascunho` (opcional) vem do botão "+lançar" da
+// Conciliação — { descricao, data, valor, natureza } prontos pra pré-encher
+// um lançamento NOVO (nunca se aplica em edição, por isso lancamentos.js só
+// passa `rascunho` quando `editandoId` é null).
+export async function montarFormularioLancamento(ctx, transacoes, editandoId, definirEditandoId, aoMudar, rascunho) {
   const emEdicao = editandoId ? transacoes.find((t) => t.id === editandoId) : null;
   const ultimaForma = await storage.getMeta('ultimaFormaUsada', null);
 
-  const inpData = el('input', { type: 'text', inputmode: 'numeric', placeholder: 'DD/MM/AAAA', value: formatDateBR(emEdicao ? emEdicao.data : todayISO()) });
-  const inpDescricao = el('input', { type: 'text', placeholder: 'Descrição', value: emEdicao ? emEdicao.descricao : '' });
-  const inpValor = el('input', { type: 'text', inputmode: 'decimal', placeholder: '0,00', value: emEdicao ? String(emEdicao.valor).replace('.', ',') : '' });
+  const inpData = el('input', { type: 'text', inputmode: 'numeric', placeholder: 'DD/MM/AAAA', value: formatDateBR(emEdicao ? emEdicao.data : (rascunho ? rascunho.data : todayISO())) });
+  const inpDescricao = el('input', { type: 'text', placeholder: 'Descrição', value: emEdicao ? emEdicao.descricao : (rascunho ? rascunho.descricao : '') });
+  const inpValor = el('input', { type: 'text', inputmode: 'decimal', placeholder: '0,00', value: emEdicao ? String(emEdicao.valor).replace('.', ',') : (rascunho ? String(rascunho.valor).replace('.', ',') : '') });
 
   const selCategoria = el('select', {}, ctx.categorias.map((c) =>
     el('option', { value: c.id, text: c.nome, ...(emEdicao && emEdicao.categoria === c.id ? { selected: 'selected' } : {}) })
@@ -127,8 +130,9 @@ export async function montarFormularioLancamento(ctx, transacoes, editandoId, de
     );
   });
 
+  const naturezaSelecionada = emEdicao ? emEdicao.natureza : (rascunho ? rascunho.natureza : null);
   const selNatureza = el('select', {}, NATUREZAS.map((n) =>
-    el('option', { value: n, text: rotuloNatureza(n), ...(emEdicao && emEdicao.natureza === n ? { selected: 'selected' } : {}) })
+    el('option', { value: n, text: rotuloNatureza(n), ...(naturezaSelecionada === n ? { selected: 'selected' } : {}) })
   ));
 
   const botaoSalvar = el('button', { class: 'btn btn-primario', type: 'submit', text: emEdicao ? 'Salvar alterações' : 'Lançar' });
