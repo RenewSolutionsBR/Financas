@@ -692,3 +692,14 @@ button { cursor: pointer; }
   color: var(--latao);
   padding: 2px 0;
 }
+
+/* Ações do item de lançamento (editar/excluir): classe própria, não
+   `.acoes` genérico — `.acoes .btn { flex: 1 1 160px }` forçava cada
+   botão a pedir 160px mínimo, e numa linha estreita de lançamento os dois
+   quebravam pra linhas separadas em vez de ficarem lado a lado. */
+.item-lancamento-acoes {
+  display: flex;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+.item-lancamento-acoes .btn { flex: 0 0 auto; }

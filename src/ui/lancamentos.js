@@ -365,7 +365,7 @@ function listagem(visiveis, ctx) {
       ]),
       el('div', { class: 'lanc-meta', text: `${formatDateBR(t.data)} · ${nome(ctx.categorias, t.categoria)} · ${nome(ctx.formas, t.formaPagamentoId)}` }),
       el('div', { class: 'lanc-valor', text: fmtBRL(t.valor) }),
-      el('div', { class: 'acoes' }, [
+      el('div', { class: 'item-lancamento-acoes' }, [
         el('button', { class: 'btn btn-mini', text: 'Editar', onclick: async () => { editandoId = t.id; await renderLancamentos(); window.scrollTo({ top: 0, behavior: 'smooth' }); } }),
         el('button', { class: 'btn btn-mini btn-perigo', text: 'Excluir', onclick: () => excluir(t) }),
       ]),
