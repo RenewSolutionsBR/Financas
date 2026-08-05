@@ -116,6 +116,23 @@ que continuam passando sem alteração.
   rodam no runner Node).
 - Depois da mudança (com os 3 novos testes): **355/355 passaram**.
 
+## Addendum: correção de um follow-up bug no próprio fix
+
+O primeiro commit desta correção (`ebd9176`) foi criado com os comentários da
+correção já escritos, mas os três `if (grupoAtual(mode) !== ...)` que fazem o
+guard de fato **não estavam presentes no código** — só descritos em
+comentário; a chamada a `abandonarSecaoAtual()` continuava incondicional nos
+três pontos. Isso reintroduzia exatamente o bug original (sem qualquer aviso,
+pois os testes daquele commit não tinham sido re-executados contra o estado
+final do arquivo commitado).
+
+Detectado ao rodar `node tools/run-tests.mjs` limpo em cima do HEAD
+(`ebd9176`): `353/355 passaram, 2 falharam`, com o mesmo sintoma "soma
+calculada menor que a impressa" nos 2 testes novos. Reaplicado o `git stash`
+com a versão corrigida (que já estava no working tree desta sessão),
+confirmado `355/355`, e commitado como `215b870` — reativa os três guards de
+grupo que faltavam no código.
+
 ## Preocupações
 
 - A fixture sintética `LINHAS_PARCELAMENTO_DESPESA_TOTAL_UNICO` assume que
