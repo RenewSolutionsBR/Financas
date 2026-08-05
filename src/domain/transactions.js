@@ -7,6 +7,7 @@ import { uid } from '../core/ids.js';
 import { isValidISO, monthKey } from '../core/dates.js';
 import { round2 } from '../core/money.js';
 import * as storage from '../core/storage.js';
+import { CATEGORIA_A_CLASSIFICAR } from './categories.js';
 
 export const NATUREZAS = ['despesa', 'receita', 'transferencia', 'pagamento_fatura'];
 
@@ -75,6 +76,36 @@ export function totaisPorForma(transactions) {
     // total do grupo inteiro.
     if (!Number.isFinite(valor)) continue;
     const chave = t.formaPagamentoId || SEM_FORMA;
+    mapa.set(chave, round2((mapa.get(chave) || 0) + valor));
+  }
+  return mapa;
+}
+
+export function totaisPorCategoria(transactions) {
+  const mapa = new Map();
+  for (const t of transactions || []) {
+    if (!contaComoGasto(t)) continue;
+    const valor = Number(t.valor);
+    // Mesma guarda de sumDespesas/totaisPorForma: um valor ilegível não pode
+    // contaminar o total do grupo inteiro.
+    if (!Number.isFinite(valor)) continue;
+    const chave = t.categoria || CATEGORIA_A_CLASSIFICAR;
+    mapa.set(chave, round2((mapa.get(chave) || 0) + valor));
+  }
+  return mapa;
+}
+
+// Soma por mês (YYYY-MM). NÃO aplica filtro de mês — quem chama já filtrou
+// por ano/forma/conta antes (filterTransactions), mas nunca por mês: filtrar
+// mês aqui colapsaria a série de barras numa barra só.
+export function totaisPorMes(transactions) {
+  const mapa = new Map();
+  for (const t of transactions || []) {
+    if (!contaComoGasto(t)) continue;
+    const valor = Number(t.valor);
+    if (!Number.isFinite(valor)) continue;
+    const chave = monthKey(t.data);
+    if (!chave) continue;
     mapa.set(chave, round2((mapa.get(chave) || 0) + valor));
   }
   return mapa;

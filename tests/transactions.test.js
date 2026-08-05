@@ -1,8 +1,9 @@
 import { describe, it, assert, assertEqual, assertDeepEqual } from './harness.js';
 import {
   NATUREZAS, SEM_FORMA, contaComoGasto, validateTransaction, sumDespesas,
-  filterTransactions, totaisPorForma, novaTransaction,
+  filterTransactions, totaisPorForma, totaisPorCategoria, totaisPorMes, novaTransaction,
 } from '../src/domain/transactions.js';
+import { CATEGORIA_A_CLASSIFICAR } from '../src/domain/categories.js';
 
 function t(over) {
   return {
@@ -177,5 +178,71 @@ describe('transactions: construtor', () => {
 
   it('novaTransaction guarda o valor sempre positivo', () => {
     assertEqual(novaTransaction({ valor: -30 }).valor, 30);
+  });
+});
+
+describe('transactions: totais por categoria', () => {
+  it('agrupa só o que conta como gasto', () => {
+    const lista = [
+      t({ id: 'a', valor: 30, categoria: 'casa' }),
+      t({ id: 'b', valor: 12.5, categoria: 'casa' }),
+      t({ id: 'c', valor: 8, categoria: 'lazer' }),
+      t({ id: 'd', valor: 999, categoria: 'casa', natureza: 'receita' }),
+      t({ id: 'e', valor: 500, categoria: 'casa', previsto: true }),
+    ];
+    const totais = totaisPorCategoria(lista);
+    assertEqual(totais.get('casa'), 42.5);
+    assertEqual(totais.get('lazer'), 8);
+  });
+
+  it('lançamento sem categoria cai em A Classificar', () => {
+    const mapa = totaisPorCategoria([t({ id: 'a', valor: 10, categoria: undefined })]);
+    assertEqual(mapa.get(CATEGORIA_A_CLASSIFICAR), 10);
+  });
+
+  it('um valor ilegível não contamina o grupo', () => {
+    const lista = [t({ id: 'a', valor: 10, categoria: 'casa' }), t({ id: 'b', valor: 'abc', categoria: 'casa' })];
+    assertEqual(totaisPorCategoria(lista).get('casa'), 10);
+  });
+
+  it('lista vazia devolve Map vazio', () => {
+    assertEqual(totaisPorCategoria([]).size, 0);
+  });
+});
+
+describe('transactions: totais por mês', () => {
+  it('agrupa só o que conta como gasto, por YYYY-MM', () => {
+    const lista = [
+      t({ id: 'a', data: '2026-05-10', valor: 30 }),
+      t({ id: 'b', data: '2026-05-20', valor: 12.5 }),
+      t({ id: 'c', data: '2026-06-01', valor: 8 }),
+      t({ id: 'd', data: '2026-05-15', valor: 999, natureza: 'receita' }),
+    ];
+    const totais = totaisPorMes(lista);
+    assertEqual(totais.get('2026-05'), 42.5);
+    assertEqual(totais.get('2026-06'), 8);
+  });
+
+  it('não aplica filtro de mês — quem filtra é o chamador', () => {
+    // totaisPorMes soma TUDO que recebe, sem olhar o mês: se filtrasse aqui,
+    // a série de barras colapsaria sempre em uma barra só.
+    const lista = [t({ id: 'a', data: '2026-01-01', valor: 5 }), t({ id: 'b', data: '2026-12-31', valor: 7 })];
+    const totais = totaisPorMes(lista);
+    assertEqual(totais.size, 2);
+  });
+
+  it('um mês sem dado não aparece no Map (não gera entrada zerada)', () => {
+    const totais = totaisPorMes([t({ id: 'a', data: '2026-05-10', valor: 10 })]);
+    assert(!totais.has('2026-06'));
+    assertEqual(totais.size, 1);
+  });
+
+  it('um valor ilegível não contamina o mês', () => {
+    const lista = [t({ id: 'a', data: '2026-05-10', valor: 10 }), t({ id: 'b', data: '2026-05-11', valor: NaN })];
+    assertEqual(totaisPorMes(lista).get('2026-05'), 10);
+  });
+
+  it('lista vazia devolve Map vazio', () => {
+    assertEqual(totaisPorMes([]).size, 0);
   });
 });
