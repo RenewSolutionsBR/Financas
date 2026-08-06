@@ -49,7 +49,17 @@ export async function montarFormularioLancamento(ctx, transacoes, editandoId, de
   // lançamento novo, só continuar visível em quem já apontava para ela.
   const formaAtualId = emEdicao ? emEdicao.formaPagamentoId : null;
   const formasOpcoes = opcoesAtivas(ctx.formas, formaAtualId);
-  const formaSelecionada = emEdicao ? emEdicao.formaPagamentoId : ultimaForma;
+  // Rascunho do "+lançar" (Conciliação) já sabe o cartão/conta exatos da
+  // fatura (contaId) — nesse caso a forma de pagamento correta é qualquer
+  // forma ATIVA cujo tipo bata com essa conta, nunca a ultimaFormaUsada
+  // genérica: usar a última forma podia escolher um cartão/conta DIFERENTE
+  // do da fatura, o lançamento salvava no lugar errado e nunca conciliava.
+  const contaDoRascunho = rascunho && rascunho.contaId ? ctx.contas.find((c) => c.id === rascunho.contaId) : null;
+  const formaParaContaDoRascunho = contaDoRascunho
+    ? formasOpcoes.find((f) => tipoContaParaForma(f.tipo) === contaDoRascunho.tipo)
+    : null;
+  const formaSelecionada = emEdicao ? emEdicao.formaPagamentoId
+    : (formaParaContaDoRascunho ? formaParaContaDoRascunho.id : ultimaForma);
   const selForma = el('select', {}, formasOpcoes.map((f) =>
     el('option', { value: f.id, text: rotuloComStatus(f), ...(f.id === formaSelecionada ? { selected: 'selected' } : {}) })
   ));
@@ -71,7 +81,10 @@ export async function montarFormularioLancamento(ctx, transacoes, editandoId, de
   // com o que a forma espera (contaPadraoValidaParaForma), senão um cartão de
   // crédito podia herdar conta corrente como padrão.
   const contaPadraoValida = formaPreSelecionada ? contaPadraoValidaParaForma(ctx.contas, formaPreSelecionada) : null;
-  const contaPadraoInicial = contaPadraoValida ? contaPadraoValida.id : null;
+  // contaDoRascunho (definida acima) vence a conta padrão da forma: o
+  // rascunho do "+lançar" já sabe exatamente qual cartão/conta é o da
+  // fatura, então não faz sentido cair no padrão genérico da forma.
+  const contaPadraoInicial = contaDoRascunho ? contaDoRascunho.id : (contaPadraoValida ? contaPadraoValida.id : null);
 
   // A forma que o <select> vai REALMENTE exibir selecionada: se `formaSelecionada`
   // não está entre as opções (primeira instalação, sem ultimaFormaUsada ainda,

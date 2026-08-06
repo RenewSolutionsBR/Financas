@@ -231,6 +231,69 @@ describe('lancamentos (DOM real): filtro de conta reflete a forma que o select R
   });
 });
 
+// Reproduz o bug relatado: "+lançar" da Conciliação salvava o lançamento com
+// o contaId da ultimaFormaUsada (podendo ser outro cartão/conta), não o
+// cartão real da fatura — o lançamento nunca conciliava (poolDoCartao filtra
+// por plasticosDoTitular), o item ficava preso em "não lançado" pra sempre, e
+// cada novo clique em "+lançar" criava outro lançamento duplicado.
+describe('lancamentos (DOM real): rascunho do "+lançar" (Conciliação) preenche a conta/forma do CARTÃO da fatura', () => {
+  const CARTAO_FATURA_ID = 'acc_teste_rascunho_cartao';
+  const FORMA_CREDITO_ID = 'pm_teste_rascunho_credito';
+  const OUTRA_CONTA_ID = 'acc_teste_rascunho_outra';
+  const OUTRA_FORMA_ID = 'pm_teste_rascunho_outra';
+
+  async function comCartaoDaFaturaEOutraContaComoUltimaUsada(fn) {
+    const ultimaFormaOriginal = await storage.getMeta('ultimaFormaUsada', null);
+    await saveAccount({ id: CARTAO_FATURA_ID, tipo: TIPO_CARTAO, nome: 'Cartao da fatura (teste)', ativo: true, final: '9999' });
+    await saveForma({
+      id: FORMA_CREDITO_ID, nome: 'Credito da fatura (teste)', tipo: 'credito', ativo: true,
+      padroesExtrato: [], ordem: 500, conciliaCom: 'fatura',
+    });
+    // A "ultima forma usada" aponta para uma conta/forma DIFERENTE do cartão
+    // da fatura — exatamente o cenário em que o bug aparecia.
+    await saveAccount({ id: OUTRA_CONTA_ID, tipo: TIPO_CONTA, nome: 'Outra conta (teste)', ativo: true, agencia: '1', numero: '2' });
+    await saveForma({
+      id: OUTRA_FORMA_ID, nome: 'Outra forma (teste)', tipo: 'outro', ativo: true,
+      padroesExtrato: [], ordem: 501, conciliaCom: 'nenhum', contaPadraoId: OUTRA_CONTA_ID,
+    });
+    await storage.setMeta('ultimaFormaUsada', OUTRA_FORMA_ID);
+    try {
+      await fn();
+    } finally {
+      await storage.setMeta('ultimaFormaUsada', ultimaFormaOriginal);
+      await storage.remove('paymentMethods', FORMA_CREDITO_ID);
+      await storage.remove('paymentMethods', OUTRA_FORMA_ID);
+      await storage.remove('accounts', CARTAO_FATURA_ID);
+      await storage.remove('accounts', OUTRA_CONTA_ID);
+    }
+  }
+
+  it('rascunho.contaId vence a ultimaFormaUsada: forma e conta pré-selecionadas são as do cartão da fatura', async () => {
+    await comCartaoDaFaturaEOutraContaComoUltimaUsada(async () => {
+      // O shape do rascunho é o mesmo que o botão "+lançar" monta em
+      // conciliacao-fatura.js — testado aqui direto em montarFormularioLancamento
+      // (sem depender do DOM de Conciliação) porque o essencial do bug é a
+      // pré-seleção de forma/conta, já coberta por este caminho.
+      const { montarFormularioLancamento } = await import('../src/ui/lancamentos-form.js');
+      const { listCategorias } = await import('../src/domain/categories.js');
+      const { listFormas } = await import('../src/domain/payment-methods.js');
+      const { listAccounts } = await import('../src/domain/accounts.js');
+      const [categorias, formas, contas] = await Promise.all([listCategorias(), listFormas(), listAccounts()]);
+      const ctx = { categorias, formas, contas };
+      const rascunho = {
+        descricao: 'COCO BAMBU JK', data: '2026-05-20', valor: 430.48, natureza: 'despesa',
+        contaId: CARTAO_FATURA_ID,
+      };
+      const form = await montarFormularioLancamento(ctx, [], null, () => {}, async () => {}, rascunho);
+      const selects = form.querySelectorAll('select');
+      const selForma = selects[1];
+      const selConta = selects[2];
+      assertEqual(selForma.value, FORMA_CREDITO_ID, 'a forma precisa ser a de credito do cartao da fatura, nao a ultimaFormaUsada');
+      assertEqual(selConta.value, CARTAO_FATURA_ID, 'a conta precisa ser o cartao da fatura (rascunho.contaId), nao a conta padrao da ultimaFormaUsada');
+    });
+  });
+});
+
 // Reproduz o Critico 2 (mensagem de erro) e o Importante 3 (regressao do
 // preenchimento automatico) da revisao: a conta padrao so pode vir de uma
 // forma cujo TIPO bate com o da conta, e so deve ser sobrescrita ao trocar de
