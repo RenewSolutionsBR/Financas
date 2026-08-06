@@ -55,7 +55,7 @@ export function computeParcelaGroups(allFaturaRows) {
       const dt = addMonths(r.vencimento, k);
       months.push({ ym: ymOf(dt), valor: r.valor, numero: r.parcela_atual + k });
     }
-    groups.push({ key: r.key, descricao: r.descricao, dataCompraOriginal: r.data, remaining, parcelaTotal: r.parcela_total, months });
+    groups.push({ key: r.key, descricao: r.descricao, dataCompraOriginal: r.data, valor: r.valor, parcelaAtual: r.parcela_atual, remaining, parcelaTotal: r.parcela_total, months });
   }
   return groups;
 }
@@ -107,6 +107,48 @@ export function syncPredictions(allFaturaRows, existingTransactions, contaId, fo
   });
 
   return { toAdd, toRemoveIds };
+}
+
+// Reconstrói os "grupos de parcela" de uma conta/cartão a partir das
+// TRANSACTIONS já salvas (confirmadas e previstas), pra alimentar
+// computeParcelaGroups sem depender de allFaturaRows (que só existe no
+// momento de uma importação) — é o que a aba Parcelas usa pra mostrar
+// parcelamentos em aberto a qualquer momento, inclusive antes de qualquer
+// fatura nova chegar.
+//
+// A "âncora" de cada parcelaKey (linha que representa o que JÁ aconteceu)
+// segue esta prioridade: (1) a CONFIRMADA (!previsto) de maior
+// parcela_atual — nunca uma previsão: syncPredictions sempre gera TODAS as
+// previsões restantes de uma vez (2/5, 3/5, 4/5, 5/5, por exemplo), então
+// usar o maior parcela_atual ENTRE elas escolheria sempre a ÚLTIMA (5/5,
+// remaining=0), fazendo o grupo inteiro sumir mesmo a compra tendo acabado
+// de ser importada. (2) Só havendo previsões (compra nova, ainda na
+// parcela 1/n, que autoConfirmParcelas nunca confirma sozinha), a de MENOR
+// parcela_atual — a próxima a vencer — assim "remaining" conta a partir
+// dali em vez de já saltar pra última.
+function melhorAncoraDeParcela(a, b) {
+  if (!a.previsto && b.previsto) return a;
+  if (a.previsto && !b.previsto) return b;
+  if (!a.previsto && !b.previsto) return a.parcela_atual > b.parcela_atual ? a : b;
+  return a.parcela_atual < b.parcela_atual ? a : b;
+}
+
+export function parcelaGroupsDaConta(transactions, contaId) {
+  const porKey = new Map();
+  (transactions || [])
+    .filter((t) => t.parcelaKey && t.parcela_total && t.contaId === contaId)
+    .forEach((t) => {
+      const atual = porKey.get(t.parcelaKey);
+      porKey.set(t.parcelaKey, atual ? melhorAncoraDeParcela(atual, t) : t);
+    });
+  const rowsDoGrupo = [...porKey.values()].map((t) => ({
+    tipo: 'parcelamento',
+    descricao: t.descricao.replace(/\s*\(parcela prevista\)\s*$/i, ''),
+    data: t.data, vencimento: t.data,
+    parcela_atual: t.parcela_atual, parcela_total: t.parcela_total, valor: t.valor,
+    key: t.parcelaKey,
+  }));
+  return computeParcelaGroups(rowsDoGrupo);
 }
 
 function dateDiffDays(iso1, iso2) {

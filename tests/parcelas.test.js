@@ -1,7 +1,7 @@
 import { describe, it, assert, assertEqual, assertDeepEqual } from './harness.js';
 import {
   computeParcelaKey, computeParcelaGroups, syncPredictions, autoConfirmParcelas,
-  splitParcelas, findParcelaDuplicates,
+  splitParcelas, findParcelaDuplicates, parcelaGroupsDaConta,
 } from '../src/domain/parcelas.js';
 import { CATEGORIA_A_CLASSIFICAR } from '../src/domain/categories.js';
 
@@ -146,6 +146,21 @@ describe('parcelas: computeParcelaGroups com chave pre-computada (regressao ui/p
     assertEqual(groups[0].remaining, 3, 'parcela mais avancada (3/6) manda: restam 3 (4,5,6)');
   });
 
+  it('grupo expoe parcelaAtual e valor da parcela mais avancada — sem isso a tela nao tinha como mostrar "parcela X de Y" pra quem esta na parcela 1/n (fora de months, que so mostra as RESTANTES)', () => {
+    const key = computeParcelaKey('LOJA EXEMPLO', '2026-02-10', 6);
+    const rowParcela2 = {
+      tipo: 'parcelamento', descricao: 'LOJA EXEMPLO',
+      data: '2026-03-28', vencimento: '2026-04-01', valor: 50, parcela_atual: 2, parcela_total: 6, key,
+    };
+    const rowParcela3 = {
+      tipo: 'parcelamento', descricao: 'LOJA EXEMPLO',
+      data: '2026-04-28', vencimento: '2026-05-01', valor: 50, parcela_atual: 3, parcela_total: 6, key,
+    };
+    const groups = computeParcelaGroups([rowParcela2, rowParcela3]);
+    assertEqual(groups[0].parcelaAtual, 3, 'a mais avancada das duas (3/6) e a que representa o estado atual do grupo');
+    assertEqual(groups[0].valor, 50);
+  });
+
   it('sem key pre-computada (so `data`, comportamento pre-fix), a mesma situacao NAO colapsa — evidencia do bug original', () => {
     const rowParcela2 = {
       tipo: 'parcelamento', descricao: 'LOJA EXEMPLO',
@@ -264,5 +279,61 @@ describe('parcelas: findParcelaDuplicates', () => {
 
   it('sem nenhuma pista, devolve lista vazia', () => {
     assertDeepEqual(findParcelaDuplicates([], [], 'NADA', '2026-06-10', 2, 10), []);
+  });
+});
+
+describe('parcelas: parcelaGroupsDaConta (reconstroi grupos a partir de TRANSACTIONS, usado pela aba Parcelas)', () => {
+  const CONTA = 'acc_cartao_teste';
+
+  it('compra nova (so previsoes, nenhuma confirmada) usa a previsao de MENOR parcela_atual como ancora — nao a ultima, que zeraria "remaining" e sumiria o grupo', () => {
+    const key = computeParcelaKey('LOJA NOVA', '2026-08-01', 5);
+    const previsoes = [2, 3, 4, 5].map((n) => ({
+      id: `seed_${n}`, previsto: true, parcelaKey: key, contaId: CONTA,
+      descricao: 'LOJA NOVA (parcela prevista)', data: `2026-${String(8 + n - 1).padStart(2, '0')}-01`,
+      parcela_atual: n, parcela_total: 5, valor: 100,
+    }));
+    const grupos = parcelaGroupsDaConta(previsoes, CONTA);
+    assertEqual(grupos.length, 1, 'a compra tem que aparecer como 1 grupo, nao sumir por causa da previsao mais avancada (5/5, remaining=0)');
+    assertEqual(grupos[0].parcelaAtual, 2, 'ancora e a previsao de MENOR parcela_atual (2/5) — a proxima a vencer');
+    assertEqual(grupos[0].remaining, 3);
+  });
+
+  it('com uma confirmada (parcela 2/5) e previsoes restantes (3/5..5/5), a ancora e a CONFIRMADA — nunca uma previsao', () => {
+    const key = computeParcelaKey('LOJA MISTA', '2026-08-01', 5);
+    const confirmada = {
+      id: 'confirmed_x', previsto: false, parcelaKey: key, contaId: CONTA,
+      descricao: 'LOJA MISTA', data: '2026-09-01', parcela_atual: 2, parcela_total: 5, valor: 100,
+    };
+    const previsoes = [3, 4, 5].map((n) => ({
+      id: `seed_${n}`, previsto: true, parcelaKey: key, contaId: CONTA,
+      descricao: 'LOJA MISTA (parcela prevista)', data: `2026-${String(8 + n - 1).padStart(2, '0')}-01`,
+      parcela_atual: n, parcela_total: 5, valor: 100,
+    }));
+    const grupos = parcelaGroupsDaConta([confirmada, ...previsoes], CONTA);
+    assertEqual(grupos.length, 1);
+    assertEqual(grupos[0].parcelaAtual, 2, 'a confirmada (2/5) e a ancora, mesmo com previsoes de numero maior (3,4,5) tambem presentes');
+    assertEqual(grupos[0].remaining, 3);
+  });
+
+  it('duas confirmadas da mesma compra (faturas diferentes): a ancora e a de MAIOR parcela_atual entre as confirmadas', () => {
+    const key = computeParcelaKey('LOJA DUAS FATURAS', '2026-02-10', 6);
+    const confirmada2 = {
+      id: 'confirmed_2', previsto: false, parcelaKey: key, contaId: CONTA,
+      descricao: 'LOJA DUAS FATURAS', data: '2026-03-28', parcela_atual: 2, parcela_total: 6, valor: 50,
+    };
+    const confirmada3 = {
+      id: 'confirmed_3', previsto: false, parcelaKey: key, contaId: CONTA,
+      descricao: 'LOJA DUAS FATURAS', data: '2026-04-28', parcela_atual: 3, parcela_total: 6, valor: 50,
+    };
+    const grupos = parcelaGroupsDaConta([confirmada2, confirmada3], CONTA);
+    assertEqual(grupos.length, 1);
+    assertEqual(grupos[0].parcelaAtual, 3, 'entre confirmadas, vence a de maior parcela_atual (3/6) — a mais recente');
+    assertEqual(grupos[0].remaining, 3);
+  });
+
+  it('transaction de OUTRO cartao (contaId diferente) nao entra no grupo desta conta', () => {
+    const key = computeParcelaKey('LOJA OUTRA CONTA', '2026-08-01', 3);
+    const t = { id: 'confirmed_y', previsto: false, parcelaKey: key, contaId: 'acc_outro_cartao', descricao: 'LOJA OUTRA CONTA', data: '2026-08-01', parcela_atual: 1, parcela_total: 3, valor: 30 };
+    assertDeepEqual(parcelaGroupsDaConta([t], CONTA), []);
   });
 });
