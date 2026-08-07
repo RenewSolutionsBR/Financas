@@ -213,7 +213,7 @@ describe('parcelas: autoConfirmParcelas', () => {
   });
 
   it('o id confirmado NUNCA reaproveita o id da previsao — namespaces sempre diferentes', () => {
-    const previsao = { id: 'seed_algumacoisa', previsto: true, parcelaKey: key, data: '2026-05-30', descricao: 'LOJA EXEMPLO (parcela prevista)' };
+    const previsao = { id: 'seed_algumacoisa', previsto: true, parcelaKey: key, parcela_atual: 2, data: '2026-05-30', descricao: 'LOJA EXEMPLO (parcela prevista)' };
     const { updatedTransactions, removedIds } = autoConfirmParcelas([rowParcelamento()], [previsao], null, CONTA, FORMA);
     assert(updatedTransactions[0].id !== previsao.id);
     assert(updatedTransactions[0].id.startsWith('confirmed_'));
@@ -221,8 +221,14 @@ describe('parcelas: autoConfirmParcelas', () => {
   });
 
   it('com candidato previsto, escolhe o de data MAIS PROXIMA do vencimento desta fatura entre varios', () => {
-    const longe = { id: 'seed_longe', previsto: true, parcelaKey: key, data: '2026-04-01', categoria: 'outros', descricao: 'LOJA EXEMPLO (parcela prevista)' };
-    const perto = { id: 'seed_perto', previsto: true, parcelaKey: key, data: '2026-05-29', categoria: 'lazer', descricao: 'LOJA EXEMPLO (parcela prevista)' };
+    // Ambas as previsoes precisam ter o MESMO parcela_atual da linha da
+    // fatura (2, o padrao de rowParcelamento): candidatos so podem ser da
+    // MESMA parcela que a linha representa, nunca de uma parcela diferente
+    // da mesma compra — sem isso, uma previsao de OUTRA parcela (ex.: 4/5)
+    // podia ser "roubada" como candidata de uma linha que na verdade
+    // representa a parcela 2/5, bug real visto em producao.
+    const longe = { id: 'seed_longe', previsto: true, parcelaKey: key, parcela_atual: 2, data: '2026-04-01', categoria: 'outros', descricao: 'LOJA EXEMPLO (parcela prevista)' };
+    const perto = { id: 'seed_perto', previsto: true, parcelaKey: key, parcela_atual: 2, data: '2026-05-29', categoria: 'lazer', descricao: 'LOJA EXEMPLO (parcela prevista)' };
     const { updatedTransactions } = autoConfirmParcelas([rowParcelamento()], [longe, perto], null, CONTA, FORMA);
     // "longe" nao e candidato escolhido: fica intocado na lista (nao e responsabilidade
     // do autoConfirmParcelas limpar previsoes nao usadas, isso e syncPredictions). Por
@@ -231,10 +237,57 @@ describe('parcelas: autoConfirmParcelas', () => {
     assertEqual(confirmada.categoria, 'lazer', 'devia ter escolhido o candidato mais perto do vencimento (perto), herdando a categoria dele');
   });
 
-  it('sem candidato previsto mas com IRMAO REAL da mesma parcelaKey, herda a categoria do irmao em vez de A_CLASSIFICAR', () => {
-    const irmaoReal = { id: 'confirmed_outro', previsto: false, parcelaKey: key, categoria: 'transporte' };
+  it('candidato previsto de OUTRA parcela da mesma compra (parcelaKey igual, parcela_atual diferente) NUNCA e "roubado" como candidato desta linha', () => {
+    // Bug real de producao: uma linha de fatura representando a parcela 2/5
+    // "roubava" a previsao seed da parcela 4/5 (mesma parcelaKey, MESMA
+    // compra, mas parcela_atual DIFERENTE) como se fosse o candidato certo
+    // a confirmar — a previsao errada virava confirmada com o numero da
+    // parcela ERRADO, e a parcela 2/5 de verdade (lancamento manual ou outra
+    // previsao) ficava sem candidato algum, gerando confirmacao duplicada.
+    const previsaoDeOutraParcela = { id: 'seed_parcela_4', previsto: true, parcelaKey: key, parcela_atual: 4, data: '2026-04-01', categoria: 'outros', descricao: 'LOJA EXEMPLO (parcela prevista)' };
+    // rowParcelamento() representa a parcela_atual 2 (padrao) — sem candidato
+    // de parcela_atual 2 disponivel, mas parcela_atual > 1, confirma sozinha
+    // (regra ja existente), SEM tocar na previsao da parcela 4.
+    const { updatedTransactions, confirmed } = autoConfirmParcelas([rowParcelamento()], [previsaoDeOutraParcela], null, CONTA, FORMA);
+    assertEqual(updatedTransactions.length, 2, 'a previsao da parcela 4 fica intocada, e a parcela 2 (row) confirma como uma transacao SEPARADA');
+    const previsaoIntocada = updatedTransactions.find((t) => t.id === 'seed_parcela_4');
+    assert(previsaoIntocada, 'a previsao da parcela 4 nao pode ser removida nem alterada por uma linha que representa a parcela 2');
+    assertEqual(previsaoIntocada.previsto, true);
+    const novaConfirmada = updatedTransactions.find((t) => t.id !== 'seed_parcela_4');
+    assertEqual(novaConfirmada.parcela_atual, 2, 'a nova confirmada precisa ser a parcela 2 (da row), nunca herdar o numero 4 da previsao errada');
+    assertEqual(novaConfirmada.categoria, CATEGORIA_A_CLASSIFICAR, 'sem candidato nem irmao real da MESMA parcela, cai em A_CLASSIFICAR — nao herda categoria de uma previsao de parcela diferente');
+    assertEqual(confirmed.length, 1);
+  });
+
+  it('sem candidato previsto mas com IRMAO REAL de OUTRA parcela da mesma compra (parcela_atual diferente), herda a categoria mas cria uma transacao SEPARADA pra esta parcela', () => {
+    // parcela_atual 1 != row.parcela_atual (2 por padrao) — irmaoReal aqui e
+    // uma parcela DIFERENTE da mesma compra (ex.: 1/3 ja confirmada antes),
+    // nao a mesma linha que row representa. Precisa herdar a categoria dela
+    // (mesmo raciocinio de sempre), mas SEM reaproveitar o id: sao parcelas
+    // diferentes, cada uma com seu proprio registro.
+    const irmaoReal = { id: 'confirmed_outro', previsto: false, parcelaKey: key, parcela_atual: 1, categoria: 'transporte' };
     const { updatedTransactions } = autoConfirmParcelas([rowParcelamento()], [irmaoReal], null, CONTA, FORMA);
+    assertEqual(updatedTransactions.length, 2, 'irmaoReal (parcela 1) permanece intocado, e a parcela 2 (row) vira uma transacao NOVA e separada');
+    const novaConfirmada = updatedTransactions.find((t) => t.id !== irmaoReal.id);
+    assertEqual(novaConfirmada.categoria, 'transporte', 'herda a categoria do irmao mesmo sendo parcela diferente');
+    assertEqual(novaConfirmada.parcela_atual, 2);
+    assert(novaConfirmada.id.startsWith('confirmed_'), 'parcela diferente do irmao real NUNCA reaproveita o id dele');
+  });
+
+  it('sem candidato previsto mas com IRMAO REAL da MESMA parcelaKey e MESMO parcela_atual (a propria parcela ja lancada manualmente), ATUALIZA o registro existente em vez de duplicar', () => {
+    // Bug real de producao: reimportar a mesma fatura (ou uma 2a fatura que
+    // ainda traz a MESMA parcela) criava uma transacao confirmed_... NOVA do
+    // zero quando ja existia um lancamento manual real com essa parcela —
+    // o manual ficava "solto" (nunca marcado como usado, reaparecia em "No
+    // app, nao na fatura") e a nova confirmada virava uma copia duplicada em
+    // "Conciliado automaticamente".
+    const irmaoReal = { id: 'tx_manual_parcela_2', previsto: false, parcelaKey: key, parcela_atual: 2, categoria: 'transporte' };
+    const { updatedTransactions, confirmed } = autoConfirmParcelas([rowParcelamento()], [irmaoReal], null, CONTA, FORMA);
+    assertEqual(updatedTransactions.length, 1, 'nao pode duplicar: so 1 transacao no resultado, o irmaoReal ATUALIZADO');
+    assertEqual(updatedTransactions[0].id, 'tx_manual_parcela_2', 'reaproveita o id do lancamento manual existente, nunca cria confirmed_... novo');
     assertEqual(updatedTransactions[0].categoria, 'transporte');
+    assertEqual(updatedTransactions[0].previsto, false);
+    assertEqual(confirmed.length, 1);
   });
 
   it('sem candidato e sem irmao real, cai em A_CLASSIFICAR', () => {

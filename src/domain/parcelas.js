@@ -164,7 +164,15 @@ export function autoConfirmParcelas(faturaRows, transactions, dataCorte, contaId
   for (const row of faturaRows || []) {
     if (row.tipo !== 'parcelamento') continue;
     const key = computeParcelaKey(row.descricao, row.data, row.parcela_total);
-    const candidates = (transactions || []).filter((t) => t.previsto && t.parcelaKey === key && !usedIds.has(t.id));
+    // parcelaKey identifica a COMPRA inteira, não uma parcela específica —
+    // uma previsão da parcela 4/5 (previsto:true, mesma parcelaKey) nunca
+    // pode virar candidata pra confirmar a linha da fatura que representa a
+    // parcela 2/5 da mesma compra. Sem o filtro por parcela_atual, isso
+    // "roubava" uma previsão de uma parcela FUTURA como se fosse a mesma
+    // parcela desta linha, deixando pra trás o candidato certo (ou, pior,
+    // nenhum candidato de verdade) — bug real visto em produção junto com o
+    // de `proprioLancamentoManual` logo abaixo, mesma causa raiz.
+    const candidates = (transactions || []).filter((t) => t.previsto && t.parcelaKey === key && t.parcela_atual === row.parcela_atual && !usedIds.has(t.id));
     let candidate = null;
     if (candidates.length) {
       candidates.sort((a, b) => dateDiffDays(a.data, row.vencimento) - dateDiffDays(b.data, row.vencimento));
@@ -172,13 +180,35 @@ export function autoConfirmParcelas(faturaRows, transactions, dataCorte, contaId
     }
     if (!candidate && !(row.parcela_atual > 1)) continue; // parcela 1 de verdade: exige confirmação manual
 
+    // Lançamento REAL (não previsto) já existente com a MESMA parcelaKey —
+    // pode ser QUALQUER parcela da mesma compra, usado só para herdar a
+    // categoria (ex.: a parcela 1/6 já confirmada empresta a categoria pra
+    // parcela 2/6 chegando agora). Mantido solto, sem exigir parcela_atual
+    // igual, porque herdar categoria de uma parcela IRMÃ (diferente) da
+    // mesma compra sempre foi o comportamento esperado.
     const irmaoReal = !candidate ? (transactions || []).find((t) => !t.previsto && t.parcelaKey === key) : null;
 
+    // Caso mais específico: a PRÓPRIA parcela que esta linha representa (mesma
+    // parcelaKey E mesmo parcela_atual) já foi lançada manualmente antes (ex.:
+    // "+lançar" ou digitada à mão antes da fatura chegar). Sem tratar isso
+    // como o registro a ATUALIZAR (em vez de criar um novo), reimportar a
+    // fatura (ou importar uma 2ª fatura que ainda traz a MESMA parcela, ex.
+    // fatura reemitida) criava uma transação `confirmed_...` NOVA do zero: o
+    // lançamento manual original ficava "solto" (nunca virava `usedIds`,
+    // reaparecia em "No app, não na fatura") e a nova confirmada aparecia
+    // como cópia duplicada em "Conciliado automaticamente" — bug real visto
+    // em produção.
+    const proprioLancamentoManual = !candidate
+      ? (transactions || []).find((t) => !t.previsto && t.parcelaKey === key && t.parcela_atual === row.parcela_atual)
+      : null;
+
     const descricaoBase = (candidate ? candidate.descricao : row.descricao).replace(/\s*\(parcela prevista\)\s*$/i, '');
-    const newId = `confirmed_${key.replace(/[^a-zA-Z0-9]/g, '_')}_${row.vencimento}`;
+    const newId = proprioLancamentoManual ? proprioLancamentoManual.id : `confirmed_${key.replace(/[^a-zA-Z0-9]/g, '_')}_${row.vencimento}`;
     if (candidate) {
       usedIds.add(candidate.id);
       if (candidate.id !== newId) { byId.delete(candidate.id); removedIds.push(candidate.id); }
+    } else if (proprioLancamentoManual) {
+      usedIds.add(proprioLancamentoManual.id);
     }
     const updated = {
       id: newId,
