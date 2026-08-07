@@ -350,4 +350,40 @@ describe('santander-cartao-pdf: vencimentoFromText', () => {
   it('sem nenhum rotulo de vencimento reconhecivel, devolve null', () => {
     assertEqual(vencimentoFromText(['nada aqui']), null);
   });
+
+  // Bug real de producao: fatura Visa importada com vencimento 30/01/2026
+  // salvou 24/02/2026 (a data de "Melhor dia para compras", nao o
+  // vencimento). Linhas reproduzidas a partir do texto REAL extraido dessa
+  // fatura pelo extractLines (pdf.js) — layout "3 caixas lado a lado" (Total
+  // a Pagar / Vencimento / Seu limite e), com a data no MEIO da linha de
+  // dados, 2 linhas abaixo do cabecalho.
+  it('layout Visa: cabecalho "Total a Pagar Vencimento Seu limte e" com a data no MEIO da linha de dados, 2 linhas abaixo', () => {
+    const linhas = [
+      'Olá, Rene! Esta é a fatura do seu cartão SANTANDER',
+      'UNIQUE VISA contendo compras e pagamentos realizados',
+      'Total a Pagar Vencimento Seu limte é',
+      'até 23/01.',
+      'R$ 11.680,38 30/01/2026 R$49.270,00',
+      'Opções de Pagamento até a Data de Vencimento',
+      '1 Pagamento Total R$11.680,38 Melhor dia para',
+      'Limite utilizado Limite Disponível:',
+      'compras',
+      'Sempre a sua MELHOR opção!',
+      'R$24.266,21 R$25.003,79',
+      'No caso de pagamentos após a data de vencimento você tem alguns custos 24/02/2026',
+      'adicionais por conta do atraso: Juros: 15,19% a.m. + Juros por atraso: 1,00% a.m.',
+    ];
+    const d = vencimentoFromText(linhas);
+    assertEqual(d.getFullYear(), 2026);
+    assertEqual(d.getMonth(), 0, 'janeiro (0-indexado) — o vencimento real e 30/01, nunca 24/02 (Melhor dia para compras)');
+    assertEqual(d.getDate(), 30);
+  });
+
+  it('nunca casa "vencimento" solto no meio de uma frase distante de aviso — regex antigo pegava a data errada logo depois dela', () => {
+    const linhas = [
+      'No caso de pagamentos após a data de vencimento você tem alguns custos 24/02/2026',
+      'adicionais por conta do atraso.',
+    ];
+    assertEqual(vencimentoFromText(linhas), null, 'sem cabecalho reconhecivel antes, nenhuma data deve ser extraida daqui');
+  });
 });

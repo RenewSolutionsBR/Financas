@@ -64,19 +64,64 @@ export function extrairPeriodoCompras(linhas, dataCorteISO) {
 // ("Visa-DD-MM-AAAA.pdf"), convenção pessoal de um usuário só com um cartão.
 // O app novo é multi-cartão e não pode depender de arquivo renomeado — só o
 // texto do PDF (rótulo "Vencimento" impresso), que já funcionava como
-// fallback no app anterior. Medido contra as 3 faturas reais (Step 6): o
-// rótulo aparece na página 1 (capa), no formato "Vencimento: DD/MM/AAAA" —
-// por isso `extractLines` expõe a página 1 sem gate de seção.
+// fallback no app anterior.
+//
+// Duas formas medidas contra faturas reais (Mastercard e Visa, ambas
+// Santander): a Mastercard imprime "Vencimento: DD/MM/AAAA" isolado numa
+// linha só (ou perto). A Visa imprime um cartão de 3 caixas lado a lado —
+// "Total a Pagar Vencimento Seu limte é" como CABEÇALHO numa linha, e só
+// 1-2 linhas depois vem a linha de dados com os 3 valores nessa MESMA
+// ordem ("R$ 11.680,38 30/01/2026 R$49.270,00") — o vencimento é sempre o
+// valor do MEIO nessa linha de 3 colunas, nunca o primeiro nem o último.
+// Por isso o cabeçalho isolado ("^Vencimento$") não cobre a Visa: o rótulo
+// nunca aparece sozinho numa linha.
+//
+// O antigo regex "solto" (`Vencimento\D+DD/MM/AAAA` em QUALQUER lugar do
+// texto, sem exigir adjacência real) foi removido: ele podia casar com uma
+// ocorrência de "vencimento" no meio de uma frase de aviso de juros
+// distante no texto ("...após a data de vencimento você tem alguns custos
+// 24/02/2026"), pegando uma data completamente errada (nesse caso, a do
+// bloco "Melhor dia para compras", não o vencimento real) — bug real visto
+// em produção com uma fatura Visa.
+function dataDoMeioDeLinhaComTresValores(linha) {
+  const datas = [...linha.matchAll(/(\d{2})\/(\d{2})\/(\d{4})/g)];
+  const valores = (linha.match(/R\$\s*[\d.,]+/g) || []).length;
+  // Layout de 3 colunas: exatamente 1 data no meio de 2 valores monetários
+  // (R$ ... DD/MM/AAAA ... R$ ...) — nunca a primeira nem a última data de
+  // uma linha com várias, que poderiam vir de outro contexto.
+  if (datas.length !== 1 || valores < 2) return null;
+  const [, dd, mm, aaaa] = datas[0];
+  return new Date(parseInt(aaaa, 10), parseInt(mm, 10) - 1, parseInt(dd, 10));
+}
+
+// "Vencimento" e a data no MESMO texto, sem nada entre o rótulo e os dois
+// pontos/data (ex.: "Vencimento: 25/06/2026") — âncorado logo depois do
+// rótulo (`\s*:?\s*`), nunca `\D+` solto: esse era o regex frouxo que casava
+// com "vencimento" no meio de uma frase distante (aviso de juros) e uma
+// data completamente sem relação mais adiante no texto.
+const INLINE_RE = /^Vencimento\s*:?\s*(\d{2})\/(\d{2})\/(\d{4})/i;
+
 export function vencimentoFromText(linhas) {
   for (let i = 0; i < linhas.length; i++) {
-    if (/^Vencimento$/i.test(linhas[i].trim())) {
+    const linha = linhas[i].trim();
+    if (/^Vencimento$/i.test(linha)) {
       for (let j = i + 1; j < Math.min(i + 3, linhas.length); j++) {
         const m = /(\d{2})\/(\d{2})\/(\d{4})/.exec(linhas[j]);
         if (m) return new Date(parseInt(m[3], 10), parseInt(m[2], 10) - 1, parseInt(m[1], 10));
       }
     }
-    const inline = /Vencimento\D+(\d{2})\/(\d{2})\/(\d{4})/i.exec(linhas[i]);
+    const inline = INLINE_RE.exec(linha);
     if (inline) return new Date(parseInt(inline[3], 10), parseInt(inline[2], 10) - 1, parseInt(inline[1], 10));
+
+    // Cabeçalho "Total a Pagar Vencimento Seu limte é" (layout Visa): a
+    // data certa é a do MEIO da linha de dados logo abaixo, não a primeira
+    // data solta que aparecer no texto adiante.
+    if (/vencimento/i.test(linha) && /total a pagar/i.test(linha)) {
+      for (let j = i + 1; j < Math.min(i + 3, linhas.length); j++) {
+        const dt = dataDoMeioDeLinhaComTresValores(linhas[j]);
+        if (dt) return dt;
+      }
+    }
   }
   return null;
 }
