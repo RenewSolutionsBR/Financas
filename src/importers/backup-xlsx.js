@@ -15,7 +15,13 @@ import * as storage from '../core/storage.js';
 export const SCHEMA_VERSION_BACKUP = 2;
 
 const ABA_INFO = '_backup_info';
-const STORES_EXPORTAVEIS = STORES.map((s) => s.nome);
+// auditLog fica de fora do backup de propósito: é um log de DIAGNÓSTICO (tem
+// seu próprio botão de exportação em .json, ver domain/audit-log.js), não
+// dado financeiro — restaurar um log de eventos velho num aparelho diferente
+// produziria uma trilha de diagnóstico enganosa. Incluí-lo aqui também
+// quebraria o ciclo exportar→importar (comentário acima): a store nunca
+// entrou na lista que importarBackup sabe ler de volta.
+const STORES_EXPORTAVEIS = STORES.map((s) => s.nome).filter((nome) => nome !== 'auditLog');
 
 // Prefixo que marca um valor serializado como JSON. Sem ele, não dá para
 // distinguir a string "[1,2]" digitada pelo usuário de um array de verdade.

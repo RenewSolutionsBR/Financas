@@ -1,5 +1,6 @@
 import { describe, it, assert, assertEqual, assertDeepEqual } from './harness.js';
 import { datasetToSheets, sheetsToDataset, detectBackupVersion, SCHEMA_VERSION_BACKUP } from '../src/importers/backup-xlsx.js';
+import { STORES } from '../src/core/db-schema.js';
 
 const DATASET = {
   transactions: [
@@ -53,6 +54,24 @@ describe('backup: ciclo completo', () => {
     assertEqual(dataset.statements[0].rows.length, 1);
     assertEqual(dataset.statements[0].rows[0].valor, 23.5);
     assertEqual(dataset.transactions[1].origemRef.linhaId, 'ab12cd34');
+  });
+
+  // Reproduz o achado da revisão final do log de auditoria: STORES_EXPORTAVEIS
+  // é derivado de STORES (schema ao vivo), não de uma lista escrita à mão —
+  // sem este teste, uma store nova no schema (como auditLog, Task 1) entrava
+  // no backup em silêncio sem que NENHUM teste do ciclo notasse, porque o
+  // teste acima roda sobre um DATASET fixo, nunca sobre STORES de verdade.
+  // auditLog é a única exceção deliberada (log de diagnóstico, tem exportação
+  // própria em .json — ver src/importers/backup-xlsx.js) — todo o resto do
+  // schema precisa continuar aparecendo nas abas do backup.
+  it('toda store do schema (exceto auditLog, que tem exportação própria) aparece nas abas do backup', () => {
+    const sheets = datasetToSheets(DATASET);
+    const nomesDasAbas = Object.keys(sheets);
+    const storesEsperadas = STORES.map((s) => s.nome).filter((nome) => nome !== 'auditLog');
+    for (const nome of storesEsperadas) {
+      assert(nomesDasAbas.includes(nome), `store "${nome}" do schema não apareceu nas abas do backup`);
+    }
+    assert(!nomesDasAbas.includes('auditLog'), 'auditLog é log de diagnóstico, não deveria entrar no backup');
   });
 
   it('preserva booleanos e não os transforma em texto', () => {
