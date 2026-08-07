@@ -19,6 +19,7 @@ import '../importers/santander-extrato-xls.js';
 import { autoConfirmParcelas, syncPredictions } from '../domain/parcelas.js';
 import { atribuirNatureza, confrontarFaturaDebito } from '../domain/reconcile-bank.js';
 import { processarPagamentoFatura } from '../domain/pagamento-fatura.js';
+import { registrarEvento, TIPOS_EVENTO } from '../domain/audit-log.js';
 
 // Orquestra statement -> parcelamento (fatura) OU natureza bancaria (extrato)
 // -> regra de registro unico do pagamento de fatura -> (classificacao
@@ -129,6 +130,19 @@ export async function commitImportacaoEGravar(args) {
   await storage.put('statements', plano.statementToPut);
   for (const id of plano.transactionIdsToRemove) await storage.remove('transactions', id);
   if (plano.transactionsToPut.length) await storage.putMany('transactions', plano.transactionsToPut);
+
+  const totalLinhas = (plano.statementToPut.rows || []).length;
+  const confirmadas = plano.transactionsToPut.filter((t) => !t.previsto && t.origem === 'fatura').length;
+  const previstas = plano.transactionsToPut.filter((t) => t.previsto).length;
+  const pagamentos = plano.transactionsToPut.filter((t) => t.natureza === 'pagamento_fatura').length;
+  const resumo = args.tipo === 'fatura'
+    ? `Importou fatura: ${totalLinhas} linha(s), ${confirmadas} confirmada(s) automaticamente, ${previstas} prevista(s), ${pagamentos} pagamento(s)`
+    : `Importou extrato: ${totalLinhas} linha(s), ${pagamentos} pagamento(s) de fatura reconhecido(s)`;
+  await registrarEvento(
+    args.tipo === 'fatura' ? TIPOS_EVENTO.IMPORTACAO_FATURA : TIPOS_EVENTO.IMPORTACAO_EXTRATO,
+    resumo
+  );
+
   return plano;
 }
 

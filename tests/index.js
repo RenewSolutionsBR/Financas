@@ -41,4 +41,5 @@ export const BROWSER_ONLY_MODULES = [
   './lancamentos.browser.test.js',
   './onboarding.browser.test.js',
   './audit-log.browser.test.js',
+  './conciliacao-import.browser.test.js',
 ];
