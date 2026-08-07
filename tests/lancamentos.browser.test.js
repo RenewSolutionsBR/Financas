@@ -545,4 +545,31 @@ describe('lancamentos (DOM real): log de auditoria', () => {
       await storage.remove('paymentMethods', FORMA_ID);
     }
   });
+
+  // apagarTransacoes/apagarTudo (rodapé da tela) registram evento de auditoria
+  // DEPOIS que o reset de storage é confirmado — clicar de verdade no botão
+  // exercita o listener real, com window.confirm stubado pra sempre aceitar.
+  it('clicar em "Apagar todas as transações" registra um evento apagar_transacoes', async () => {
+    const { listarEventos, TIPOS_EVENTO } = await import('../src/domain/audit-log.js');
+    const confirmOriginal = window.confirm;
+    window.confirm = () => true;
+    try {
+      montarPainel();
+      resetLancamentos();
+      await renderLancamentos();
+
+      const antes = (await listarEventos()).length;
+      const botao = [...document.querySelectorAll('.link-perigo')]
+        .find((b) => b.textContent.includes('Apagar todas as transações'));
+      assert(botao, 'botão "Apagar todas as transações" não encontrado no rodapé');
+      botao.click();
+      await new Promise((r) => setTimeout(r, 50));
+
+      const eventos = await listarEventos();
+      assert(eventos.length > antes, 'precisa ter pelo menos 1 evento novo');
+      assertEqual(eventos[0].tipo, TIPOS_EVENTO.APAGAR_TRANSACOES);
+    } finally {
+      window.confirm = confirmOriginal;
+    }
+  });
 });

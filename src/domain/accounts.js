@@ -5,6 +5,7 @@
 import { uid } from '../core/ids.js';
 import { normalizeDescricao } from '../core/text.js';
 import * as storage from '../core/storage.js';
+import { registrarEvento, TIPOS_EVENTO } from './audit-log.js';
 
 export const TIPO_CONTA = 'conta';
 export const TIPO_CARTAO = 'cartao';
@@ -119,7 +120,8 @@ export async function listAccounts() {
 }
 
 export async function saveAccount(a) {
-  return storage.put('accounts', a);
+  await storage.put('accounts', a);
+  await registrarEvento(TIPOS_EVENTO.CADASTRO_ATUALIZADO, 'Cadastro de conta atualizado');
 }
 
 export async function removeAccount(id, transactions) {

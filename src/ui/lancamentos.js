@@ -132,6 +132,7 @@ async function apagarTransacoes(aoMudar) {
   );
   if (!ok) return;
   await storage.resetTransacoes();
+  await registrarEvento(TIPOS_EVENTO.APAGAR_TRANSACOES, 'Apagou todas as transações e documentos importados');
   toast('Lançamentos e documentos importados foram apagados.', 'ok');
   await aoMudar();
 }
@@ -143,6 +144,7 @@ async function apagarTudo(aoMudar) {
   );
   if (!ok) return;
   await storage.resetAllData();
+  await registrarEvento(TIPOS_EVENTO.APAGAR_TUDO, 'Apagou todos os dados do app');
   toast('Todos os dados foram apagados.', 'ok');
   await aoMudar();
 }

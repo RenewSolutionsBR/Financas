@@ -38,6 +38,8 @@ export const BROWSER_ONLY_MODULES = [
   './storage.browser.test.js',
   './backup.browser.test.js',
   './accounts.browser.test.js',
+  './payment-methods.browser.test.js',
+  './categories.browser.test.js',
   './lancamentos.browser.test.js',
   './onboarding.browser.test.js',
   './audit-log.browser.test.js',

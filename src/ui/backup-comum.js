@@ -7,6 +7,7 @@ import { el, toast, abrirModal } from './components.js';
 import { campo } from './cadastros-comuns.js';
 import { listAccounts, TIPO_CARTAO } from '../domain/accounts.js';
 import { exportarBackup, importarBackup, detectarVersaoDoArquivo } from '../importers/backup-xlsx.js';
+import { registrarEvento, TIPOS_EVENTO } from '../domain/audit-log.js';
 
 export async function baixarBackup() {
   const blob = await exportarBackup();
@@ -42,6 +43,7 @@ export function montarInputImportarBackup(aoMudar) {
       }
       const { contagens, avisos } = await importarBackup(buffer, { cartaoTitularId, formaCreditoId: 'pm_credito' });
       const total = Object.values(contagens).reduce((a, b) => a + b, 0);
+      await registrarEvento(TIPOS_EVENTO.BACKUP_IMPORTADO, `Importou backup: ${total} registro(s)`);
       // "restaurados" sugeriria uma substituicao. importarBackup grava com
       // putMany store a store: escreve o que esta no arquivo e nunca remove o
       // que ja estava no aparelho - e uma mesclagem, nao uma restauracao.

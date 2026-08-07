@@ -4,6 +4,7 @@
 import { uid } from '../core/ids.js';
 import { normalizeDescricao } from '../core/text.js';
 import * as storage from '../core/storage.js';
+import { registrarEvento, TIPOS_EVENTO } from './audit-log.js';
 
 export const TIPOS_FORMA = ['credito', 'debito', 'pix', 'dinheiro', 'boleto', 'transferencia', 'outro'];
 
@@ -95,7 +96,8 @@ export async function listFormas() {
 }
 
 export async function saveForma(pm) {
-  return storage.put('paymentMethods', pm);
+  await storage.put('paymentMethods', pm);
+  await registrarEvento(TIPOS_EVENTO.CADASTRO_ATUALIZADO, 'Cadastro de forma de pagamento atualizado');
 }
 
 export async function removeForma(id, transactions) {

@@ -3,6 +3,7 @@
 
 import { uid } from '../core/ids.js';
 import * as storage from '../core/storage.js';
+import { registrarEvento, TIPOS_EVENTO } from './audit-log.js';
 
 // Id fixo, contrato do sistema. É buscado SEMPRE por id, nunca por nome: o
 // usuário pode renomear a categoria à vontade sem quebrar nada.
@@ -69,7 +70,8 @@ export async function listCategorias() {
 }
 
 export async function saveCategoria(c) {
-  return storage.put('categories', c);
+  await storage.put('categories', c);
+  await registrarEvento(TIPOS_EVENTO.CADASTRO_ATUALIZADO, 'Cadastro de categoria atualizado');
 }
 
 export async function removeCategoria(id, transactions) {
