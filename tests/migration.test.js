@@ -5,16 +5,16 @@ import { LEGACY_V1 } from './fixtures/legacy-v1.js';
 const OPC = { cartaoTitularId: 'acc_cartao_1', formaCreditoId: 'pm_credito' };
 
 describe('db-schema: stores', () => {
-  it('declara os sete stores da v2', () => {
+  it('declara os oito stores da v3', () => {
     assertDeepEqual(
       STORES.map((s) => s.nome).sort(),
-      ['accounts', 'categories', 'classificationRules', 'meta', 'paymentMethods', 'statements', 'transactions'].sort()
+      ['accounts', 'auditLog', 'categories', 'classificationRules', 'meta', 'paymentMethods', 'statements', 'transactions'].sort()
     );
   });
 
   it('usa banco próprio, distinto do app anterior', () => {
     assertEqual(DB_NAME, 'financas');
-    assertEqual(DB_VERSION, 2);
+    assertEqual(DB_VERSION, 3);
   });
 
   it('transactions tem índices por data, parcelaKey e conta', () => {

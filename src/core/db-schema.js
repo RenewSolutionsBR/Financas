@@ -7,7 +7,7 @@ import { round2 } from './money.js';
 import { stableHash } from './ids.js';
 
 export const DB_NAME = 'financas';
-export const DB_VERSION = 2;
+export const DB_VERSION = 3;
 
 export const STORES = [
   {
@@ -35,6 +35,7 @@ export const STORES = [
     keyPath: 'id',
     indices: [{ nome: 'by_padrao', keyPath: 'padrao', unique: false }],
   },
+  { nome: 'auditLog', keyPath: 'id', indices: [] },
   { nome: 'meta', keyPath: 'key', indices: [] },
 ];
 
