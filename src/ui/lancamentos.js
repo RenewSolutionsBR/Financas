@@ -21,7 +21,7 @@ import {
 } from '../domain/transactions.js';
 import { listCategorias } from '../domain/categories.js';
 import { listFormas } from '../domain/payment-methods.js';
-import { registrarEvento, TIPOS_EVENTO } from '../domain/audit-log.js';
+import { registrarEvento, TIPOS_EVENTO, listarEventos } from '../domain/audit-log.js';
 import { listAccounts } from '../domain/accounts.js';
 import { fmtBRL } from '../core/money.js';
 import { formatDateBR, todayISO, monthKey } from '../core/dates.js';
@@ -99,6 +99,18 @@ export async function renderLancamentos() {
 // diário — sem precisar ir até Cadastros. Reusa a mesma lógica de
 // exportar/importar de backup-comum.js (ver seção "Backup" de Cadastros),
 // pra não duplicar tratamento de erro de leitura de arquivo.
+async function exportarLog() {
+  const eventos = await listarEventos();
+  const blob = new Blob([JSON.stringify(eventos, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const link = el('a', { href: url, download: `log-financas-${new Date().toISOString().slice(0, 10)}.json` });
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+  toast('Log exportado.', 'ok');
+}
+
 function rodape(aoMudar) {
   const inputImportar = montarInputImportarBackup(aoMudar);
   inputImportar.id = 'inputImportarBackupLancamentos';
@@ -106,6 +118,7 @@ function rodape(aoMudar) {
     el('div', { class: 'acoes' }, [
       el('button', { class: 'btn', type: 'button', text: 'Backup completo', onclick: baixarBackup }),
       el('label', { class: 'btn', for: 'inputImportarBackupLancamentos', style: 'text-align:center; cursor:pointer;' }, ['Importar backup']),
+      el('button', { class: 'btn', type: 'button', text: 'Exportar log', onclick: exportarLog }),
     ]),
     inputImportar,
     el('div', { class: 'links-perigo' }, [

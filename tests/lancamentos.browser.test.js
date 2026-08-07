@@ -572,4 +572,12 @@ describe('lancamentos (DOM real): log de auditoria', () => {
       window.confirm = confirmOriginal;
     }
   });
+
+  it('o rodapé tem um botão "Exportar log"', async () => {
+    montarPainel();
+    resetLancamentos();
+    await renderLancamentos();
+    const botao = [...document.querySelectorAll('.rodape-lancamentos button')].find((b) => b.textContent === 'Exportar log');
+    assert(botao, 'precisa existir um botão "Exportar log" no rodapé');
+  });
 });
