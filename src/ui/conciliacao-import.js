@@ -43,7 +43,22 @@ export function documentoJaImportado(contaId, tipo, statement, documentosExisten
 }
 
 export async function commitImportacao({ tipo, contaId, statement, rows, transactions, accounts, apelidosTitular, allStatements, regras, formas }) {
-  const statementToPut = { ...statement, id: idDeterministicoDoDocumento(contaId, tipo, statement), contaId, tipo };
+  // As linhas devolvidas pelo adaptador (rows) carregam a data da COMPRA
+  // (r.data), nao a data de VENCIMENTO da fatura — so o statement tem essa
+  // informacao. autoConfirmParcelas/syncPredictions (domain/parcelas.js)
+  // precisam de row.vencimento pra gerar o id da parcela confirmada e a
+  // data de cada previsao futura, e runReconciliation (Conciliacao) precisa
+  // do MESMO row.vencimento pra recalcular a parcelaKey ao re-exibir a
+  // fatura depois de salva. O carimbo precisa ir pro `rows` gravado no
+  // statementToPut (nao so numa variavel local usada so na hora do
+  // commit): salvar sem ele fazia autoConfirmParcelas confirmar direito na
+  // hora da importacao, mas toda vez que a fatura era reaberta depois
+  // (Conciliacao, ou uma 2a fatura importada), runReconciliation lia
+  // row.vencimento undefined do storage e o matching por data/parcelaKey
+  // falhava silenciosamente — as proprias parcelas que a fatura tinha
+  // confirmado apareciam de volta em "No app, nao na fatura".
+  const rowsComVencimento = rows.map((r) => ({ ...r, vencimento: r.vencimento || statement.vencimento }));
+  const statementToPut = { ...statement, id: idDeterministicoDoDocumento(contaId, tipo, statement), contaId, tipo, rows: rowsComVencimento };
 
   const transactionsToPut = [];
   const transactionIdsToRemove = [];
@@ -60,16 +75,6 @@ export async function commitImportacao({ tipo, contaId, statement, rows, transac
   };
 
   if (tipo === 'fatura') {
-    // As linhas devolvidas pelo adaptador (rows) carregam a data da COMPRA
-    // (r.data), nao a data de VENCIMENTO da fatura — so o statement tem essa
-    // informacao. autoConfirmParcelas/syncPredictions (domain/parcelas.js)
-    // precisam de row.vencimento pra gerar o id da parcela confirmada e a
-    // data de cada previsao futura; sem esse carimbo, row.vencimento vinha
-    // undefined, toda fatura gerava o MESMO id de confirmacao para uma dada
-    // parcelaKey (colidindo entre faturas de meses diferentes via putMany) e
-    // toda previsao futura nascia com data 'NaN-NaN-01', invisivel em
-    // qualquer filtro por mes.
-    const rowsComVencimento = rows.map((r) => ({ ...r, vencimento: r.vencimento || statementToPut.vencimento }));
     const rowsParcelamento = rowsComVencimento.filter((r) => r.tipo === 'parcelamento' && r.secao !== 'pagamentos_creditos');
     const rowsPagamento = rowsComVencimento.filter((r) => r.secao === 'pagamentos_creditos');
 

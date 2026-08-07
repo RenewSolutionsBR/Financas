@@ -7,6 +7,8 @@
 import { describe, it, assert, assertEqual, assertDeepEqual } from './harness.js';
 import { commitImportacao, idDeterministicoDoDocumento, documentoJaImportado } from '../src/ui/conciliacao-import.js';
 import { CATEGORIA_A_CLASSIFICAR } from '../src/domain/categories.js';
+import { runReconciliation } from '../src/domain/reconcile-card.js';
+import { TIPO_CARTAO } from '../src/domain/accounts.js';
 
 describe('conciliacao-import: idDeterministicoDoDocumento', () => {
   it('monta o id a partir de conta, tipo e vencimento', () => {
@@ -233,5 +235,47 @@ describe('commitImportacao: linhas do adaptador SEM vencimento proprio (formato 
 
     const previsoes = estadoAposR2.filter((t) => t.previsto);
     assert(previsoes.every((t) => /^\d{4}-\d{2}-\d{2}$/.test(t.data)), 'toda previsao precisa de uma data ISO valida, nunca "NaN-NaN-01"');
+  });
+
+  it('statementToPut.rows GRAVA o carimbo de vencimento — sem isso, reabrir a fatura depois recalculava a parcelaKey com vencimento undefined e o matching falhava', async () => {
+    const rowSemVencimento = (over) => {
+      const r = rowParcelamento(over);
+      delete r.vencimento;
+      return r;
+    };
+    const statement = faturaStatement({ rows: [rowSemVencimento(), rowPagamento()] });
+    const resultado = await commitImportacao({
+      tipo: 'fatura', contaId: CONTA_CARTAO, statement, rows: statement.rows,
+      transactions: [], accounts: [], apelidosTitular: [], allStatements: [], regras: [], formas: FORMAS,
+    });
+    const rowParcelamentoGravada = resultado.statementToPut.rows.find((r) => r.tipo === 'parcelamento');
+    assertEqual(rowParcelamentoGravada.vencimento, statement.vencimento, 'a linha gravada no statement precisa ter o vencimento carimbado, nao so a copia local usada na hora do commit');
+  });
+
+  it('bug real de producao: reabrir a fatura depois de importada (runReconciliation com o statement JA SALVO) reconhece a parcela confirmada — nao a joga de volta em "No app, nao na fatura"', async () => {
+    const CARTAO = { id: CONTA_CARTAO, tipo: TIPO_CARTAO, nome: 'Cartao teste', ativo: true };
+    const rowSemVencimento = (over) => {
+      const r = rowParcelamento(over);
+      delete r.vencimento;
+      return r;
+    };
+    const statement = faturaStatement({
+      periodoCompras: { inicio: '2026-03-10', fim: '2026-06-01' },
+      rows: [rowSemVencimento(), rowPagamento()],
+    });
+    const resultado = await commitImportacao({
+      tipo: 'fatura', contaId: CONTA_CARTAO, statement, rows: statement.rows,
+      transactions: [], accounts: [CARTAO], apelidosTitular: [], allStatements: [], regras: [], formas: FORMAS,
+    });
+    const transactions = resultado.transactionsToPut;
+
+    // Re-executa a reconciliacao exatamente como a tela faz ao reabrir a
+    // fatura (Conciliacao -> renderBaldesFatura): le o STATEMENT JA GRAVADO
+    // (resultado.statementToPut, com rows persistidas), nao mais as rows
+    // originais em memoria da importacao.
+    const { autoMatched, matched, appUnmatched } = runReconciliation(resultado.statementToPut, [resultado.statementToPut], transactions, [CARTAO]);
+    const totalConciliado = autoMatched.length + matched.length;
+    assertEqual(totalConciliado, 1, 'a parcela confirmada por esta fatura precisa aparecer conciliada ao reabrir a fatura, nao sumir do matching');
+    assertEqual(appUnmatched.length, 0, 'a parcela confirmada NAO pode aparecer em "No app, nao na fatura" so por ter sido reconciliada a partir do statement ja salvo');
   });
 });
