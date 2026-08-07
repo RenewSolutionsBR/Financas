@@ -581,3 +581,69 @@ describe('lancamentos (DOM real): log de auditoria', () => {
     assert(botao, 'precisa existir um botão "Exportar log" no rodapé');
   });
 });
+
+// Achado real: editar um lançamento que já é parcela de uma compra parcelada
+// (ex: parcela 3/6) não mostrava NENHUMA pista disso no formulário — parecia
+// um lançamento avulso qualquer, escondendo que existem outras parcelas
+// ligadas à mesma compra (que essa edição não afeta, de propósito).
+describe('lancamentos (DOM real): indicador de parcela ao editar', () => {
+  it('editar uma parcela (parcela_atual/parcela_total) mostra "Parcela X de Y" no formulário', async () => {
+    const t = {
+      id: 'lt_teste_parcela_edicao', data: '2026-07-05', descricao: 'Compra parcelada teste', valor: 50,
+      categoria: 'outros', natureza: 'despesa', formaPagamentoId: 'pm_credito',
+      parcela_atual: 3, parcela_total: 6, parcelaKey: 'COMPRA PARCELADA TESTE|2026-05-05|6',
+    };
+    await saveTransaction(t);
+    try {
+      montarPainel();
+      resetLancamentos();
+      await renderLancamentos();
+      const hoje = new Date();
+      const diferencaMeses = (2026 - hoje.getFullYear()) * 12 + (6 - hoje.getMonth());
+      const botoesNav = document.querySelectorAll('.nav-mes button');
+      const botaoNav = diferencaMeses < 0 ? botoesNav[0] : botoesNav[1];
+      for (let i = 0; i < Math.abs(diferencaMeses); i++) { botaoNav.click(); await esperar(); }
+
+      const botaoEditar = [...document.querySelectorAll('.item-lancamento-acoes button')]
+        .find((b) => b.getAttribute('aria-label') === 'Editar');
+      assert(botaoEditar, 'botão de editar não encontrado na listagem');
+      botaoEditar.click();
+      await esperar();
+
+      const indicador = document.querySelector('.form-lancamento .ajuda');
+      assert(indicador, 'precisa aparecer um indicador de parcela ao editar uma parcela');
+      assert(indicador.textContent.includes('Parcela 3 de 6'), `texto do indicador não bate: "${indicador.textContent}"`);
+    } finally {
+      await removeTransaction('lt_teste_parcela_edicao');
+    }
+  });
+
+  it('editar um lançamento SEM parcela não mostra o indicador', async () => {
+    const t = {
+      id: 'lt_teste_sem_parcela_edicao', data: '2026-07-06', descricao: 'Lançamento avulso teste', valor: 20,
+      categoria: 'outros', natureza: 'despesa', formaPagamentoId: 'pm_credito',
+    };
+    await saveTransaction(t);
+    try {
+      montarPainel();
+      resetLancamentos();
+      await renderLancamentos();
+      const hoje = new Date();
+      const diferencaMeses = (2026 - hoje.getFullYear()) * 12 + (6 - hoje.getMonth());
+      const botoesNav = document.querySelectorAll('.nav-mes button');
+      const botaoNav = diferencaMeses < 0 ? botoesNav[0] : botoesNav[1];
+      for (let i = 0; i < Math.abs(diferencaMeses); i++) { botaoNav.click(); await esperar(); }
+
+      const botaoEditar = [...document.querySelectorAll('.item-lancamento-acoes button')]
+        .find((b) => b.getAttribute('aria-label') === 'Editar');
+      assert(botaoEditar, 'botão de editar não encontrado na listagem');
+      botaoEditar.click();
+      await esperar();
+
+      const indicador = document.querySelector('.form-lancamento .ajuda');
+      assert(!indicador, 'lançamento sem parcela não deveria mostrar indicador de parcela');
+    } finally {
+      await removeTransaction('lt_teste_sem_parcela_edicao');
+    }
+  });
+});

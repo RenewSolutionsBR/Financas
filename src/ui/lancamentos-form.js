@@ -275,7 +275,17 @@ export async function montarFormularioLancamento(ctx, transacoes, editandoId, de
     }
   };
 
+  // Editar um lançamento que já é parcela de uma compra parcelada não deixa
+  // mexer nas OUTRAS parcelas (o checkbox de parcelamento nem aparece em
+  // edição, de propósito — ver comentário acima) — mas sem nenhuma pista na
+  // tela, editar "parcela 3 de 6" parecia um lançamento avulso qualquer,
+  // escondendo que existem outras 5 parcelas ligadas à mesma compra.
+  const indicadorParcela = emEdicao && emEdicao.parcela_atual
+    ? el('p', { class: 'ajuda', text: `Parcela ${emEdicao.parcela_atual} de ${emEdicao.parcela_total} — as demais parcelas não são afetadas por esta edição.` })
+    : null;
+
   return el('form', { class: 'form-lancamento', onsubmit: (ev) => { ev.preventDefault(); salvar(); } }, [
+    indicadorParcela,
     el('div', { class: 'linha-form' }, [campo('Data', inpData), campo('Valor', inpValor)]),
     campo('Descrição', inpDescricao),
     el('div', { class: 'linha-form' }, [campo('Categoria', selCategoria), campo('Forma de pagamento', selForma)]),
