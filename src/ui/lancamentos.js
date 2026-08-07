@@ -21,6 +21,7 @@ import {
 } from '../domain/transactions.js';
 import { listCategorias } from '../domain/categories.js';
 import { listFormas } from '../domain/payment-methods.js';
+import { registrarEvento, TIPOS_EVENTO } from '../domain/audit-log.js';
 import { listAccounts } from '../domain/accounts.js';
 import { fmtBRL } from '../core/money.js';
 import { formatDateBR, todayISO, monthKey } from '../core/dates.js';
@@ -169,6 +170,7 @@ function listagem(visiveis, ctx) {
 async function excluir(t) {
   if (!(await confirmar(`Excluir "${t.descricao}"?`))) return;
   await removeTransaction(t.id);
+  await registrarEvento(TIPOS_EVENTO.LANCAMENTO_EXCLUIDO, 'Lançamento excluído');
   toast('Lançamento excluído.', 'ok');
   await renderLancamentos();
 }

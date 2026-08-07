@@ -493,3 +493,29 @@ describe('lancamentos (DOM real): guarda de reentrância do submit', () => {
     }
   });
 });
+
+describe('lancamentos (DOM real): log de auditoria', () => {
+  it('salvar um lançamento novo registra um evento lancamento_criado', async () => {
+    const { listarEventos, TIPOS_EVENTO } = await import('../src/domain/audit-log.js');
+    montarPainel();
+    resetLancamentos();
+    await renderLancamentos();
+
+    const antes = (await listarEventos()).length;
+    const form = document.querySelector('.form-lancamento');
+    const inputs = form.querySelectorAll('input');
+    inputs[0].value = '10/07/2026';
+    inputs[1].value = '5,00';
+    inputs[2].value = 'Teste log auditoria';
+    form.dispatchEvent(new Event('submit', { cancelable: true }));
+    await new Promise((r) => setTimeout(r, 50));
+
+    const eventos = await listarEventos();
+    assert(eventos.length > antes, 'precisa ter pelo menos 1 evento novo');
+    assertEqual(eventos[0].tipo, TIPOS_EVENTO.LANCAMENTO_CRIADO);
+
+    const todos = await listTransactions();
+    const achado = todos.find((t) => t.descricao === 'Teste log auditoria');
+    if (achado) await removeTransaction(achado.id);
+  });
+});

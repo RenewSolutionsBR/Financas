@@ -18,6 +18,7 @@ import {
 import { parseMoneyBR } from '../core/money.js';
 import { formatDateBR, parseDateBR, todayISO } from '../core/dates.js';
 import * as storage from '../core/storage.js';
+import { registrarEvento, TIPOS_EVENTO } from '../domain/audit-log.js';
 
 // interpretarValor, tipoContaParaForma, contasParaForma e
 // contaPadraoValidaParaForma moram em lancamentos-form-helpers.js: são
@@ -206,6 +207,7 @@ export async function montarFormularioLancamento(ctx, transacoes, editandoId, de
         if (erros.length) return mostrarErros(erros);
 
         await saveTransactions(resultado.lista);
+        await registrarEvento(TIPOS_EVENTO.LANCAMENTO_CRIADO, `Compra parcelada criada: ${resultado.lista.length} parcela(s)`);
         await storage.setMeta('ultimaFormaUsada', base.formaPagamentoId);
         definirEditandoId(null);
         toast(`${resultado.lista.length} parcelas lançadas, uma por mês.`, 'ok');
@@ -257,6 +259,12 @@ export async function montarFormularioLancamento(ctx, transacoes, editandoId, de
       if (erros.length) return mostrarErros(erros);
 
       await saveTransaction(registro);
+      await registrarEvento(
+        emEdicao ? TIPOS_EVENTO.LANCAMENTO_EDITADO
+          : (rascunho ? TIPOS_EVENTO.LANCAR_DA_CONCILIACAO : TIPOS_EVENTO.LANCAMENTO_CRIADO),
+        emEdicao ? 'Lançamento editado'
+          : (rascunho ? 'Lançamento criado a partir da Conciliação' : 'Lançamento criado')
+      );
       await storage.setMeta('ultimaFormaUsada', registro.formaPagamentoId);
       definirEditandoId(null);
       toast(emEdicao ? 'Lançamento atualizado.' : 'Lançamento salvo.', 'ok');
