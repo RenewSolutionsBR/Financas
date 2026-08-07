@@ -397,6 +397,65 @@ describe('lancamentos (DOM real): troca de forma no formulario (change do seleto
   });
 });
 
+// Bug real relatado: lançamento manual com forma "Cartão de Crédito" mas
+// SEM escolher qual cartão salvava normalmente, só que com contaId
+// undefined — a conciliação de fatura filtra transações pelo contaId do
+// cartão (plasticosDoTitular), então esse lançamento nunca aparecia em
+// NENHUM balde de nenhuma fatura, silenciosamente. O usuário só percebeu
+// meses depois, ao notar dois lançamentos "sumidos" da conciliação.
+describe('lancamentos (DOM real): conta obrigatória quando a forma exige (evita lançamento "invisível" na conciliação)', () => {
+  const FORMA_CREDITO_ID = 'pm_teste_conta_obrigatoria';
+
+  async function comFormaCreditoSemContaPadrao(fn) {
+    const ultimaFormaOriginal = await storage.getMeta('ultimaFormaUsada', null);
+    await saveForma({
+      id: FORMA_CREDITO_ID, nome: 'Credito teste conta obrigatoria', tipo: 'credito', ativo: true,
+      padroesExtrato: [], ordem: -998, conciliaCom: 'fatura', // sem contaPadraoId de propósito
+    });
+    await storage.setMeta('ultimaFormaUsada', FORMA_CREDITO_ID);
+    try {
+      await fn();
+    } finally {
+      await storage.setMeta('ultimaFormaUsada', ultimaFormaOriginal);
+      await storage.remove('paymentMethods', FORMA_CREDITO_ID);
+    }
+  }
+
+  it('submeter com forma de crédito e "— sem conta —" mostra erro e NÃO salva', async () => {
+    await comFormaCreditoSemContaPadrao(async () => {
+      montarPainel();
+      resetLancamentos();
+      await renderLancamentos();
+
+      const form = document.querySelector('.form-lancamento');
+      const inputs = form.querySelectorAll('input');
+      inputs[0].value = '10/07/2026';
+      inputs[1].value = '9,99';
+      inputs[2].value = 'Teste conta obrigatoria';
+
+      const selects = form.querySelectorAll('select');
+      const selForma = selects[1];
+      const selConta = selects[2];
+      selForma.value = FORMA_CREDITO_ID;
+      selForma.dispatchEvent(new Event('change'));
+      assertEqual(selConta.value, '', 'sem conta padrão cadastrada pra essa forma, o campo tem que ficar vazio (— sem conta —)');
+
+      form.dispatchEvent(new Event('submit', { cancelable: true }));
+      await new Promise((r) => setTimeout(r, 50));
+
+      const todos = await listTransactions();
+      const achados = todos.filter((t) => t.descricao === 'Teste conta obrigatoria');
+      try {
+        assertEqual(achados.length, 0, 'sem conta escolhida, o lançamento NÃO pode ser salvo (senão fica invisível pra conciliação de fatura)');
+        const toastErro = document.querySelector('#toastRaiz .toast.erro');
+        assert(toastErro, 'precisa aparecer um toast de erro explicando que falta escolher a conta/cartão');
+      } finally {
+        for (const t of achados) await removeTransaction(t.id);
+      }
+    });
+  });
+});
+
 describe('lancamentos (DOM real): guarda de reentrância do submit', () => {
   it('dois disparos de submit antes do primeiro salvar resolver gravam só um lançamento', async () => {
     montarPainel();

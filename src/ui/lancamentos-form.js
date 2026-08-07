@@ -196,6 +196,13 @@ export async function montarFormularioLancamento(ctx, transacoes, editandoId, de
         // pega data inválida, descrição vazia ou categoria/forma não
         // escolhida antes de gravar qualquer coisa.
         const erros = validateTransaction(resultado.lista[0]);
+        // Mesma checagem do fluxo de lançamento único: compra parcelada quase
+        // sempre é cartão de crédito, e sem contaId NENHUMA das N parcelas
+        // geradas jamais vai casar com a conciliação de fatura.
+        const formaEscolhidaParcelado = ctx.formas.find((f) => f.id === base.formaPagamentoId);
+        if (formaEscolhidaParcelado && tipoContaParaForma(formaEscolhidaParcelado.tipo) !== null && !base.contaId) {
+          erros.push('Escolha a conta ou cartão — obrigatório para esta forma de pagamento (senão as parcelas nunca aparecem na conciliação de fatura).');
+        }
         if (erros.length) return mostrarErros(erros);
 
         await saveTransactions(resultado.lista);
@@ -237,6 +244,16 @@ export async function montarFormularioLancamento(ctx, transacoes, editandoId, de
       }
 
       const erros = validateTransaction(registro);
+      // Forma cujo tipo espera conta/cartão (tipoContaParaForma !== null,
+      // ou seja, tudo exceto dinheiro) mas o campo ficou em "— sem conta —":
+      // o lançamento salvava normalmente, só que sem contaId nenhum — a
+      // conciliação de fatura filtra por plasticosDoTitular(contaId), então
+      // um lançamento sem conta nunca aparecia em NENHUM balde de nenhum
+      // cartão, silenciosamente, até o usuário notar sozinho.
+      const formaEscolhida = ctx.formas.find((f) => f.id === registro.formaPagamentoId);
+      if (formaEscolhida && tipoContaParaForma(formaEscolhida.tipo) !== null && !registro.contaId) {
+        erros.push('Escolha a conta ou cartão — obrigatório para esta forma de pagamento (senão o lançamento nunca aparece na conciliação de fatura).');
+      }
       if (erros.length) return mostrarErros(erros);
 
       await saveTransaction(registro);
