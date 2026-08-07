@@ -495,8 +495,26 @@ describe('lancamentos (DOM real): guarda de reentrância do submit', () => {
 });
 
 describe('lancamentos (DOM real): log de auditoria', () => {
+  const FORMA_ID = 'pm_teste_log_auditoria';
+
   it('salvar um lançamento novo registra um evento lancamento_criado', async () => {
     const { listarEventos, TIPOS_EVENTO } = await import('../src/domain/audit-log.js');
+
+    // Semeia uma forma própria do tipo 'dinheiro': tipoContaParaForma('dinheiro')
+    // devolve null (src/ui/lancamentos-form-helpers.js), então ela nunca exige
+    // conta/cartão. Precisa ser semeada aqui porque este arquivo de teste roda
+    // sobre um IndexedDB vazio — DEFAULT_PAYMENT_METHODS só é gravado por
+    // seedFormasIfEmpty(), chamada em src/app.js na inicialização real do app,
+    // nunca pelo harness de teste. Sem uma forma própria (ou com o <select>
+    // deixado no que ultimaFormaUsada/o navegador resolver), o form pode cair
+    // numa forma cujo tipo exige conta; a validação de conta obrigatória então
+    // barra o salvar() silenciosamente (sem chegar em registrarEvento), e o
+    // teste falhava sem nenhuma pista, porque não checava toast/erro.
+    await saveForma({
+      id: FORMA_ID, nome: 'Forma teste log auditoria', tipo: 'dinheiro', ativo: true,
+      padroesExtrato: [], ordem: 999, conciliaCom: 'nenhum',
+    });
+
     montarPainel();
     resetLancamentos();
     await renderLancamentos();
@@ -507,15 +525,24 @@ describe('lancamentos (DOM real): log de auditoria', () => {
     inputs[0].value = '10/07/2026';
     inputs[1].value = '5,00';
     inputs[2].value = 'Teste log auditoria';
+
+    const selects = form.querySelectorAll('select');
+    const selForma = selects[1];
+    selForma.value = FORMA_ID;
+    selForma.dispatchEvent(new Event('change'));
+
     form.dispatchEvent(new Event('submit', { cancelable: true }));
     await new Promise((r) => setTimeout(r, 50));
 
-    const eventos = await listarEventos();
-    assert(eventos.length > antes, 'precisa ter pelo menos 1 evento novo');
-    assertEqual(eventos[0].tipo, TIPOS_EVENTO.LANCAMENTO_CRIADO);
-
     const todos = await listTransactions();
     const achado = todos.find((t) => t.descricao === 'Teste log auditoria');
-    if (achado) await removeTransaction(achado.id);
+    try {
+      const eventos = await listarEventos();
+      assert(eventos.length > antes, 'precisa ter pelo menos 1 evento novo');
+      assertEqual(eventos[0].tipo, TIPOS_EVENTO.LANCAMENTO_CRIADO);
+    } finally {
+      if (achado) await removeTransaction(achado.id);
+      await storage.remove('paymentMethods', FORMA_ID);
+    }
   });
 });
