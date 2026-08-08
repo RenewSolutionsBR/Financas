@@ -139,10 +139,16 @@ function montarLinhaFormulario(linha, ctx) {
     botaoLancarUma,
     el('span', { class: 'item-descricao', text: linha.descricao }),
     el('span', { class: 'item-meta', text: `${formatDateBR(linha.data)} · ${fmtBRL(linha.valor)}` }),
-    selNatureza,
-    selCategoria,
-    selForma,
-    el('span', { class: 'selo-categoria-sugerida', text: regraAplicada ? `sugerido: ${nomeCategoria(estado.categoria)}` : 'A Classificar' }),
+    // Wrapper proprio para os 3 selects: precisam SEMPRE ficar em 3 colunas
+    // iguais na mesma linha (desktop e mobile), e isso exige um grid de 3
+    // colunas independente do grid-template-columns do container externo
+    // (pensado pra linha do checkbox/botao/descricao, que tem larguras
+    // auto/auto/1fr — nao terços iguais).
+    el('div', { class: 'item-form-lote-selects' }, [selNatureza, selCategoria, selForma]),
+    // So aparece quando ha uma regra aplicada (sugestao automatica) — sem
+    // regra, a categoria selecionada ja e "A Classificar" e o proprio
+    // select ja mostra isso, o selo era informacao duplicada.
+    regraAplicada ? el('span', { class: 'selo-categoria-sugerida', text: `sugerido: ${nomeCategoria(estado.categoria)}` }) : null,
   ]);
 
   return { linhaEl, linha, estado, selCategoria, botaoLancarUma };

@@ -520,40 +520,64 @@ button { cursor: pointer; }
 }
 
 /* A linha de "+ lançar em lote" é a mais carregada da tela: checkbox +
-   descrição/meta + 3 seletores (natureza/categoria/forma). Em vez de cada
-   <select> ocupar 100% de largura e empilhar um embaixo do outro (o problema
-   relatado), eles dividem uma faixa própria abaixo da descrição, lado a
-   lado quando cabe e quebrando em grade 2-a-2 em telas estreitas — nunca um
-   por linha inteira. */
+   botão "+ lançar" + descrição/meta + 3 seletores (natureza/categoria/
+   forma). Grid em vez de flexbox com margens calculadas manualmente — a
+   versão anterior (margin-left compensando só a largura do checkbox)
+   quebrou quando o botão "+ lançar" individual foi adicionado depois,
+   porque a margem não foi recalculada para compensar os dois juntos.
+   Grid não sofre desse problema: cada elemento vive na célula certa
+   independente de quantos irmãos vêm antes dele. Os 3 selects moram num
+   wrapper próprio (.item-form-lote-selects) com seu próprio grid de 3
+   colunas iguais — um grid-column por nth-of-type herdado do
+   grid-template-columns do container externo (pensado pra linha do
+   checkbox/botão/descrição, larguras auto/auto/1fr) não dividiria os
+   selects em terços visualmente iguais. Ficam SEMPRE em 3 colunas na
+   mesma linha, inclusive em mobile — decisão de produto: prioriza
+   consistência visual sobre espaço extra em telas estreitas (texto do
+   select trunca se precisar). */
 .item-form-lote {
-  align-items: flex-start;
-  gap: 6px 10px;
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  column-gap: 10px;
+  row-gap: 6px;
+  align-items: start;
 }
 .item-form-lote > input[type=checkbox] {
-  flex: 0 0 auto;
+  grid-column: 1;
+  grid-row: 1;
   margin-top: 3px;
 }
+.item-form-lote > .btn-mini {
+  grid-column: 2;
+  grid-row: 1;
+}
 .item-form-lote > .item-descricao {
-  flex: 1 1 calc(100% - 30px);
+  grid-column: 3;
+  grid-row: 1;
 }
 .item-form-lote > .item-meta {
-  flex: 1 1 100%;
-  margin-left: 30px;
+  grid-column: 1 / -1;
+  grid-row: 2;
 }
-.item-form-lote > select {
-  flex: 1 1 140px;
+.item-form-lote > .item-form-lote-selects {
+  grid-column: 1 / -1;
+  grid-row: 3;
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  column-gap: 10px;
+}
+.item-form-lote-selects > select {
   min-width: 0;
-  margin-left: 30px;
   font-size: 0.82rem;
   padding: 6px 8px;
 }
-.item-form-lote > select:first-of-type { margin-left: 30px; }
 
 .selo-categoria-sugerida {
-  flex: 1 1 100%;
-  margin-left: 30px;
+  grid-column: 1 / -1;
+  grid-row: 4;
   font-size: 0.72rem;
   color: var(--latao);
+  padding: 2px 0;
 }
 
 /* --- Aba Parcelas --- */
@@ -680,7 +704,6 @@ button { cursor: pointer; }
   .tabbar { flex-wrap: wrap; }
   .dash-rosca-bloco { flex-direction: column; align-items: flex-start; }
   .dash-rosca { width: 130px; height: 130px; }
-  .item-form-lote > select { flex-basis: 100%; }
 }
 
 /* --- Navegação de mês (Lançamentos) --- */
