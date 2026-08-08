@@ -502,11 +502,11 @@ describe('parcelas: parcelaGroupsDaConta (reconstroi grupos a partir de TRANSACT
   it('ancora confirmada SEM origem de autoConfirmParcelas (ex.: salva via "+lancar" manual) tambem usa faturaVencimento quando presente', () => {
     // Replica o formato exato que lancamentos-form.js agora grava quando o
     // rascunho do "+lancar" (conciliacao-fatura.js) carrega faturaVencimento:
-    // previsto ausente (novaTransaction grava previsto:false por padrao),
+    // previsto: false (novaTransaction sempre grava esse campo explicitamente),
     // data = data da COMPRA (nao vencimento), faturaVencimento = vencimento
     // real da fatura que o usuario clicou "+lancar".
     const transactions = [{
-      id: 'tx_manual_1', descricao: 'LOJA EXEMPLO', data: '2025-12-22',
+      id: 'tx_lancar_manual_1', descricao: 'LOJA EXEMPLO', data: '2025-12-22',
       faturaVencimento: '2026-01-30', valor: 157.51,
       parcela_atual: 1, parcela_total: 4, parcelaKey: computeParcelaKey('LOJA EXEMPLO', '2025-12-22', 4),
       previsto: false, contaId: 'acc_1',
