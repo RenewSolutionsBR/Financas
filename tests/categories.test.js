@@ -102,3 +102,17 @@ describe('categories', () => {
     assert(/lançamentos/i.test(erro.message), erro.message);
   });
 });
+
+describe('categories: descricao opcional', () => {
+  it('categoria pode ser salva com descricao, e o campo sobrevive ida e volta', () => {
+    const cat = { id: 'cat_x', nome: 'Teste', cor: '#111111', descricao: 'Gastos com teste' };
+    const erros = validateCategoria(cat, []);
+    assertEqual(erros.length, 0, 'descricao nunca e obrigatoria, nao deveria gerar erro de validacao');
+  });
+
+  it('categoria sem descricao continua valida (campo opcional)', () => {
+    const cat = { id: 'cat_y', nome: 'Sem descricao', cor: '#222222' };
+    const erros = validateCategoria(cat, []);
+    assertEqual(erros.length, 0);
+  });
+});

@@ -14,7 +14,7 @@ export async function secaoCategorias(aoMudar) {
   const lista = el('div', { class: 'lista-cadastro' },
     todas.map((c) => el('div', { class: 'item-cadastro' }, [
       el('span', { class: 'chip-cor', style: `background:${c.cor}` }),
-      el('span', { class: 'item-nome', text: c.nome }),
+      el('span', { class: 'item-nome', text: c.nome, ...(c.descricao ? { title: c.descricao } : {}) }),
       el('button', { class: 'btn btn-mini', text: 'Editar', onclick: () => editarCategoria(c, todas, aoMudar) }),
       el('button', { class: 'btn btn-mini btn-perigo', text: 'Excluir', onclick: () => excluirCategoria(c, aoMudar) }),
     ]))
@@ -30,17 +30,19 @@ export async function secaoCategorias(aoMudar) {
 async function editarCategoria(cat, todas, aoMudar) {
   const inputNome = el('input', { type: 'text', value: cat.nome });
   const inputCor = el('input', { type: 'color', value: cat.cor });
+  const inputDescricao = el('textarea', { rows: '2', text: cat.descricao || '' });
   const escolha = await abrirModal({
     titulo: cat.nome ? 'Editar categoria' : 'Nova categoria',
     corpo: el('div', { class: 'form' }, [
       campo('Nome', inputNome),
       campo('Cor', inputCor),
+      campo('Descrição (opcional)', inputDescricao),
     ]),
     acoes: [{ id: 'cancelar', rotulo: 'Cancelar' }, { id: 'salvar', rotulo: 'Salvar' }],
   });
   if (escolha !== 'salvar') return;
 
-  const atualizada = { ...cat, nome: inputNome.value.trim(), cor: inputCor.value };
+  const atualizada = { ...cat, nome: inputNome.value.trim(), cor: inputCor.value, descricao: inputDescricao.value.trim() };
   const erros = validateCategoria(atualizada, todas);
   if (erros.length) return mostrarErros(erros);
 
