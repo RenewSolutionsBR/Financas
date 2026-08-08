@@ -96,10 +96,11 @@ describe('reconcile-card: runReconciliation — isolamento por cartao', () => {
 
 describe('reconcile-card: buildFullReconciliationRows', () => {
   it('lancamento sem cartao correspondente em nenhuma fatura sai como "Só no app"', () => {
-    const t = { id: 't1', previsto: false, contaId: TITULAR, data: '2026-05-10', valor: 50, descricao: 'Solto' };
-    const rows = buildFullReconciliationRows([], [t], contas);
+    const t = { id: 't1', previsto: false, contaId: TITULAR, data: '2026-05-10', valor: 50, descricao: 'Solto', categoria: 'cat_inexistente' };
+    const rows = buildFullReconciliationRows([], [], [t], contas, [], []);
     assertEqual(rows.length, 1);
     assertEqual(rows[0].status, 'Só no app');
+    assertEqual(rows[0].categoria, 'cat_inexistente', 'sem categorias cadastradas, cai no fallback do proprio ID');
   });
 
   it('nao reaproveita o MESMO lancamento em duas faturas diferentes', () => {
@@ -114,8 +115,27 @@ describe('reconcile-card: buildFullReconciliationRows', () => {
     const t = { id: 't1', previsto: false, contaId: TITULAR, data: '2026-05-24', valor: 50, descricao: 'X' };
     const f1 = fat({ id: 'f1', dataCorte: '2026-05-25', rows: [{ tipo: 'despesa', secao: 'despesas', data: '2026-05-24', descricao: 'X', valor: 50, vencimento: '2026-06-01' }] });
     const f2 = fat({ id: 'f2', vencimento: '2026-07-01', dataCorte: '2026-06-25', rows: [{ tipo: 'despesa', secao: 'despesas', data: '2026-05-24', descricao: 'X', valor: 50, vencimento: '2026-07-01' }] });
-    const rows = buildFullReconciliationRows([f1, f2], [t], contas);
+    const rows = buildFullReconciliationRows([f1, f2], [], [t], contas, [], []);
     const conciliados = rows.filter((r) => r.status.startsWith('Conciliado'));
     assertEqual(conciliados.length, 1, 'o lancamento so pode casar com UMA das duas faturas');
+  });
+
+  it('transacao conciliada com EXTRATO aparece como Conciliado, nao mais Só no app', () => {
+    const t = { id: 't1', previsto: false, contaId: 'acc_banco_1', data: '2026-06-10', valor: 55.5, descricao: 'MERCADO EXEMPLO', categoria: 'cat_alimentacao', natureza: 'despesa' };
+    const contasComBanco = [...contas, { id: 'acc_banco_1', tipo: 'conta', matchers: [] }];
+    const extrato = { id: 'ext1', tipo: 'extrato', contaId: 'acc_banco_1', importadoEm: 1, rows: [{ id: 'r1', descricao: 'MERCADO EXEMPLO', data: '2026-06-10', valor: 55.5, sinal: 'debito' }] };
+    const categorias = [{ id: 'cat_alimentacao', nome: 'Alimentação' }];
+    const rows = buildFullReconciliationRows([], [extrato], [t], contasComBanco, [], categorias);
+    assertEqual(rows.length, 1);
+    assert(rows[0].status.startsWith('Conciliado'), 'transacao casada com linha de extrato precisa aparecer como Conciliado, nao Só no app');
+    assertEqual(rows[0].categoria, 'Alimentação', 'categoria precisa vir com o NOME, nao o ID');
+  });
+
+  it('linha de extrato sem candidato no pool aparece como "Só no extrato"', () => {
+    const contasComBanco = [...contas, { id: 'acc_banco_1', tipo: 'conta', matchers: [] }];
+    const extrato = { id: 'ext1', tipo: 'extrato', contaId: 'acc_banco_1', importadoEm: 1, rows: [{ id: 'r1', descricao: 'SEM PAR NO APP', data: '2026-06-10', valor: 999, sinal: 'debito' }] };
+    const rows = buildFullReconciliationRows([], [extrato], [], contasComBanco, [], []);
+    assertEqual(rows.length, 1);
+    assertEqual(rows[0].status, 'Só no extrato');
   });
 });

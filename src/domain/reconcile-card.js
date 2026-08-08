@@ -5,6 +5,7 @@
 
 import { plasticosDoTitular } from './accounts.js';
 import { computeParcelaKey } from './parcelas.js';
+import { atribuirNatureza } from './reconcile-bank.js';
 
 const POOL_SLACK_DAYS = 3;
 
@@ -100,7 +101,16 @@ export function runReconciliation(fatura, faturasList, transactions, accounts) {
   return { autoMatched, matched, faturaUnmatched, appUnmatched, pagamentosCreditos };
 }
 
-export function buildFullReconciliationRows(faturasList, allTransactions, accounts) {
+// Resolve o ID de categoria salvo na transacao para o nome legivel. Fallback
+// pro proprio ID se a categoria foi excluida depois do lancamento — evita
+// quebrar a exportacao por causa de uma referencia orfa, e ainda deixa uma
+// pista (o ID) em vez de um campo vazio sem explicacao.
+function nomeCategoria(categoriaId, categorias) {
+  const c = (categorias || []).find((cat) => cat.id === categoriaId);
+  return c ? c.nome : categoriaId;
+}
+
+export function buildFullReconciliationRows(faturasList, extratosList, allTransactions, accounts, apelidosTitular, categorias) {
   const pool = (allTransactions || []).filter((t) => !t.previsto).map((t) => ({ ...t, used: false }));
   const rows = [];
   const sorted = [...faturasList].sort((a, b) => (a.vencimento < b.vencimento ? -1 : 1));
@@ -121,15 +131,30 @@ export function buildFullReconciliationRows(faturasList, allTransactions, accoun
       if (idx >= 0) {
         const t = pool[idx];
         t.used = true;
-        rows.push({ status: t.conciliadoAutomaticamente ? 'Conciliado (automático)' : 'Conciliado', vencimentoFatura: fatura.vencimento, dataFatura: item.data, descricaoFatura: item.descricao, parcela, valorFatura: item.valor, dataLancamento: t.data, descricaoLancamento: t.descricao, categoria: t.categoria, valorLancamento: t.valor });
+        rows.push({ status: t.conciliadoAutomaticamente ? 'Conciliado (automático)' : 'Conciliado', vencimentoFatura: fatura.vencimento, dataFatura: item.data, descricaoFatura: item.descricao, parcela, valorFatura: item.valor, dataLancamento: t.data, descricaoLancamento: t.descricao, categoria: nomeCategoria(t.categoria, categorias), valorLancamento: t.valor });
       } else {
         rows.push({ status: 'Só na fatura', vencimentoFatura: fatura.vencimento, dataFatura: item.data, descricaoFatura: item.descricao, parcela, valorFatura: item.valor, dataLancamento: '', descricaoLancamento: '', categoria: '', valorLancamento: '' });
       }
     });
   });
 
+  const extratosOrdenados = [...(extratosList || [])].sort((a, b) => (a.importadoEm || 0) - (b.importadoEm || 0));
+  extratosOrdenados.forEach((extrato) => {
+    const comNatureza = (extrato.rows || []).map((linha) => ({ ...linha, ...atribuirNatureza(linha, accounts, apelidosTitular) }));
+    comNatureza.forEach((linha) => {
+      const idx = pool.findIndex((t) => !t.used && Math.abs(t.valor - linha.valor) < 0.01 && dateDiffDays(t.data, linha.data) <= 2 && (!t.contaId || t.contaId === extrato.contaId));
+      if (idx >= 0) {
+        const t = pool[idx];
+        t.used = true;
+        rows.push({ status: t.conciliadoAutomaticamente ? 'Conciliado (automático)' : 'Conciliado', vencimentoFatura: '', dataFatura: linha.data, descricaoFatura: linha.descricao, parcela: '', valorFatura: linha.valor, dataLancamento: t.data, descricaoLancamento: t.descricao, categoria: nomeCategoria(t.categoria, categorias), valorLancamento: t.valor });
+      } else {
+        rows.push({ status: 'Só no extrato', vencimentoFatura: '', dataFatura: linha.data, descricaoFatura: linha.descricao, parcela: '', valorFatura: linha.valor, dataLancamento: '', descricaoLancamento: '', categoria: '', valorLancamento: '' });
+      }
+    });
+  });
+
   pool.filter((t) => !t.used).forEach((t) => {
-    rows.push({ status: 'Só no app', vencimentoFatura: '', dataFatura: '', descricaoFatura: '', parcela: '', valorFatura: '', dataLancamento: t.data, descricaoLancamento: t.descricao, categoria: t.categoria, valorLancamento: t.valor });
+    rows.push({ status: 'Só no app', vencimentoFatura: '', dataFatura: '', descricaoFatura: '', parcela: '', valorFatura: '', dataLancamento: t.data, descricaoLancamento: t.descricao, categoria: nomeCategoria(t.categoria, categorias), valorLancamento: t.valor });
   });
 
   rows.sort((a, b) => {

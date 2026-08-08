@@ -17,12 +17,12 @@ import { renderBaldesExtrato, limparFiltrosExtrato } from './conciliacao-extrato
 let contaSelecionadaId = null;
 let documentoSelecionadoId = null;
 
-async function exportarConciliacaoCompleta(faturasList, transactions, accounts) {
+async function exportarConciliacaoCompleta(faturasList, extratosList, transactions, accounts, apelidosTitular, categorias) {
   try {
-    const rows = buildFullReconciliationRows(faturasList, transactions, accounts);
+    const rows = buildFullReconciliationRows(faturasList, extratosList, transactions, accounts, apelidosTitular, categorias);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'Conciliacao');
-    XLSX.writeFile(wb, `conciliacao-fatura-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    XLSX.writeFile(wb, `conciliacao-completa-${new Date().toISOString().slice(0, 10)}.xlsx`);
   } catch (e) {
     toast('Não consegui exportar a conciliação: ' + e.message, 'erro');
   }
@@ -39,11 +39,14 @@ export async function renderConciliacao() {
         el('button', {
           class: 'btn', text: 'Exportar conciliação completa',
           onclick: async () => {
-            const [transactions, todasFaturas] = await Promise.all([
+            const [transactions, todasFaturas, todosExtratos, apelidosTitular, categorias] = await Promise.all([
               listTransactions(),
               storage.getAll('statements').then((lista) => lista.filter((s) => s.tipo === 'fatura')),
+              storage.getAll('statements').then((lista) => lista.filter((s) => s.tipo === 'extrato')),
+              storage.getMeta('apelidosTitular', []),
+              listCategorias(),
             ]);
-            await exportarConciliacaoCompleta(todasFaturas, transactions, contas);
+            await exportarConciliacaoCompleta(todasFaturas, todosExtratos, transactions, contas, apelidosTitular, categorias);
           },
         }),
       ])
