@@ -60,20 +60,32 @@ export async function renderConciliacao() {
 
   const doc = documentos.find((d) => d.id === documentoSelecionadoId);
   const painelBaldes = document.getElementById('painelBaldes');
-  if (doc && doc.tipo === 'fatura') {
-    const [transactions, faturasDoCartao] = await Promise.all([
-      listTransactions(),
-      storage.getByIndex('statements', 'by_contaId', doc.contaId).then((lista) => lista.filter((s) => s.tipo === 'fatura')),
-    ]);
-    await renderBaldesFatura(painelBaldes, doc, faturasDoCartao, transactions, contas);
-  } else if (doc && doc.tipo === 'extrato') {
-    const [transactions, categorias, formas, regras] = await Promise.all([
-      listTransactions(), listCategorias(), listFormas(), listRegras(),
-    ]);
-    const apelidosTitular = await storage.getMeta('apelidosTitular', []);
-    await renderBaldesExtrato(painelBaldes, doc, transactions, contas, apelidosTitular, categorias, formas, regras, renderConciliacao);
-  } else {
+  try {
+    if (doc && doc.tipo === 'fatura') {
+      const [transactions, faturasDoCartao] = await Promise.all([
+        listTransactions(),
+        storage.getByIndex('statements', 'by_contaId', doc.contaId).then((lista) => lista.filter((s) => s.tipo === 'fatura')),
+      ]);
+      await renderBaldesFatura(painelBaldes, doc, faturasDoCartao, transactions, contas);
+    } else if (doc && doc.tipo === 'extrato') {
+      const [transactions, categorias, formas, regras] = await Promise.all([
+        listTransactions(), listCategorias(), listFormas(), listRegras(),
+      ]);
+      const apelidosTitular = await storage.getMeta('apelidosTitular', []);
+      await renderBaldesExtrato(painelBaldes, doc, transactions, contas, apelidosTitular, categorias, formas, regras, renderConciliacao);
+    } else {
+      painelBaldes.innerHTML = '';
+    }
+  } catch (e) {
+    // Sem isso, um erro aqui deixava o painel em branco (nem os baldes vazios
+    // apareciam) sem NENHUMA pista pro usuario — visto em producao com um
+    // extrato real, onde a mesma logica funcionava perfeitamente quando
+    // chamada manualmente, mas a tela ficava muda. Mostrar o erro na propria
+    // tela (nao so um toast, que pode passar despercebido) e o unico jeito
+    // de diagnosticar um erro que so acontece no aparelho do usuario.
     painelBaldes.innerHTML = '';
+    painelBaldes.append(el('p', { class: 'aviso-erro', text: `Não consegui carregar esta conciliação: ${e.message}` }));
+    toast('Não consegui carregar esta conciliação: ' + e.message, 'erro');
   }
 }
 
