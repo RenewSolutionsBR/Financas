@@ -101,7 +101,12 @@ export async function renderLancamentos() {
 // pra não duplicar tratamento de erro de leitura de arquivo.
 async function exportarLog() {
   const eventos = await listarEventos();
-  const blob = new Blob([JSON.stringify(eventos, null, 2)], { type: 'application/json' });
+  // dataHora (string legivel) e adicionada so na EXPORTACAO, ao lado do
+  // timestamp numerico ja existente (mantido, util pra reprocessamento
+  // automatizado) — sem essa conversao, abrir o .json exportado mostrava
+  // so o numero epoch, ilegivel sem converter manualmente.
+  const eventosComData = eventos.map((e) => ({ ...e, dataHora: new Date(e.timestamp).toLocaleString('pt-BR') }));
+  const blob = new Blob([JSON.stringify(eventosComData, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const link = el('a', { href: url, download: `log-financas-${new Date().toISOString().slice(0, 10)}.json` });
   document.body.appendChild(link);
