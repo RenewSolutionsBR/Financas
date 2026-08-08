@@ -48,12 +48,11 @@ async function editarRegra(regra, categorias, aoMudar) {
     el('option', { value: c.id, text: c.nome, ...(c.id === regra.categoriaId ? { selected: 'selected' } : {}) })
   ));
   const ajudaRegex = el('p', {
-    class: 'ajuda',
-    style: selTipoMatch.value === 'regex' ? '' : 'display:none',
+    class: `ajuda${selTipoMatch.value === 'regex' ? '' : ' oculto'}`,
     text: 'Expressão regular JavaScript padrão. Exemplos: "^UBER" casa descrições que COMEÇAM com UBER; "MERCADO|SUPERMERCADO" casa qualquer uma das duas, em qualquer posição.',
   });
   selTipoMatch.addEventListener('change', () => {
-    ajudaRegex.style.display = selTipoMatch.value === 'regex' ? '' : 'none';
+    ajudaRegex.classList.toggle('oculto', selTipoMatch.value !== 'regex');
   });
 
   const escolha = await abrirModal({

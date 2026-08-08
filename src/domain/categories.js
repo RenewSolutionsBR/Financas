@@ -60,6 +60,7 @@ export function novaCategoria(nome, cor, todas) {
     id: uid('cat'),
     nome: String(nome || '').trim(),
     cor: cor || corLivre,
+    descricao: '',
   };
 }
 
