@@ -747,3 +747,46 @@ button { cursor: pointer; }
   padding: 6px 0 0;
   align-self: center;
 }
+
+/* Lista de Regras de classificacao: classe propria (nao item-cadastro,
+   compartilhada com categorias/formas/contas) porque Regras tem 3 botoes
+   de acao contra 2 nas outras telas — precisa de layout proprio pra nao
+   afetar as outras 3. Mesma tecnica ja usada em .item-lancamento: grid
+   com colunas fixas, texto principal ocupando o espaco restante. */
+.item-regra {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-rows: auto auto;
+  align-items: center;
+  column-gap: 10px;
+  row-gap: 2px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--linha);
+}
+.item-regra:last-child { border-bottom: none; }
+.item-regra.inativo { opacity: 0.6; }
+
+.item-regra > .item-nome {
+  grid-column: 1;
+  grid-row: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.item-regra > .item-meta {
+  grid-column: 1;
+  grid-row: 2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.item-regra-acoes {
+  grid-column: 2;
+  grid-row: 1 / 3;
+  display: flex;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+.item-regra-acoes .btn { flex: 0 0 auto; }

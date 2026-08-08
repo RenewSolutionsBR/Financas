@@ -17,12 +17,14 @@ export async function secaoRegras(aoMudar) {
 
   const ordenadas = [...todas].sort((a, b) => (b.acertos || 0) - (a.acertos || 0));
   const lista = el('div', { class: 'lista-cadastro' },
-    ordenadas.map((r) => el('div', { class: `item-cadastro${r.ativa === false ? ' inativo' : ''}` }, [
+    ordenadas.map((r) => el('div', { class: `item-regra${r.ativa === false ? ' inativo' : ''}` }, [
       el('span', { class: 'item-nome', text: `${r.padrao}${r.ativa === false ? ' — desativada' : ''}` }),
       el('span', { class: 'item-meta', text: `${ROTULO_TIPO_MATCH[r.tipoMatch]} · ${ROTULO_ESCOPO[r.escopo]} · ${nomeCategoria(r.categoriaId)} · ${r.acertos || 0} acerto(s) · ${r.origem === 'aprendida' ? 'aprendida' : 'manual'}` }),
-      el('button', { class: 'btn btn-mini', text: 'Editar', onclick: () => editarRegra(r, categorias, aoMudar) }),
-      el('button', { class: 'btn btn-mini', text: r.ativa === false ? 'Ativar' : 'Desativar', onclick: () => alternarAtiva(r, aoMudar) }),
-      el('button', { class: 'btn btn-mini btn-perigo', text: 'Excluir', onclick: () => excluirRegra(r, aoMudar) }),
+      el('div', { class: 'item-regra-acoes' }, [
+        el('button', { class: 'btn btn-mini', text: 'Editar', onclick: () => editarRegra(r, categorias, aoMudar) }),
+        el('button', { class: 'btn btn-mini', text: r.ativa === false ? 'Ativar' : 'Desativar', onclick: () => alternarAtiva(r, aoMudar) }),
+        el('button', { class: 'btn btn-mini btn-perigo', text: 'Excluir', onclick: () => excluirRegra(r, aoMudar) }),
+      ]),
     ]))
   );
 
