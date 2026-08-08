@@ -113,8 +113,11 @@ function montarLinhaFormulario(linha, ctx) {
 
   const nomeCategoria = (id) => (ctx.categorias.find((c) => c.id === id) || {}).nome || 'A Classificar';
 
+  const botaoLancarUma = el('button', { class: 'btn btn-mini', type: 'button', text: '+ lançar' });
+
   const linhaEl = el('div', { class: 'item-balde item-form-lote' }, [
     chk,
+    botaoLancarUma,
     el('span', { class: 'item-descricao', text: linha.descricao }),
     el('span', { class: 'item-meta', text: `${formatDateBR(linha.data)} · ${fmtBRL(linha.valor)}` }),
     selNatureza,
@@ -123,11 +126,14 @@ function montarLinhaFormulario(linha, ctx) {
     el('span', { class: 'selo-categoria-sugerida', text: regraAplicada ? `sugerido: ${nomeCategoria(estado.categoria)}` : 'A Classificar' }),
   ]);
 
-  return { linhaEl, linha, estado, selCategoria };
+  return { linhaEl, linha, estado, selCategoria, botaoLancarUma };
 }
 
-async function lancarEmLote(linhasFormulario, ctx, aoConcluir) {
-  const selecionadas = linhasFormulario.filter((lf) => lf.estado.selecionado);
+// Corpo compartilhado entre "+ lançar em lote" (linhas com checkbox
+// marcado) e "+ lançar" individual (uma linha só, sem depender do
+// checkbox) — mesma lógica de gravação + aprendizado de regra +
+// aplicação retroativa nos dois casos.
+async function lancarSelecionadas(selecionadas, ctx, aoConcluir) {
   if (!selecionadas.length) return;
 
   const novosLancamentos = selecionadas.map((lf) => novaTransaction({
@@ -185,6 +191,14 @@ async function lancarEmLote(linhasFormulario, ctx, aoConcluir) {
   await aoConcluir();
 }
 
+async function lancarEmLote(linhasFormulario, ctx, aoConcluir) {
+  await lancarSelecionadas(linhasFormulario.filter((lf) => lf.estado.selecionado), ctx, aoConcluir);
+}
+
+async function lancarUma(lf, ctx, aoConcluir) {
+  await lancarSelecionadas([lf], ctx, aoConcluir);
+}
+
 export async function renderBaldesExtrato(painel, extrato, transactions, accounts, apelidosTitular, categorias, formas, regras, aoMudar) {
   const statementsFatura = (await storage.getAll('statements')).filter((s) => s.tipo === 'fatura');
   const { autoMatched, matched, extratoUnmatched, appUnmatched } = runReconciliationBank(extrato, transactions, accounts, apelidosTitular, statementsFatura);
@@ -198,6 +212,7 @@ export async function renderBaldesExtrato(painel, extrato, transactions, account
   const linhasPorId = new Map((extrato.rows || []).map((linha) => [linha.id, linha]));
   const ctx = { contaId: extrato.contaId, statementId: extrato.id, categorias, formas, regras, transactions, linhasPorId };
   const linhasFormulario = extratoUnmatchedFiltrado.map((linha) => montarLinhaFormulario(linha, ctx));
+  linhasFormulario.forEach((lf) => lf.botaoLancarUma.addEventListener('click', () => lancarUma(lf, ctx, aoMudar)));
 
   const botaoLote = el('button', { class: 'btn btn-primario', text: '+ lançar em lote', disabled: 'disabled' });
   const atualizarBotaoLote = () => { botaoLote.disabled = !linhasFormulario.some((lf) => lf.estado.selecionado); };
