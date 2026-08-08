@@ -52,7 +52,19 @@ export function computeParcelaGroups(allFaturaRows) {
     if (remaining <= 0) continue;
     const months = [];
     for (let k = 1; k <= remaining; k++) {
-      const dt = addMonths(r.vencimento, k);
+      // addMonths(vencimento, k - 1): a PRIMEIRA parcela restante cai no
+      // MESMO mês civil do vencimento desta linha, não no mês seguinte.
+      // Duas faturas consecutivas podem vencer no mesmo mês civil (ex.:
+      // 01/03 e 30/03) — se a previsão sempre pulasse pro mês seguinte ao
+      // vencimento mais recente, o mês da PRÓXIMA fatura real ficava sem
+      // NENHUMA entrada (nem confirmada, nem prevista) até essa fatura
+      // chegar: a previsão antiga daquele mês já tinha sido removida (pela
+      // confirmação que acabou de acontecer), e a nova nascia um mês à
+      // frente, deixando uma lacuna visível na aba Lançamentos. A previsão
+      // continua sendo uma ESTIMATIVA de 1 parcela por mês civil (nunca
+      // tenta prever o dia exato do próximo vencimento) — só não pula mais
+      // o primeiro mês depois de uma confirmação.
+      const dt = addMonths(r.vencimento, k - 1);
       months.push({ ym: ymOf(dt), valor: r.valor, numero: r.parcela_atual + k });
     }
     groups.push({ key: r.key, descricao: r.descricao, dataCompraOriginal: r.data, valor: r.valor, parcelaAtual: r.parcela_atual, remaining, parcelaTotal: r.parcela_total, months });
@@ -178,7 +190,29 @@ export function autoConfirmParcelas(faturaRows, transactions, dataCorte, contaId
       candidates.sort((a, b) => dateDiffDays(a.data, row.vencimento) - dateDiffDays(b.data, row.vencimento));
       candidate = candidates[0];
     }
-    if (!candidate && !(row.parcela_atual > 1)) continue; // parcela 1 de verdade: exige confirmação manual
+
+    // Caso mais específico: a PRÓPRIA parcela que esta linha representa (mesma
+    // parcelaKey E mesmo parcela_atual) já foi lançada manualmente antes (ex.:
+    // "+lançar" ou digitada à mão antes da fatura chegar, inclusive quando é
+    // a parcela 1 — uma compra nova comprada e lançada no app ANTES da fatura
+    // trazer a mesma parcela 1). Precisa ser checado ANTES do `continue`
+    // abaixo: sem isso, a guarda "parcela 1 exige confirmação manual" pulava
+    // a linha inteira mesmo já existindo essa confirmação manual, e o cálculo
+    // de previsões futuras (syncPredictions, que lê a MESMA linha da fatura)
+    // usava parcela_atual=1 como base — gerando a previsão seguinte a partir
+    // de 2 meses à frente do vencimento, pulando o mês seguinte (que deveria
+    // ser a parcela 2) inteiro. Sem tratar isso como o registro a ATUALIZAR
+    // (em vez de criar um novo), reimportar a fatura (ou importar uma 2ª
+    // fatura que ainda traz a MESMA parcela, ex. fatura reemitida) também
+    // criava uma transação `confirmed_...` NOVA do zero: o lançamento manual
+    // original ficava "solto" (nunca virava `usedIds`, reaparecia em "No app,
+    // não na fatura") e a nova confirmada aparecia como cópia duplicada em
+    // "Conciliado automaticamente" — bugs reais vistos em produção.
+    const proprioLancamentoManual = !candidate
+      ? (transactions || []).find((t) => !t.previsto && t.parcelaKey === key && t.parcela_atual === row.parcela_atual)
+      : null;
+
+    if (!candidate && !proprioLancamentoManual && !(row.parcela_atual > 1)) continue; // parcela 1 de verdade: exige confirmação manual
 
     // Lançamento REAL (não previsto) já existente com a MESMA parcelaKey —
     // pode ser QUALQUER parcela da mesma compra, usado só para herdar a
@@ -187,20 +221,6 @@ export function autoConfirmParcelas(faturaRows, transactions, dataCorte, contaId
     // igual, porque herdar categoria de uma parcela IRMÃ (diferente) da
     // mesma compra sempre foi o comportamento esperado.
     const irmaoReal = !candidate ? (transactions || []).find((t) => !t.previsto && t.parcelaKey === key) : null;
-
-    // Caso mais específico: a PRÓPRIA parcela que esta linha representa (mesma
-    // parcelaKey E mesmo parcela_atual) já foi lançada manualmente antes (ex.:
-    // "+lançar" ou digitada à mão antes da fatura chegar). Sem tratar isso
-    // como o registro a ATUALIZAR (em vez de criar um novo), reimportar a
-    // fatura (ou importar uma 2ª fatura que ainda traz a MESMA parcela, ex.
-    // fatura reemitida) criava uma transação `confirmed_...` NOVA do zero: o
-    // lançamento manual original ficava "solto" (nunca virava `usedIds`,
-    // reaparecia em "No app, não na fatura") e a nova confirmada aparecia
-    // como cópia duplicada em "Conciliado automaticamente" — bug real visto
-    // em produção.
-    const proprioLancamentoManual = !candidate
-      ? (transactions || []).find((t) => !t.previsto && t.parcelaKey === key && t.parcela_atual === row.parcela_atual)
-      : null;
 
     const descricaoBase = (candidate ? candidate.descricao : row.descricao).replace(/\s*\(parcela prevista\)\s*$/i, '');
     const newId = proprioLancamentoManual ? proprioLancamentoManual.id : `confirmed_${key.replace(/[^a-zA-Z0-9]/g, '_')}_${row.vencimento}`;

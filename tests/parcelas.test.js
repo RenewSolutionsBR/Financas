@@ -66,6 +66,20 @@ describe('parcelas: computeParcelaGroups + syncPredictions', () => {
     assertDeepEqual(toAdd.map((t) => t.parcela_atual).sort(), [2, 3]);
   });
 
+  it('a PRIMEIRA previsao restante cai no MESMO mes civil do vencimento desta linha, nunca pula pro mes seguinte', () => {
+    // Bug real de producao: duas faturas consecutivas podem vencer no MESMO
+    // mes civil (ex.: 01/03 e 30/03) — se a previsao da parcela seguinte
+    // sempre pulasse pro mes civil seguinte ao vencimento mais recente, o
+    // mes da PROXIMA fatura real ficava sem NENHUMA entrada (a previsao
+    // antiga daquele mes ja tinha sido removida pela confirmacao que acabou
+    // de acontecer) ate essa fatura chegar — usuario via o mes "vazio" na
+    // aba Lancamentos entre duas importacoes.
+    const row = rowParcelamento({ vencimento: '2026-03-01', parcela_atual: 2, parcela_total: 10 });
+    const { toAdd } = syncPredictions([row], [], CONTA, FORMA);
+    const primeiraRestante = toAdd.find((t) => t.parcela_atual === 3);
+    assertEqual(primeiraRestante.data.slice(0, 7), '2026-03', 'a parcela 3/10 precisa cair em marco (mesmo mes do vencimento desta linha), nao abril');
+  });
+
   it('mesma compra gera o MESMO id de previsao em duas chamadas — idempotencia', () => {
     const r1 = syncPredictions([rowParcelamento()], [], CONTA, FORMA);
     const r2 = syncPredictions([rowParcelamento()], [], CONTA, FORMA);
