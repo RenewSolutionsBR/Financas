@@ -133,7 +133,7 @@ function montarLinhaFormulario(linha, ctx) {
 // marcado) e "+ lançar" individual (uma linha só, sem depender do
 // checkbox) — mesma lógica de gravação + aprendizado de regra +
 // aplicação retroativa nos dois casos.
-async function lancarSelecionadas(selecionadas, ctx, aoConcluir) {
+async function lancarSelecionadas(selecionadas, ctx, aoConcluir, emLote = true) {
   if (!selecionadas.length) return;
 
   const novosLancamentos = selecionadas.map((lf) => novaTransaction({
@@ -187,16 +187,19 @@ async function lancarSelecionadas(selecionadas, ctx, aoConcluir) {
     }
   }
 
-  toast(`${novosLancamentos.length} lançamento(s) lançado(s) em lote.`, 'ok');
+  const mensagem = emLote
+    ? `${novosLancamentos.length} lançamento(s) lançado(s) em lote.`
+    : 'Lançamento lançado.';
+  toast(mensagem, 'ok');
   await aoConcluir();
 }
 
 async function lancarEmLote(linhasFormulario, ctx, aoConcluir) {
-  await lancarSelecionadas(linhasFormulario.filter((lf) => lf.estado.selecionado), ctx, aoConcluir);
+  await lancarSelecionadas(linhasFormulario.filter((lf) => lf.estado.selecionado), ctx, aoConcluir, true);
 }
 
 async function lancarUma(lf, ctx, aoConcluir) {
-  await lancarSelecionadas([lf], ctx, aoConcluir);
+  await lancarSelecionadas([lf], ctx, aoConcluir, false);
 }
 
 export async function renderBaldesExtrato(painel, extrato, transactions, accounts, apelidosTitular, categorias, formas, regras, aoMudar) {
