@@ -7,6 +7,7 @@
 import { el } from './components.js';
 import { secao } from './cadastros-comuns.js';
 import { baixarBackup, montarInputImportarBackup } from './backup-comum.js';
+import { APP_VERSION } from '../version.js';
 
 export function secaoBackup(aoMudar) {
   const inputArquivo = montarInputImportarBackup(aoMudar);
@@ -18,5 +19,11 @@ export function secaoBackup(aoMudar) {
       el('button', { class: 'btn', text: 'Importar backup', onclick: () => inputArquivo.click() }),
     ]),
     inputArquivo,
+    // Versao visivel na propria tela: sem isso, nao ha como o usuario
+    // confirmar se o aparelho ja pegou a ultima publicacao ou ainda esta
+    // servindo uma versao antiga do cache do service worker (bug real
+    // visto em producao, onde um fix so chegava no aparelho depois do
+    // usuario confirmar a versao manualmente via este numero).
+    el('p', { class: 'ajuda', text: `Versão do app: ${APP_VERSION}` }),
   ]);
 }
