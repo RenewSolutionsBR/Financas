@@ -138,6 +138,15 @@ export function syncPredictions(allFaturaRows, existingTransactions, contaId, fo
 // parcela 1/n, que autoConfirmParcelas nunca confirma sozinha), a de MENOR
 // parcela_atual — a próxima a vencer — assim "remaining" conta a partir
 // dali em vez de já saltar pra última.
+//
+// Quando a ancora escolhida cai no ramo "so ha previsoes" (linha 139 acima),
+// essa previsao NUNCA tem `faturaVencimento`: so autoConfirmParcelas grava
+// esse campo, e so em transacoes CONFIRMADAS. O fallback `t.data` logo abaixo
+// (em parcelaGroupsDaConta) e por isso o caminho SEMPRE tomado pra uma ancora
+// prevista — e isso e seguro, nao uma lacuna do fix de faturaVencimento: `data`
+// de uma previsao ja e o mes sintetico correto (`ym + '-01'`, gravado por
+// syncPredictions), bem diferente do `data`=dataCorte de uma CONFIRMADA (a
+// causa raiz do bug que motivou o campo faturaVencimento em primeiro lugar).
 function melhorAncoraDeParcela(a, b) {
   if (!a.previsto && b.previsto) return a;
   if (a.previsto && !b.previsto) return b;

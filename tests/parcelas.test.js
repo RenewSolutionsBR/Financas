@@ -443,4 +443,23 @@ describe('parcelas: parcelaGroupsDaConta (reconstroi grupos a partir de TRANSACT
     assertEqual(grupos.length, 1);
     assertEqual(grupos[0].months[0].ym, '2026-02', 'sem faturaVencimento, usa t.data como antes (fallback, sem migracao retroativa)');
   });
+
+  it('ancora sendo uma PREVISAO (so ha previsoes pra essa parcelaKey) tambem cai no fallback t.data — e isso e o comportamento ESPERADO, nao um bug latente', () => {
+    // Previsoes NUNCA tem faturaVencimento (so autoConfirmParcelas grava esse
+    // campo, e so em confirmadas), entao a ancora prevista sempre passa pelo
+    // mesmo fallback `t.data` do teste acima. A diferenca e que aqui isso e
+    // seguro por construcao: `data` de uma previsao ja e o mes sintetico
+    // `ym + '-01'' gravado por syncPredictions, nao uma dataCorte de fatura —
+    // entao nao ha risco de "mes errado" equivalente ao bug que faturaVencimento
+    // corrigiu para transacoes confirmadas.
+    const key = computeParcelaKey('LOJA SO PREVISAO', '2026-08-01', 5);
+    const previsao = {
+      id: 'seed_1', previsto: true, parcelaKey: key, contaId: CONTA,
+      descricao: 'LOJA SO PREVISAO (parcela prevista)', data: '2026-09-01', // mes sintetico (ym + '-01')
+      parcela_atual: 2, parcela_total: 5, valor: 40,
+    };
+    const grupos = parcelaGroupsDaConta([previsao], CONTA);
+    assertEqual(grupos.length, 1);
+    assertEqual(grupos[0].months[0].ym, '2026-09', 'previsao sem faturaVencimento usa t.data (o mes sintetico), que ja e o vencimento projetado correto');
+  });
 });
