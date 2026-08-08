@@ -519,4 +519,28 @@ describe('parcelas: parcelaGroupsDaConta (reconstroi grupos a partir de TRANSACT
     assertEqual(grupos[0].months[0].ym, '2026-02');
     assertEqual(grupos[0].months[2].ym, '2026-04');
   });
+
+  it('grupo cuja ancora e uma PREVISAO (nenhuma transacao confirmada pra essa parcelaKey) marca ancoraNaoConfirmada: true', () => {
+    const key = computeParcelaKey('LOJA SO PREVISAO ANCORA', '2026-08-01', 5);
+    const previsao = {
+      id: 'seed_ancora_1', previsto: true, parcelaKey: key, contaId: CONTA,
+      descricao: 'LOJA SO PREVISAO ANCORA (parcela prevista)', data: '2026-09-01',
+      parcela_atual: 2, parcela_total: 5, valor: 40,
+    };
+    const grupos = parcelaGroupsDaConta([previsao], CONTA);
+    assertEqual(grupos.length, 1);
+    assertEqual(grupos[0].ancoraNaoConfirmada, true, 'ancora prevista significa data estimada, precisa avisar o usuario');
+  });
+
+  it('grupo cuja ancora e uma transacao CONFIRMADA marca ancoraNaoConfirmada: false', () => {
+    const key = computeParcelaKey('LOJA CONFIRMADA ANCORA', '2026-01-01', 4);
+    const confirmada = {
+      id: 'confirmed_ancora_1', previsto: false, parcelaKey: key, contaId: CONTA,
+      descricao: 'LOJA CONFIRMADA ANCORA', data: '2026-01-25',
+      faturaVencimento: '2026-01-30', parcela_atual: 2, parcela_total: 4, valor: 100,
+    };
+    const grupos = parcelaGroupsDaConta([confirmada], CONTA);
+    assertEqual(grupos.length, 1);
+    assertEqual(grupos[0].ancoraNaoConfirmada, false, 'ancora confirmada significa vencimento real, nao precisa avisar');
+  });
 });

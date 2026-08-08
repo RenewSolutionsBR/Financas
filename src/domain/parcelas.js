@@ -202,7 +202,14 @@ export function parcelaGroupsDaConta(transactions, contaId) {
     // `false` (mes seguinte) pra qualquer ancora confirmada, com ou sem a
     // chave `previsto` presente.
     const primeiraNoMesmoMes = !!t.previsto;
-    grupos.push(...computeParcelaGroups([row], { primeiraNoMesmoMes }));
+    const gruposDoRow = computeParcelaGroups([row], { primeiraNoMesmoMes });
+    // Ancora e uma previsao (t.previsto truthy) -> nenhuma transacao
+    // confirmada existe ainda pra essa parcelaKey -> o mes mostrado e uma
+    // ESTIMATIVA (mes sintetico gerado por syncPredictions a partir do
+    // vencimento da fatura que confirmou a parcela ANTERIOR, nao um
+    // vencimento real desta parcela) ate o usuario confirmar a parcela 1
+    // (fatura auto-confirma so parcela_atual > 1 — ver autoConfirmParcelas).
+    grupos.push(...gruposDoRow.map((g) => ({ ...g, ancoraNaoConfirmada: !!t.previsto })));
   }
   return grupos;
 }
