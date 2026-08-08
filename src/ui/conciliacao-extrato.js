@@ -9,9 +9,46 @@ import { formatDateBR } from '../core/dates.js';
 import { runReconciliationBank } from '../domain/reconcile-bank.js';
 import { aplicarRegra, aprenderRegra, candidatosRetroativos } from '../domain/classification.js';
 import { formaPorPrefixoExtrato } from '../domain/payment-methods.js';
-import { novaTransaction, saveTransactions, NATUREZAS } from '../domain/transactions.js';
+import { novaTransaction, saveTransactions, NATUREZAS, rotuloNatureza } from '../domain/transactions.js';
 import { CATEGORIA_A_CLASSIFICAR } from '../domain/categories.js';
 import * as storage from '../core/storage.js';
+
+// Pura: filtra qualquer lista de itens por natureza/forma, dado como
+// extrair {natureza, formaPagamentoId} de CADA TIPO de item — os 4 baldes
+// de extrato têm formatos de item diferentes (par {extrato,app}, transaction
+// crua, linha crua sem forma ainda) e nao dá pra assumir um shape fixo.
+// `extrairForma` que devolve sempre null (linha crua) faz o filtro de forma
+// nunca excluir nada para esse tipo de item, de proposito.
+export function filtrarPorNaturezaEForma(itens, { natureza, formaPagamentoId } = {}, extrair) {
+  return (itens || []).filter((item) => {
+    const { natureza: n, formaPagamentoId: f } = extrair(item);
+    if (natureza && n !== natureza) return false;
+    if (formaPagamentoId && f !== null && f !== formaPagamentoId) return false;
+    return true;
+  });
+}
+
+let filtroNatureza = '';
+let filtroForma = '';
+
+function montarBarraFiltrosExtrato(formas, aoMudar) {
+  const selNatureza = el('select', {}, [
+    el('option', { value: '', text: 'Todas as naturezas', ...(filtroNatureza === '' ? { selected: 'selected' } : {}) }),
+    ...NATUREZAS.map((n) => el('option', { value: n, text: rotuloNatureza(n), ...(n === filtroNatureza ? { selected: 'selected' } : {}) })),
+  ]);
+  selNatureza.addEventListener('change', () => { filtroNatureza = selNatureza.value; aoMudar(); });
+
+  const selForma = el('select', {}, [
+    el('option', { value: '', text: 'Todas as formas', ...(filtroForma === '' ? { selected: 'selected' } : {}) }),
+    ...formas.map((f) => el('option', { value: f.id, text: f.nome, ...(f.id === filtroForma ? { selected: 'selected' } : {}) })),
+  ]);
+  selForma.addEventListener('change', () => { filtroForma = selForma.value; aoMudar(); });
+
+  return el('div', { class: 'filtros' }, [
+    el('label', { class: 'campo' }, [el('span', { text: 'Natureza' }), selNatureza]),
+    el('label', { class: 'campo' }, [el('span', { text: 'Forma' }), selForma]),
+  ]);
+}
 
 function itemMatched(par) {
   return el('div', { class: 'item-balde item-conciliado' }, [
@@ -152,9 +189,15 @@ export async function renderBaldesExtrato(painel, extrato, transactions, account
   const statementsFatura = (await storage.getAll('statements')).filter((s) => s.tipo === 'fatura');
   const { autoMatched, matched, extratoUnmatched, appUnmatched } = runReconciliationBank(extrato, transactions, accounts, apelidosTitular, statementsFatura);
 
+  const filtroAtivo = { natureza: filtroNatureza, formaPagamentoId: filtroForma };
+  const autoMatchedFiltrado = filtrarPorNaturezaEForma(autoMatched, filtroAtivo, (p) => ({ natureza: p.app.natureza, formaPagamentoId: p.app.formaPagamentoId }));
+  const matchedFiltrado = filtrarPorNaturezaEForma(matched, filtroAtivo, (p) => ({ natureza: p.app.natureza, formaPagamentoId: p.app.formaPagamentoId }));
+  const appUnmatchedFiltrado = filtrarPorNaturezaEForma(appUnmatched, filtroAtivo, (t) => ({ natureza: t.natureza, formaPagamentoId: t.formaPagamentoId }));
+  const extratoUnmatchedFiltrado = filtrarPorNaturezaEForma(extratoUnmatched, { natureza: filtroNatureza }, (l) => ({ natureza: l.natureza, formaPagamentoId: null }));
+
   const linhasPorId = new Map((extrato.rows || []).map((linha) => [linha.id, linha]));
   const ctx = { contaId: extrato.contaId, statementId: extrato.id, categorias, formas, regras, transactions, linhasPorId };
-  const linhasFormulario = extratoUnmatched.map((linha) => montarLinhaFormulario(linha, ctx));
+  const linhasFormulario = extratoUnmatchedFiltrado.map((linha) => montarLinhaFormulario(linha, ctx));
 
   const botaoLote = el('button', { class: 'btn btn-primario', text: '+ lançar em lote', disabled: 'disabled' });
   const atualizarBotaoLote = () => { botaoLote.disabled = !linhasFormulario.some((lf) => lf.estado.selecionado); };
@@ -168,14 +211,15 @@ export async function renderBaldesExtrato(painel, extrato, transactions, account
 
   painel.innerHTML = '';
   painel.append(
-    balde('Conciliado automaticamente', autoMatched.map(itemMatched), 'Nenhum item conciliado automaticamente.'),
-    balde('Conciliado', matched.map(itemMatched), 'Nenhum item conciliado.'),
+    montarBarraFiltrosExtrato(formas, () => renderBaldesExtrato(painel, extrato, transactions, accounts, apelidosTitular, categorias, formas, regras, aoMudar)),
+    balde('Conciliado automaticamente', autoMatchedFiltrado.map(itemMatched), 'Nenhum item conciliado automaticamente.'),
+    balde('Conciliado', matchedFiltrado.map(itemMatched), 'Nenhum item conciliado.'),
     el('div', { class: 'balde' }, [
       el('h3', { text: `No extrato, não lançado no app (${linhasFormulario.length})` }),
       linhasFormulario.length
         ? el('div', {}, [...linhasFormulario.map((lf) => lf.linhaEl), el('div', { class: 'acoes' }, [botaoLote])])
         : el('p', { class: 'vazio', text: 'Tudo do extrato já está lançado no app.' }),
     ]),
-    balde('No app, não no extrato', appUnmatched.map(itemApp), 'Nenhum lançamento do app ficou de fora do extrato.')
+    balde('No app, não no extrato', appUnmatchedFiltrado.map(itemApp), 'Nenhum lançamento do app ficou de fora do extrato.')
   );
 }

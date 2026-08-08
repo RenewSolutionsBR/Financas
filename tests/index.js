@@ -31,6 +31,7 @@ export const TEST_MODULES = [
   './santander-extrato-xls.test.js',
   './generic-table.test.js',
   './conciliacao-import.test.js',
+  './conciliacao-extrato-filtros.test.js',
 ];
 
 // Testes que dependem de IndexedDB ou DOM: só no navegador.
