@@ -4,10 +4,32 @@
 // lógica de exportar/importar em si é compartilhada com o rodapé de
 // Lançamentos e mora em backup-comum.js, pra não duplicar tratamento de erro.
 
-import { el } from './components.js';
+import { el, abrirModal } from './components.js';
 import { secao } from './cadastros-comuns.js';
 import { baixarBackup, montarInputImportarBackup } from './backup-comum.js';
 import { APP_VERSION } from '../version.js';
+import * as storage from '../core/storage.js';
+
+// TEMPORARIO (investigacao de bug em producao, remover depois de resolvido):
+// mostra o formato tecnico dos statements direto na tela do aparelho, sem
+// precisar de DevTools remoto/cabo — o unico jeito viavel de diagnosticar um
+// problema que so acontece no celular do usuario, onde o DevTools via USB se
+// mostrou muito instavel pra depurar ao vivo.
+async function diagnosticoStatements() {
+  const statements = await storage.getAll('statements');
+  const linhas = statements.map((s) => {
+    const tipoRows = Array.isArray(s.rows) ? `array(${s.rows.length})` : typeof s.rows;
+    const camposPrimeiraLinha = Array.isArray(s.rows) && s.rows[0] ? Object.keys(s.rows[0]).join(', ') : '(nenhuma linha)';
+    return `id: ${s.id}\ntipo: ${s.tipo}\nrows: ${tipoRows}\ncampos da 1a linha: ${camposPrimeiraLinha}`;
+  });
+  await abrirModal({
+    titulo: 'Diagnóstico (técnico)',
+    corpo: el('div', {}, linhas.length
+      ? linhas.map((texto) => el('pre', { style: 'white-space: pre-wrap; font-size: 0.75rem; border-bottom: 1px solid var(--linha); padding: 8px 0;', text: texto }))
+      : [el('p', { text: 'Nenhum documento (fatura/extrato) importado.' })]),
+    acoes: [{ id: 'ok', rotulo: 'Fechar' }],
+  });
+}
 
 export function secaoBackup(aoMudar) {
   const inputArquivo = montarInputImportarBackup(aoMudar);
@@ -17,6 +39,7 @@ export function secaoBackup(aoMudar) {
     el('div', { class: 'acoes' }, [
       el('button', { class: 'btn', text: 'Exportar backup', onclick: baixarBackup }),
       el('button', { class: 'btn', text: 'Importar backup', onclick: () => inputArquivo.click() }),
+      el('button', { class: 'btn', text: 'Diagnóstico', onclick: diagnosticoStatements }),
     ]),
     inputArquivo,
     // Versao visivel na propria tela: sem isso, nao ha como o usuario
