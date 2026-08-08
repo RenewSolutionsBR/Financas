@@ -376,10 +376,12 @@ button { cursor: pointer; }
 }
 
 .item-lancamento {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  grid-template-rows: auto auto;
   align-items: center;
-  gap: 4px 10px;
+  column-gap: 10px;
+  row-gap: 2px;
   padding: 10px 0;
   border-bottom: 1px solid var(--linha);
 }
@@ -391,16 +393,21 @@ button { cursor: pointer; }
 .item-lancamento.nao-gasto { opacity: 0.65; }
 
 .lanc-principal {
-  flex: 1 1 100%;
+  grid-column: 1;
+  grid-row: 1;
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
 }
 
 .lanc-descricao {
   font-size: 0.92rem;
   font-weight: 600;
-  word-break: break-word;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 .selo-auto {
@@ -416,16 +423,24 @@ button { cursor: pointer; }
 }
 
 .lanc-meta {
-  flex: 1 1 auto;
+  grid-column: 1;
+  grid-row: 2;
   font-size: 0.78rem;
   color: var(--tinta-fraca);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 .lanc-valor {
-  flex: 0 0 auto;
+  grid-column: 2;
+  grid-row: 1 / 3;
   font-family: var(--font-mono);
   font-size: 0.9rem;
   font-weight: 600;
+  text-align: right;
+  min-width: 84px;
 }
 
 /* --- Aba Conciliação --- */
@@ -698,6 +713,8 @@ button { cursor: pointer; }
    botão a pedir 160px mínimo, e numa linha estreita de lançamento os dois
    quebravam pra linhas separadas em vez de ficarem lado a lado. */
 .item-lancamento-acoes {
+  grid-column: 3;
+  grid-row: 1 / 3;
   display: flex;
   gap: 8px;
   flex: 0 0 auto;

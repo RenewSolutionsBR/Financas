@@ -169,7 +169,7 @@ function listagem(visiveis, ctx) {
   return el('div', { class: 'lista-lancamentos' }, visiveis.map((t) =>
     el('div', { class: classeDoItem(t) }, [
       el('div', { class: 'lanc-principal' }, [
-        el('span', { class: 'lanc-descricao', text: `${t.descricao}${t.parcela_atual ? ` (${t.parcela_atual}/${t.parcela_total})` : ''}` }),
+        el('span', { class: 'lanc-descricao', title: `${t.descricao}${t.parcela_atual ? ` (${t.parcela_atual}/${t.parcela_total})` : ''}`, text: `${t.descricao}${t.parcela_atual ? ` (${t.parcela_atual}/${t.parcela_total})` : ''}` }),
         t.classificadoAutomaticamente ? el('span', { class: 'selo-auto', title: 'Categoria aplicada automaticamente', text: 'auto' }) : null,
       ]),
       el('div', { class: 'lanc-meta', text: `${formatDateBR(t.data)} · ${nome(ctx.categorias, t.categoria)} · ${nome(ctx.formas, t.formaPagamentoId)}` }),
