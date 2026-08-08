@@ -20,7 +20,20 @@ async function diagnosticoStatements() {
   const linhas = statements.map((s) => {
     const tipoRows = Array.isArray(s.rows) ? `array(${s.rows.length})` : typeof s.rows;
     const camposPrimeiraLinha = Array.isArray(s.rows) && s.rows[0] ? Object.keys(s.rows[0]).join(', ') : '(nenhuma linha)';
-    return `id: ${s.id}\ntipo: ${s.tipo}\nrows: ${tipoRows}\ncampos da 1a linha: ${camposPrimeiraLinha}`;
+    let detalheString = '';
+    if (typeof s.rows === 'string') {
+      // rows virou string em vez de array: o JSON remontado esta malformado
+      // (desserializarValor engoliu o erro de JSON.parse em silencio). Mostra
+      // o TAMANHO e so as BORDAS (inicio/fim/meio) pra achar onde quebrou,
+      // sem expor o conteudo financeiro inteiro na tela.
+      const tam = s.rows.length;
+      const meio = Math.floor(tam / 2);
+      detalheString = `\ntamanho da string: ${tam}` +
+        `\ninicio (0-80): ${JSON.stringify(s.rows.slice(0, 80))}` +
+        `\nmeio (${meio}-${meio+80}): ${JSON.stringify(s.rows.slice(meio, meio + 80))}` +
+        `\nfim (ultimos 80): ${JSON.stringify(s.rows.slice(-80))}`;
+    }
+    return `id: ${s.id}\ntipo: ${s.tipo}\nrows: ${tipoRows}\ncampos da 1a linha: ${camposPrimeiraLinha}${detalheString}`;
   });
   await abrirModal({
     titulo: 'Diagnóstico (técnico)',
