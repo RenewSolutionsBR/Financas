@@ -31,6 +31,15 @@ export function filtrarPorNaturezaEForma(itens, { natureza, formaPagamentoId } =
 let filtroNatureza = '';
 let filtroForma = '';
 
+// Chamado por conciliacao.js sempre que a conta ou o documento selecionado
+// muda — sem isso um filtro de natureza/forma escolhido para um extrato
+// continua ativo silenciosamente ao trocar para outro extrato, podendo
+// esconder linhas pendentes de verdade (ver Finding 1 da revisao final).
+export function limparFiltrosExtrato() {
+  filtroNatureza = '';
+  filtroForma = '';
+}
+
 function montarBarraFiltrosExtrato(formas, aoMudar) {
   const selNatureza = el('select', {}, [
     el('option', { value: '', text: 'Todas as naturezas', ...(filtroNatureza === '' ? { selected: 'selected' } : {}) }),
@@ -62,6 +71,16 @@ function itemApp(t) {
     el('span', { class: 'item-descricao', text: t.descricao }),
     el('span', { class: 'item-meta', text: `${formatDateBR(t.data)} · ${fmtBRL(t.valor)}` }),
   ]);
+}
+
+// Pura: titulo do balde "No extrato, nao lancado no app". Quando um filtro
+// de natureza/forma esta ativo, `linhasFormulario.length` ja veio filtrado
+// e pode mostrar "(0)" mesmo havendo trabalho pendente de verdade (Finding 2
+// da revisao final) — "X de Y" deixa isso visivel em vez de escondido.
+export function tituloBaldeNaoLancado(totalFiltrado, totalSemFiltro, filtroAtivo) {
+  return filtroAtivo
+    ? `No extrato, não lançado no app (${totalFiltrado} de ${totalSemFiltro})`
+    : `No extrato, não lançado no app (${totalFiltrado})`;
 }
 
 function balde(titulo, itens, vazio) {
@@ -233,7 +252,7 @@ export async function renderBaldesExtrato(painel, extrato, transactions, account
     balde('Conciliado automaticamente', autoMatchedFiltrado.map(itemMatched), 'Nenhum item conciliado automaticamente.'),
     balde('Conciliado', matchedFiltrado.map(itemMatched), 'Nenhum item conciliado.'),
     el('div', { class: 'balde' }, [
-      el('h3', { text: `No extrato, não lançado no app (${linhasFormulario.length})` }),
+      el('h3', { text: tituloBaldeNaoLancado(linhasFormulario.length, extratoUnmatched.length, !!(filtroNatureza || filtroForma)) }),
       linhasFormulario.length
         ? el('div', {}, [...linhasFormulario.map((lf) => lf.linhaEl), el('div', { class: 'acoes' }, [botaoLote])])
         : el('p', { class: 'vazio', text: 'Tudo do extrato já está lançado no app.' }),

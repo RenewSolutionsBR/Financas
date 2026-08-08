@@ -12,7 +12,7 @@ import { buildFullReconciliationRows } from '../domain/reconcile-card.js';
 import * as storage from '../core/storage.js';
 import { renderImportacao } from './conciliacao-import.js';
 import { renderBaldesFatura } from './conciliacao-fatura.js';
-import { renderBaldesExtrato } from './conciliacao-extrato.js';
+import { renderBaldesExtrato, limparFiltrosExtrato } from './conciliacao-extrato.js';
 
 let contaSelecionadaId = null;
 let documentoSelecionadoId = null;
@@ -94,6 +94,7 @@ function montarSeletorContaCartao(contas) {
   sel.addEventListener('change', async () => {
     contaSelecionadaId = sel.value || null;
     documentoSelecionadoId = null;
+    limparFiltrosExtrato();
     await renderConciliacao();
   });
   return el('label', { class: 'campo' }, [el('span', { text: 'Conta / cartão' }), sel]);
@@ -109,6 +110,10 @@ function montarSeletorDocumento(documentos) {
       ...(d.id === documentoSelecionadoId ? { selected: 'selected' } : {}),
     })),
   ]);
-  sel.addEventListener('change', async () => { documentoSelecionadoId = sel.value || null; await renderConciliacao(); });
+  sel.addEventListener('change', async () => {
+    documentoSelecionadoId = sel.value || null;
+    limparFiltrosExtrato();
+    await renderConciliacao();
+  });
   return el('label', { class: 'campo' }, [el('span', { text: 'Documento' }), sel]);
 }
