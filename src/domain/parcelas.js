@@ -156,7 +156,14 @@ export function parcelaGroupsDaConta(transactions, contaId) {
   const rowsDoGrupo = [...porKey.values()].map((t) => ({
     tipo: 'parcelamento',
     descricao: t.descricao.replace(/\s*\(parcela prevista\)\s*$/i, ''),
-    data: t.data, vencimento: t.data,
+    data: t.data,
+    // faturaVencimento (campo novo, gravado por autoConfirmParcelas a partir
+    // desta correcao) e o vencimento REAL da fatura — t.data e a dataCorte,
+    // que NAO deve ser usada como ancora de projecao (bug corrigido: parcela
+    // ja paga aparecia como futura). Fallback pra t.data cobre transacoes
+    // confirmadas ANTES deste fix, sem migracao retroativa (decisao ja
+    // validada) — nesses casos o comportamento e o mesmo de hoje.
+    vencimento: t.faturaVencimento || t.data,
     parcela_atual: t.parcela_atual, parcela_total: t.parcela_total, valor: t.valor,
     key: t.parcelaKey,
   }));
@@ -235,6 +242,13 @@ export function autoConfirmParcelas(faturaRows, transactions, dataCorte, contaId
       descricao: descricaoBase,
       valor: row.valor,
       data: dataCorte || row.vencimento,
+      // Vencimento REAL da fatura (nunca a dataCorte) — usado por
+      // parcelaGroupsDaConta (aba Parcelas) pra ancorar corretamente a
+      // projecao de parcelas futuras. `data` continua sendo dataCorte de
+      // proposito (comportamento ja aceito pra exibicao em Lancamentos);
+      // este campo existe so pra dar a quem precisa do vencimento real um
+      // jeito de recupera-lo sem reconstruir a partir do id.
+      faturaVencimento: row.vencimento,
       categoria: candidate ? candidate.categoria : (irmaoReal ? irmaoReal.categoria : CATEGORIA_A_CLASSIFICAR),
       natureza: 'despesa',
       origem: 'fatura',
