@@ -23,7 +23,7 @@ function sufixoParcela(item) {
   return item.parcela_atual ? ` (${item.parcela_atual}/${item.parcela_total})` : '';
 }
 
-function itemFatura(item, contaId) {
+function itemFatura(item, contaId, faturaVencimento) {
   return el('div', { class: 'item-balde' }, [
     el('span', { class: 'item-descricao', text: `${item.descricao}${sufixoParcela(item)}` }),
     el('span', { class: 'item-meta', text: `${formatDateBR(item.data)} · ${fmtBRL(item.valor)}` }),
@@ -49,6 +49,13 @@ function itemFatura(item, contaId) {
             parcela_atual: item.parcela_atual,
             parcela_total: item.parcela_total,
             parcelaKey: computeParcelaKey(item.descricao, item.data, item.parcela_total),
+            // Vencimento REAL da fatura (nao a data da compra, que e item.data)
+            // — sem isso, parcelaGroupsDaConta usava a data da compra como
+            // ancora de projecao (empurrando as parcelas restantes ~1 mes pra
+            // tras), porque parcela 1/n nunca e auto-confirmada
+            // (autoConfirmParcelas exige parcela_atual > 1 ou candidato
+            // previo) e so chega em transactions por este botao.
+            faturaVencimento,
           } : {}),
         };
         irParaAba('Lancamentos');
@@ -85,7 +92,7 @@ export async function renderBaldesFatura(painel, fatura, faturasList, transactio
   painel.append(
     balde('Conciliado automaticamente', autoMatched.map(itemMatched), 'Nenhum item conciliado automaticamente.'),
     balde('Conciliado', matched.map(itemMatched), 'Nenhum item conciliado.'),
-    balde('Na fatura, não lançado no app', faturaUnmatched.map((item) => itemFatura(item, fatura.contaId)), 'Tudo da fatura já está lançado no app.'),
+    balde('Na fatura, não lançado no app', faturaUnmatched.map((item) => itemFatura(item, fatura.contaId, fatura.vencimento)), 'Tudo da fatura já está lançado no app.'),
     balde('No app, não na fatura', appUnmatched.map(itemApp), 'Nenhum lançamento do app ficou de fora da fatura.')
   );
 }

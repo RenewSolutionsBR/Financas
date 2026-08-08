@@ -235,6 +235,7 @@ export async function montarFormularioLancamento(ctx, transacoes, editandoId, de
           parcela_atual: rascunho.parcela_atual,
           parcela_total: rascunho.parcela_total,
           parcelaKey: rascunho.parcelaKey,
+          ...(rascunho.faturaVencimento ? { faturaVencimento: rascunho.faturaVencimento } : {}),
         } : {}),
       };
       const registro = emEdicao ? { ...emEdicao, ...base } : novaTransaction(base);

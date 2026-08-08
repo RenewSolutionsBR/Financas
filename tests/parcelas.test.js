@@ -498,4 +498,25 @@ describe('parcelas: parcelaGroupsDaConta (reconstroi grupos a partir de TRANSACT
     assertEqual(grupos.length, 1);
     assertEqual(grupos[0].months[0].ym, '2026-09', 'previsao sem faturaVencimento usa t.data (o mes sintetico), que ja e o vencimento projetado correto');
   });
+
+  it('ancora confirmada SEM origem de autoConfirmParcelas (ex.: salva via "+lancar" manual) tambem usa faturaVencimento quando presente', () => {
+    // Replica o formato exato que lancamentos-form.js agora grava quando o
+    // rascunho do "+lancar" (conciliacao-fatura.js) carrega faturaVencimento:
+    // previsto ausente (novaTransaction grava previsto:false por padrao),
+    // data = data da COMPRA (nao vencimento), faturaVencimento = vencimento
+    // real da fatura que o usuario clicou "+lancar".
+    const transactions = [{
+      id: 'tx_manual_1', descricao: 'LOJA EXEMPLO', data: '2025-12-22',
+      faturaVencimento: '2026-01-30', valor: 157.51,
+      parcela_atual: 1, parcela_total: 4, parcelaKey: computeParcelaKey('LOJA EXEMPLO', '2025-12-22', 4),
+      previsto: false, contaId: 'acc_1',
+    }];
+    const grupos = parcelaGroupsDaConta(transactions, 'acc_1');
+    assertEqual(grupos.length, 1);
+    assertEqual(grupos[0].remaining, 3);
+    // Ancora confirmada -> mes SEGUINTE ao vencimento (fevereiro), nao o mes
+    // da data de compra (dezembro) nem o mesmo mes do vencimento (janeiro).
+    assertEqual(grupos[0].months[0].ym, '2026-02');
+    assertEqual(grupos[0].months[2].ym, '2026-04');
+  });
 });
