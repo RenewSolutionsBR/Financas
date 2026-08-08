@@ -2,7 +2,7 @@
 // outros tres modulos (import/fatura/extrato). Nenhuma regra de negocio
 // mora aqui.
 
-import { el } from './components.js';
+import { el, toast } from './components.js';
 import { listAccounts, TIPO_CARTAO, TIPO_CONTA } from '../domain/accounts.js';
 import { listTransactions } from '../domain/transactions.js';
 import { listCategorias } from '../domain/categories.js';
@@ -18,10 +18,14 @@ let contaSelecionadaId = null;
 let documentoSelecionadoId = null;
 
 async function exportarConciliacaoCompleta(faturasList, transactions, accounts) {
-  const rows = buildFullReconciliationRows(faturasList, transactions, accounts);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'Conciliacao');
-  XLSX.writeFile(wb, `conciliacao-fatura-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  try {
+    const rows = buildFullReconciliationRows(faturasList, transactions, accounts);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'Conciliacao');
+    XLSX.writeFile(wb, `conciliacao-fatura-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  } catch (e) {
+    toast('Não consegui exportar a conciliação: ' + e.message, 'erro');
+  }
 }
 
 export async function renderConciliacao() {
