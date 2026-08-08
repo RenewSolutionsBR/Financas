@@ -66,7 +66,12 @@ function similaridadeCanonica(a, b) {
 export function runReconciliationBank(extrato, transactions, accounts, apelidosTitular, statementsFatura) {
   const comNatureza = (extrato.rows || []).map((linha) => ({ ...linha, ...atribuirNatureza(linha, accounts, apelidosTitular) }));
 
-  const pool = (transactions || []).filter((t) => !t.previsto).map((t) => ({ ...t, used: false }));
+  // Lançamentos de origem fatura (parcelas confirmadas, pagamentos de
+  // fatura) pertencem exclusivamente à conciliação de fatura
+  // (conciliacao-fatura.js) — nunca deveriam sobrar aqui em "No app, não
+  // no extrato" só porque não casaram por valor/data com nenhuma linha do
+  // extrato bancário.
+  const pool = (transactions || []).filter((t) => !t.previsto && t.origem !== 'fatura').map((t) => ({ ...t, used: false }));
   const autoMatched = [];
   const matched = [];
   const extratoUnmatched = [];

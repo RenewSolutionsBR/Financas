@@ -127,4 +127,18 @@ describe('reconcile-bank: runReconciliationBank — 4 baldes e idempotencia', ()
     const r2 = runReconciliationBank(extrato, [], accounts, apelidos, []);
     assertDeepEqual(r1.extratoUnmatched.map((l) => l.id), r2.extratoUnmatched.map((l) => l.id));
   });
+
+  it('lancamento de ORIGEM FATURA nunca aparece em appUnmatched, mesmo sem casar com nenhuma linha do extrato', () => {
+    const extrato = { contaId: 'acc_corrente_1', rows: [] };
+    const parcelaDeFatura = { id: 't1', previsto: false, natureza: 'despesa', origem: 'fatura', contaId: 'acc_cartao_1', data: '2026-05-05', valor: 349.4 };
+    const { appUnmatched } = runReconciliationBank(extrato, [parcelaDeFatura], accounts, apelidos, []);
+    assertEqual(appUnmatched.length, 0, 'parcela de fatura pertence a conciliacao de fatura, nunca deveria sobrar no balde de extrato');
+  });
+
+  it('lancamento de origem EXTRATO (ou sem origem definida) continua aparecendo normalmente em appUnmatched quando nao casa', () => {
+    const extrato = { contaId: 'acc_corrente_1', rows: [] };
+    const semOrigem = { id: 't1', previsto: false, natureza: 'despesa', contaId: 'acc_corrente_1', data: '2026-05-05', valor: 50 };
+    const { appUnmatched } = runReconciliationBank(extrato, [semOrigem], accounts, apelidos, []);
+    assertEqual(appUnmatched.length, 1, 'lancamento manual/de extrato sem casamento ainda precisa aparecer, senao o usuario nunca sabe que falta reconciliar');
+  });
 });
