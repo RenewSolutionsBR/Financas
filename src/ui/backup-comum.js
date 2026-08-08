@@ -10,14 +10,18 @@ import { exportarBackup, importarBackup, detectarVersaoDoArquivo } from '../impo
 import { registrarEvento, TIPOS_EVENTO } from '../domain/audit-log.js';
 
 export async function baixarBackup() {
-  const blob = await exportarBackup();
-  const url = URL.createObjectURL(blob);
-  const link = el('a', { href: url, download: `backup-livro-de-gastos-${new Date().toISOString().slice(0, 10)}.xlsx` });
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
-  toast('Backup gerado.', 'ok');
+  try {
+    const blob = await exportarBackup();
+    const url = URL.createObjectURL(blob);
+    const link = el('a', { href: url, download: `backup-livro-de-gastos-${new Date().toISOString().slice(0, 10)}.xlsx` });
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    toast('Backup gerado.', 'ok');
+  } catch (e) {
+    toast('Não consegui gerar o backup: ' + e.message, 'erro');
+  }
 }
 
 export function montarInputImportarBackup(aoMudar) {
