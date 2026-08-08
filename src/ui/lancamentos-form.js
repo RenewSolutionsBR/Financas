@@ -16,7 +16,7 @@ import {
   interpretarValor, tipoContaParaForma, contasParaForma, contaPadraoValidaParaForma,
 } from './lancamentos-form-helpers.js';
 import { parseMoneyBR } from '../core/money.js';
-import { formatDateBR, parseDateBR, todayISO } from '../core/dates.js';
+import { formatDateBR, todayISO } from '../core/dates.js';
 import * as storage from '../core/storage.js';
 import { registrarEvento, TIPOS_EVENTO } from '../domain/audit-log.js';
 
@@ -36,7 +36,7 @@ export async function montarFormularioLancamento(ctx, transacoes, editandoId, de
   const emEdicao = editandoId ? transacoes.find((t) => t.id === editandoId) : null;
   const ultimaForma = await storage.getMeta('ultimaFormaUsada', null);
 
-  const inpData = el('input', { type: 'text', inputmode: 'numeric', placeholder: 'DD/MM/AAAA', value: formatDateBR(emEdicao ? emEdicao.data : (rascunho ? rascunho.data : todayISO())) });
+  const inpData = el('input', { type: 'date', value: emEdicao ? emEdicao.data : (rascunho ? rascunho.data : todayISO()) });
   const inpDescricao = el('input', { type: 'text', placeholder: 'Descrição', value: emEdicao ? emEdicao.descricao : (rascunho ? rascunho.descricao : '') });
   const inpValor = el('input', { type: 'text', inputmode: 'decimal', placeholder: '0,00', value: emEdicao ? String(emEdicao.valor).replace('.', ',') : (rascunho ? String(rascunho.valor).replace('.', ',') : '') });
 
@@ -178,7 +178,7 @@ export async function montarFormularioLancamento(ctx, transacoes, editandoId, de
       if (chkParcelado.checked && !emEdicao) {
         const base = {
           descricao: inpDescricao.value.trim(),
-          data: parseDateBR(inpData.value),
+          data: inpData.value,
           categoria: selCategoria.value,
           formaPagamentoId: selForma.value,
           contaId: selConta.value || undefined,
@@ -218,7 +218,7 @@ export async function montarFormularioLancamento(ctx, transacoes, editandoId, de
       const { valor, erro: erroValor } = interpretarValor(inpValor.value);
       if (erroValor) return toast(erroValor, 'erro');
 
-      const data = parseDateBR(inpData.value);
+      const data = inpData.value;
       const base = {
         data,
         descricao: inpDescricao.value.trim(),
