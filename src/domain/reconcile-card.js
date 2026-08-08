@@ -5,8 +5,6 @@
 
 import { plasticosDoTitular } from './accounts.js';
 import { computeParcelaKey } from './parcelas.js';
-import { atribuirNatureza } from './reconcile-bank.js';
-
 const POOL_SLACK_DAYS = 3;
 
 function dateDiffDays(iso1, iso2) {
@@ -140,9 +138,8 @@ export function buildFullReconciliationRows(faturasList, extratosList, allTransa
 
   const extratosOrdenados = [...(extratosList || [])].sort((a, b) => (a.importadoEm || 0) - (b.importadoEm || 0));
   extratosOrdenados.forEach((extrato) => {
-    const comNatureza = (extrato.rows || []).map((linha) => ({ ...linha, ...atribuirNatureza(linha, accounts, apelidosTitular) }));
-    comNatureza.forEach((linha) => {
-      const idx = pool.findIndex((t) => !t.used && Math.abs(t.valor - linha.valor) < 0.01 && dateDiffDays(t.data, linha.data) <= 2 && (!t.contaId || t.contaId === extrato.contaId));
+    (extrato.rows || []).forEach((linha) => {
+      const idx = pool.findIndex((t) => !t.used && t.origem !== 'fatura' && Math.abs(t.valor - linha.valor) < 0.01 && dateDiffDays(t.data, linha.data) <= 2 && (!t.contaId || t.contaId === extrato.contaId));
       if (idx >= 0) {
         const t = pool[idx];
         t.used = true;
