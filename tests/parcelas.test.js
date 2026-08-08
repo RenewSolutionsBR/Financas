@@ -80,6 +80,20 @@ describe('parcelas: computeParcelaGroups + syncPredictions', () => {
     assertEqual(primeiraRestante.data.slice(0, 7), '2026-03', 'a parcela 3/10 precisa cair em marco (mesmo mes do vencimento desta linha), nao abril');
   });
 
+  it('computeParcelaGroups SEM o parametro novo (ou com primeiraNoMesmoMes:true) mantem o comportamento atual — nenhuma regressao no fluxo de importacao', () => {
+    const row = rowParcelamento({ vencimento: '2026-03-01', parcela_atual: 2, parcela_total: 10 });
+    const gruposDefault = computeParcelaGroups([row]);
+    const gruposExplicito = computeParcelaGroups([row], { primeiraNoMesmoMes: true });
+    assertEqual(gruposDefault[0].months[0].ym, '2026-03', 'default continua "mesmo mes" — comportamento ja validado para importacao');
+    assertEqual(gruposExplicito[0].months[0].ym, '2026-03');
+  });
+
+  it('computeParcelaGroups com primeiraNoMesmoMes:false comeca no mes SEGUINTE ao vencimento', () => {
+    const row = rowParcelamento({ vencimento: '2026-03-01', parcela_atual: 2, parcela_total: 10 });
+    const grupos = computeParcelaGroups([row], { primeiraNoMesmoMes: false });
+    assertEqual(grupos[0].months[0].ym, '2026-04', 'com o novo parametro false, pula pro mes seguinte (marco ja foi pago)');
+  });
+
   it('mesma compra gera o MESMO id de previsao em duas chamadas — idempotencia', () => {
     const r1 = syncPredictions([rowParcelamento()], [], CONTA, FORMA);
     const r2 = syncPredictions([rowParcelamento()], [], CONTA, FORMA);
@@ -412,13 +426,13 @@ describe('parcelas: parcelaGroupsDaConta (reconstroi grupos a partir de TRANSACT
     assertDeepEqual(parcelaGroupsDaConta([t], CONTA), []);
   });
 
-  it('usa faturaVencimento (nao data=dataCorte) como ancora, quando presente — fix do bug real: parcela ja paga aparecendo como futura', () => {
+  it('usa faturaVencimento (nao data=dataCorte) como ancora, E comeca no MES SEGUINTE ao vencimento (nao no mesmo mes) — fix definitivo: mes ja pago nao aparece mais como parcela futura', () => {
     const key = computeParcelaKey('LOJA VENCIMENTO', '2025-10-01', 9);
-    // Cenario real do usuario: fatura vence 30/01/2026, mas a transacao
-    // confirmada grava data=dataCorte (23/12/2025, mes ANTERIOR ao
-    // vencimento) — sem o fix, parcelaGroupsDaConta ancorava em dezembro
-    // (t.data) em vez de janeiro (faturaVencimento), fazendo a projecao
-    // comecar um mes cedo demais e incluir um mes ja pago.
+    // Cenario real do usuario: fatura vence 30/01/2026 e confirma a parcela
+    // 4/9. O mes de JANEIRO (mes do vencimento desta fatura) JA FOI PAGO —
+    // a primeira parcela RESTANTE (5/9) precisa cair em FEVEREIRO, nao em
+    // janeiro. Confirmado pelo usuario: fatura de 30/06/2026 traz a ultima
+    // parcela (9/9), entao fevereiro..junho sao os 5 meses restantes.
     const confirmada = {
       id: 'confirmed_z', previsto: false, parcelaKey: key, contaId: CONTA,
       descricao: 'LOJA VENCIMENTO', data: '2025-12-23', faturaVencimento: '2026-01-30',
@@ -427,12 +441,12 @@ describe('parcelas: parcelaGroupsDaConta (reconstroi grupos a partir de TRANSACT
     const grupos = parcelaGroupsDaConta([confirmada], CONTA);
     assertEqual(grupos.length, 1);
     assertEqual(grupos[0].remaining, 5, 'restam 5 parcelas (5/9 a 9/9)');
-    assertEqual(grupos[0].months[0].ym, '2026-01', 'a primeira parcela restante (5/9) cai no MESMO mes civil do vencimento real (janeiro), nao do dataCorte (dezembro)');
+    assertEqual(grupos[0].months[0].ym, '2026-02', 'a primeira parcela restante (5/9) cai em FEVEREIRO — o mes de janeiro (vencimento desta fatura) ja foi pago, nao pode aparecer como restante');
     assertEqual(grupos[0].months[0].numero, 5);
-    assertEqual(grupos[0].months[4].ym, '2026-05', 'a ultima parcela restante (9/9) cai em maio — fevereiro a maio seriam os 4 meses seguintes a janeiro, jan+4=maio');
+    assertEqual(grupos[0].months[4].ym, '2026-06', 'a ultima parcela restante (9/9) cai em junho — fevereiro a junho sao os 5 meses seguintes a janeiro, confirmado pelo usuario via fatura real de 30/06 trazendo 9/9');
   });
 
-  it('sem faturaVencimento (transacao confirmada ANTES do fix, ou lancamento manual), cai no fallback t.data — sem regressao no comportamento atual', () => {
+  it('sem faturaVencimento (transacao confirmada ANTES do fix, ou lancamento manual), cai no fallback t.data — mas AINDA ASSIM comeca no mes seguinte, ja que a ancora e uma transacao CONFIRMADA (o mesmo fix definitivo se aplica a esse fallback)', () => {
     const key = computeParcelaKey('LOJA SEM VENCIMENTO', '2026-01-01', 4);
     const confirmada = {
       id: 'confirmed_w', previsto: false, parcelaKey: key, contaId: CONTA,
@@ -441,7 +455,7 @@ describe('parcelas: parcelaGroupsDaConta (reconstroi grupos a partir de TRANSACT
     };
     const grupos = parcelaGroupsDaConta([confirmada], CONTA);
     assertEqual(grupos.length, 1);
-    assertEqual(grupos[0].months[0].ym, '2026-02', 'sem faturaVencimento, usa t.data como antes (fallback, sem migracao retroativa)');
+    assertEqual(grupos[0].months[0].ym, '2026-03', 'sem faturaVencimento, usa t.data como antes (fallback, sem migracao retroativa) — mas por ser ancora CONFIRMADA, o mes de t.data (fevereiro) ja foi pago, entao a primeira parcela restante cai em marco');
   });
 
   it('ancora sendo uma PREVISAO (so ha previsoes pra essa parcelaKey) tambem cai no fallback t.data — e isso e o comportamento ESPERADO, nao um bug latente', () => {

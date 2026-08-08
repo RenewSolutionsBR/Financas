@@ -38,7 +38,7 @@ export function addMonthsISO(iso, n) {
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
 
-export function computeParcelaGroups(allFaturaRows) {
+export function computeParcelaGroups(allFaturaRows, { primeiraNoMesmoMes = true } = {}) {
   const map = new Map();
   for (const r of allFaturaRows || []) {
     if (r.tipo !== 'parcelamento' || !r.parcela_total) continue;
@@ -46,25 +46,33 @@ export function computeParcelaGroups(allFaturaRows) {
     const cur = map.get(key);
     if (!cur || r.parcela_atual > cur.parcela_atual) map.set(key, { ...r, key });
   }
+  // offsetPrimeiraParcela: 0 faz a primeira parcela restante cair no MESMO
+  // mes civil do vencimento (comportamento de syncPredictions, durante a
+  // importacao de fatura — ver comentario abaixo); 1 pula pro mes SEGUINTE
+  // (comportamento de parcelaGroupsDaConta quando a ancora e uma transacao
+  // CONFIRMADA, cujo vencimento e de um mes JA PAGO — usar offset 0 nesse
+  // caso fazia o mes pago reaparecer como parcela futura, bug real relatado
+  // em producao mesmo apos o fix de faturaVencimento).
+  const offsetPrimeiraParcela = primeiraNoMesmoMes ? 0 : 1;
   const groups = [];
   for (const r of map.values()) {
     const remaining = r.parcela_total - r.parcela_atual;
     if (remaining <= 0) continue;
     const months = [];
     for (let k = 1; k <= remaining; k++) {
-      // addMonths(vencimento, k - 1): a PRIMEIRA parcela restante cai no
-      // MESMO mês civil do vencimento desta linha, não no mês seguinte.
-      // Duas faturas consecutivas podem vencer no mesmo mês civil (ex.:
-      // 01/03 e 30/03) — se a previsão sempre pulasse pro mês seguinte ao
-      // vencimento mais recente, o mês da PRÓXIMA fatura real ficava sem
-      // NENHUMA entrada (nem confirmada, nem prevista) até essa fatura
-      // chegar: a previsão antiga daquele mês já tinha sido removida (pela
-      // confirmação que acabou de acontecer), e a nova nascia um mês à
-      // frente, deixando uma lacuna visível na aba Lançamentos. A previsão
-      // continua sendo uma ESTIMATIVA de 1 parcela por mês civil (nunca
-      // tenta prever o dia exato do próximo vencimento) — só não pula mais
-      // o primeiro mês depois de uma confirmação.
-      const dt = addMonths(r.vencimento, k - 1);
+      // addMonths(vencimento, k - 1 + offsetPrimeiraParcela): a PRIMEIRA
+      // parcela restante cai no MESMO mês civil do vencimento (offset 0,
+      // default — usado por syncPredictions) ou no mês SEGUINTE (offset 1
+      // — usado por parcelaGroupsDaConta com âncora confirmada). Duas
+      // faturas consecutivas podem vencer no mesmo mês civil (ex.: 01/03 e
+      // 30/03) — se a previsão de syncPredictions sempre pulasse pro mês
+      // seguinte ao vencimento mais recente, o mês da PRÓXIMA fatura real
+      // ficava sem NENHUMA entrada (nem confirmada, nem prevista) até essa
+      // fatura chegar — por isso offset 0 é o default e o comportamento de
+      // syncPredictions NUNCA muda. A previsão continua sendo uma
+      // ESTIMATIVA de 1 parcela por mês civil (nunca tenta prever o dia
+      // exato do próximo vencimento).
+      const dt = addMonths(r.vencimento, k - 1 + offsetPrimeiraParcela);
       months.push({ ym: ymOf(dt), valor: r.valor, numero: r.parcela_atual + k });
     }
     groups.push({ key: r.key, descricao: r.descricao, dataCompraOriginal: r.data, valor: r.valor, parcelaAtual: r.parcela_atual, remaining, parcelaTotal: r.parcela_total, months });
@@ -162,21 +170,32 @@ export function parcelaGroupsDaConta(transactions, contaId) {
       const atual = porKey.get(t.parcelaKey);
       porKey.set(t.parcelaKey, atual ? melhorAncoraDeParcela(atual, t) : t);
     });
-  const rowsDoGrupo = [...porKey.values()].map((t) => ({
-    tipo: 'parcelamento',
-    descricao: t.descricao.replace(/\s*\(parcela prevista\)\s*$/i, ''),
-    data: t.data,
-    // faturaVencimento (campo novo, gravado por autoConfirmParcelas a partir
-    // desta correcao) e o vencimento REAL da fatura — t.data e a dataCorte,
-    // que NAO deve ser usada como ancora de projecao (bug corrigido: parcela
-    // ja paga aparecia como futura). Fallback pra t.data cobre transacoes
-    // confirmadas ANTES deste fix, sem migracao retroativa (decisao ja
-    // validada) — nesses casos o comportamento e o mesmo de hoje.
-    vencimento: t.faturaVencimento || t.data,
-    parcela_atual: t.parcela_atual, parcela_total: t.parcela_total, valor: t.valor,
-    key: t.parcelaKey,
-  }));
-  return computeParcelaGroups(rowsDoGrupo);
+  const grupos = [];
+  for (const t of porKey.values()) {
+    const row = {
+      tipo: 'parcelamento',
+      descricao: t.descricao.replace(/\s*\(parcela prevista\)\s*$/i, ''),
+      data: t.data,
+      // faturaVencimento (gravado por autoConfirmParcelas) e o vencimento
+      // REAL da fatura — t.data e a dataCorte, que NAO deve ser usada como
+      // ancora de projecao. Fallback pra t.data cobre transacoes
+      // confirmadas ANTES deste fix, sem migracao retroativa (decisao ja
+      // validada) — nesses casos o comportamento e o mesmo de hoje.
+      vencimento: t.faturaVencimento || t.data,
+      parcela_atual: t.parcela_atual, parcela_total: t.parcela_total, valor: t.valor,
+      key: t.parcelaKey,
+    };
+    // Ancora CONFIRMADA (!previsto): o vencimento e de um mes JA PAGO — a
+    // primeira parcela restante precisa comecar no mes SEGUINTE
+    // (primeiraNoMesmoMes:false), senao o mes ja pago reaparece como
+    // parcela futura (bug real relatado mesmo apos o fix de
+    // faturaVencimento). Ancora PREVISAO: t.data/vencimento ja e um mes
+    // sintetico FUTURO (ym + '-01', gravado por syncPredictions) — "mesmo
+    // mes" continua correto nesse caso, sem mudanca.
+    const primeiraNoMesmoMes = t.previsto;
+    grupos.push(...computeParcelaGroups([row], { primeiraNoMesmoMes }));
+  }
+  return grupos;
 }
 
 function dateDiffDays(iso1, iso2) {
