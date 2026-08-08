@@ -51,6 +51,9 @@ export async function renderParcelas() {
         // RESTANTES) — sem mostrar ela aqui, uma compra recém-importada (ainda
         // na parcela 1/n) parecia não ter nenhuma parcela na aba.
         el('div', { class: 'grupo-parcela-meta', text: `parcela ${g.parcelaAtual} de ${g.parcelaTotal} · faltam ${g.remaining}` }),
+        g.ancoraNaoConfirmada
+          ? el('p', { class: 'grupo-parcela-aviso', text: 'Datas estimadas — confirme a parcela 1 na Conciliação de fatura ("+ lançar") para usar o vencimento real.' })
+          : null,
         el('ul', {}, g.months.map((m) => el('li', { text: `${formatMesAno(m.ym)} — ${fmtBRL(m.valor)}` }))),
       ])),
     ]));

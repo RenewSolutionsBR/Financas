@@ -621,6 +621,14 @@ button { cursor: pointer; }
   font-size: 0.78rem;
   color: var(--tinta-fraca);
 }
+.grupo-parcela-aviso {
+  margin: 6px 0 0;
+  padding: 4px 8px;
+  font-size: 0.76rem;
+  color: var(--latao);
+  background: color-mix(in srgb, var(--latao) 12%, transparent);
+  border-radius: 4px;
+}
 
 /* --- Aba Dashboard --- */
 
