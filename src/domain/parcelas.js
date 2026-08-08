@@ -192,7 +192,16 @@ export function parcelaGroupsDaConta(transactions, contaId) {
     // faturaVencimento). Ancora PREVISAO: t.data/vencimento ja e um mes
     // sintetico FUTURO (ym + '-01', gravado por syncPredictions) — "mesmo
     // mes" continua correto nesse caso, sem mudanca.
-    const primeiraNoMesmoMes = t.previsto;
+    // Coercao explicita pra booleano: `t.previsto` pode vir `undefined` (nao
+    // `false`) quando a ancora e uma parcela 1 de parcelamento MANUAL, criada
+    // sem a chave `previsto` presente no objeto (ver
+    // src/ui/lancamentos-parcelado.js, i===0). Passar `undefined` direto pro
+    // parametro `primeiraNoMesmoMes` de computeParcelaGroups cai no default
+    // de desestruturacao (`= true`, "mesmo mes"), reintroduzindo em silencio
+    // o mesmo bug que este campo foi criado pra corrigir. `!!` garante
+    // `false` (mes seguinte) pra qualquer ancora confirmada, com ou sem a
+    // chave `previsto` presente.
+    const primeiraNoMesmoMes = !!t.previsto;
     grupos.push(...computeParcelaGroups([row], { primeiraNoMesmoMes }));
   }
   return grupos;

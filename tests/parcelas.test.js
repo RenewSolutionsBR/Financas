@@ -458,6 +458,28 @@ describe('parcelas: parcelaGroupsDaConta (reconstroi grupos a partir de TRANSACT
     assertEqual(grupos[0].months[0].ym, '2026-03', 'sem faturaVencimento, usa t.data como antes (fallback, sem migracao retroativa) — mas por ser ancora CONFIRMADA, o mes de t.data (fevereiro) ja foi pago, entao a primeira parcela restante cai em marco');
   });
 
+  it('ancora CONFIRMADA que OMITE a chave `previsto` (formato real de parcelamento manual, i===0, ver ui/lancamentos-parcelado.js) ainda comeca no mes SEGUINTE, nao reverte ao default "mesmo mes"', () => {
+    // Parcelamento MANUAL cria a parcela 1 sem a chave `previsto` no objeto
+    // (nao `previsto: false`, a chave simplesmente nao existe) — t.previsto
+    // fica `undefined`. Sem coercao pra booleano estrito, `undefined` cai no
+    // default de desestruturacao de computeParcelaGroups (`= true`), fazendo
+    // o mes da propria parcela 1 (ja "paga", e a ancora confirmada) reaparecer
+    // como parcela futura — o mesmo bug que o fix de faturaVencimento
+    // corrigiu para faturas importadas, mas ainda presente aqui.
+    const key = computeParcelaKey('LOJA PARCELAMENTO MANUAL', '2026-08-01', 4);
+    const confirmadaSemPrevisto = {
+      id: 'tx_manual_1', parcelaKey: key, contaId: CONTA,
+      descricao: 'LOJA PARCELAMENTO MANUAL', data: '2026-08-01',
+      parcela_atual: 1, parcela_total: 4, valor: 50,
+      // sem `previsto` de proposito — replica o objeto real de
+      // lancamentos-parcelado.js (i===0), que nunca inclui essa chave.
+    };
+    const grupos = parcelaGroupsDaConta([confirmadaSemPrevisto], CONTA);
+    assertEqual(grupos.length, 1);
+    assertEqual(grupos[0].remaining, 3, 'restam 3 parcelas (2/4, 3/4, 4/4)');
+    assertEqual(grupos[0].months[0].ym, '2026-09', 'primeira parcela restante cai no mes SEGUINTE ao vencimento da ancora (agosto ja "pago"), nao em agosto de novo');
+  });
+
   it('ancora sendo uma PREVISAO (so ha previsoes pra essa parcelaKey) tambem cai no fallback t.data — e isso e o comportamento ESPERADO, nao um bug latente', () => {
     // Previsoes NUNCA tem faturaVencimento (so autoConfirmParcelas grava esse
     // campo, e so em confirmadas), entao a ancora prevista sempre passa pelo
