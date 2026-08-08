@@ -136,7 +136,7 @@ export async function commitImportacaoEGravar(args) {
   const previstas = plano.transactionsToPut.filter((t) => t.previsto).length;
   const pagamentos = plano.transactionsToPut.filter((t) => t.natureza === 'pagamento_fatura').length;
   const resumo = args.tipo === 'fatura'
-    ? `Importou fatura: ${totalLinhas} linha(s), ${confirmadas} confirmada(s) automaticamente, ${previstas} prevista(s), ${pagamentos} pagamento(s)`
+    ? `Importou fatura (${plano.statementToPut.arquivo}): ${totalLinhas} linha(s), ${confirmadas} confirmada(s) automaticamente, ${previstas} prevista(s), ${pagamentos} pagamento(s)`
     : `Importou extrato: ${totalLinhas} linha(s), ${pagamentos} pagamento(s) de fatura reconhecido(s)`;
   await registrarEvento(
     args.tipo === 'fatura' ? TIPOS_EVENTO.IMPORTACAO_FATURA : TIPOS_EVENTO.IMPORTACAO_EXTRATO,

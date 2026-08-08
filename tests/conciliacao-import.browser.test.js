@@ -50,6 +50,7 @@ describe('commitImportacaoEGravar: registra evento de auditoria com contagens', 
     assertEqual(eventos.length, antes + 1);
     assertEqual(eventos[0].tipo, 'importacao_fatura');
     assert(/\d+ linha\(s\)/.test(eventos[0].resumo), 'resumo precisa ter contagem de linhas');
+    assert(eventos[0].resumo.includes('fatura-teste.pdf'), 'resumo precisa citar o nome do arquivo importado');
     assert(!/LOJA|EXEMPLO/.test(eventos[0].resumo), 'resumo NUNCA pode conter descricao de item');
 
     // Limpeza: remove o que foi gravado por este teste (statement, transactions, evento de auditoria).
