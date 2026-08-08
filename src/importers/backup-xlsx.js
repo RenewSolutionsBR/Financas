@@ -27,6 +27,22 @@ const STORES_EXPORTAVEIS = STORES.map((s) => s.nome).filter((nome) => nome !== '
 // distinguir a string "[1,2]" digitada pelo usuário de um array de verdade.
 const MARCA_JSON = '@json:';
 
+// Limite de célula do formato .xlsx e 32767 caracteres (SheetJS lanca
+// "Text length must not exceed 32767 characters" e o backup INTEIRO falha
+// se um so campo passar disso — visto em producao com statements.rows de
+// um extrato com muitos lancamentos). Usa uma folga abaixo do limite real
+// pra nunca chegar perto do erro por causa de arredondamento.
+const LIMITE_CELULA = 30000;
+
+// Divide uma string grande em pedacos de ate LIMITE_CELULA caracteres.
+// Sempre devolve pelo menos 1 pedaco (mesmo pra string vazia), pra manter
+// o invariante "campo original sempre e o primeiro pedaco".
+function dividirEmPedacos(str) {
+  const pedacos = [];
+  for (let i = 0; i < str.length; i += LIMITE_CELULA) pedacos.push(str.slice(i, i + LIMITE_CELULA));
+  return pedacos.length ? pedacos : [''];
+}
+
 function serializarValor(v) {
   // undefined vira célula vazia e some na volta, que é o certo: o campo não
   // existia. Mas null e string vazia são valores de verdade, e precisam voltar
@@ -67,7 +83,16 @@ export function datasetToSheets(dataset) {
   for (const store of STORES_EXPORTAVEIS) {
     sheets[store] = ((dataset && dataset[store]) || []).map((registro) => {
       const linha = {};
-      for (const [k, v] of Object.entries(registro)) linha[k] = serializarValor(v);
+      for (const [k, v] of Object.entries(registro)) {
+        const serializado = serializarValor(v);
+        if (typeof serializado === 'string' && serializado.length > LIMITE_CELULA) {
+          const pedacos = dividirEmPedacos(serializado);
+          linha[k] = pedacos[0];
+          for (let i = 1; i < pedacos.length; i++) linha[`${k}__${i + 1}`] = pedacos[i];
+        } else {
+          linha[k] = serializado;
+        }
+      }
       return linha;
     });
   }
@@ -104,8 +129,27 @@ export function sheetsToDataset(sheets) {
   const dataset = {};
   for (const store of STORES_EXPORTAVEIS) {
     dataset[store] = (sheets[store] || []).map((linha) => {
-      const registro = {};
+      // Remonta campos divididos em colunas extras (campo__2, campo__3, ...)
+      // ANTES de desserializar — ver datasetToSheets/dividirEmPedacos. Um
+      // backup exportado antes deste fix nunca tem coluna __N, entao esse
+      // passo e um no-op pra backups antigos (sem migracao necessaria).
+      const linhaMontada = {};
+      const extras = {};
       for (const [k, v] of Object.entries(linha)) {
+        const match = /^(.+)__(\d+)$/.exec(k);
+        if (match) {
+          const [, base, indice] = match;
+          (extras[base] = extras[base] || [])[Number(indice) - 2] = v;
+        } else {
+          linhaMontada[k] = v;
+        }
+      }
+      for (const [base, pedacosExtras] of Object.entries(extras)) {
+        linhaMontada[base] = linhaMontada[base] + pedacosExtras.join('');
+      }
+
+      const registro = {};
+      for (const [k, v] of Object.entries(linhaMontada)) {
         const valor = desserializarValor(v);
         if (valor !== undefined) registro[k] = valor;
       }

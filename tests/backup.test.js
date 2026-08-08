@@ -117,6 +117,32 @@ describe('backup: ciclo completo', () => {
   });
 });
 
+describe('backup: celula grande (acima do limite de 32767 caracteres do XLSX)', () => {
+  it('campo cujo valor serializado excede o limite e dividido em colunas extras na exportacao', () => {
+    const rowsGrandes = Array.from({ length: 2000 }, (_, i) => ({ id: 'r' + i, descricao: 'LINHA DE TESTE NUMERO ' + i, valor: i }));
+    const dataset = { statements: [{ id: 'st_grande', tipo: 'extrato', contaId: 'acc_1', rows: rowsGrandes }] };
+    const sheets = datasetToSheets(dataset);
+    const linha = sheets.statements[0];
+    const tamanhoSerializado = JSON.stringify(rowsGrandes).length;
+    assert(tamanhoSerializado > 32767, 'pre-condicao do teste: o array sintetico precisa realmente exceder o limite do XLSX');
+    assert(typeof linha.rows === 'string' && linha.rows.length <= 30000, 'primeira coluna (rows) nao pode exceder o limite seguro');
+    assert('rows__2' in linha, 'valor grande precisa gerar pelo menos uma coluna extra (rows__2)');
+  });
+
+  it('ciclo completo (exportar+importar) devolve o array grande EXATAMENTE igual ao original', () => {
+    const rowsGrandes = Array.from({ length: 2000 }, (_, i) => ({ id: 'r' + i, descricao: 'LINHA DE TESTE NUMERO ' + i, valor: i }));
+    const dataset = { statements: [{ id: 'st_grande', tipo: 'extrato', contaId: 'acc_1', rows: rowsGrandes }] };
+    const { dataset: dataset2 } = sheetsToDataset(datasetToSheets(dataset));
+    assertDeepEqual(dataset2.statements[0].rows, rowsGrandes, 'array grande nao sobreviveu ao ciclo dividido em colunas');
+  });
+
+  it('campo pequeno (abaixo do limite) NAO gera coluna extra — comportamento do caso comum inalterado', () => {
+    const sheets = datasetToSheets(DATASET);
+    const linha = sheets.statements[0];
+    assert(!('rows__2' in linha), 'campo pequeno nao deveria gerar coluna extra');
+  });
+});
+
 describe('backup: caminho degradado do formato anterior', () => {
   it('avisa que faturas não vêm no backup do app anterior', () => {
     const sheets = {
