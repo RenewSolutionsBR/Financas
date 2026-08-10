@@ -32,6 +32,7 @@ export const TEST_MODULES = [
   './generic-table.test.js',
   './conciliacao-import.test.js',
   './conciliacao-extrato-filtros.test.js',
+  './conciliacao-fatura-lote.test.js',
 ];
 
 // Testes que dependem de IndexedDB ou DOM: só no navegador.

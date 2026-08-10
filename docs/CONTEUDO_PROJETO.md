@@ -1,6 +1,6 @@
 # Conteúdo do Projeto — Livro de Gastos
 
-Histórico do projeto, decisões de design importantes e pendências conhecidas. Atualizado até v12 (2026-08-10).
+Histórico do projeto, decisões de design importantes e pendências conhecidas. Atualizado até v13 (2026-08-10).
 
 ## Origem
 
@@ -87,6 +87,16 @@ Corrigido em três frentes:
 3. **Reclassificação em massa, independente do momento de importação** (`reclassificarComRegras`, `domain/classification.js` + botão "Reaplicar regras a lançamentos existentes" em Cadastros → Regras): cobre o caso de uma regra manual cadastrada DEPOIS que a fatura/extrato já foi importado, quando `candidatosRetroativos` (que só dispara no instante em que a regra nasce) não teria mais chance de agir. Só considera transações com `origemRef` (nunca lançamento manual puro, mesma restrição de `candidatosRetroativos`); por padrão só revê "A Classificar", mas aceita `soNaoClassificados: false` para também revisar o que já foi classificado.
 
 **Por que `origemRef` importa aqui**: é o discriminador que `candidatosRetroativos`/`reclassificarComRegras` usam para nunca tocar lançamento manual puro — antes desta correção, um item lançado via "+lançar" da fatura não gravava `origemRef` nenhum, então mesmo que a memória de classificação fosse consultada, esses lançamentos nunca seriam candidatos a reclassificação retroativa depois.
+
+### "+lançar em lote" para faturas de cartão de crédito (v12→v13)
+
+O balde "Na fatura, não lançado no app" só tinha o "+lançar" individual (leva pra aba Lançamentos, formulário completo). Adicionado o mesmo padrão de lote que já existia no extrato (`conciliacao-extrato.js`): cada linha ganha um checkbox e um select de categoria inline (pré-preenchido por `aplicarRegra`, igual ao selo "sugerido"), e um botão "+ lançar em lote" grava todas as selecionadas de uma vez sem sair da tela de Conciliação — decisão explícita do usuário de manter o "+lançar" individual existente do jeito que estava, em vez de substituí-lo.
+
+Diferenças do lote de extrato, por a fatura ter menos graus de liberdade por linha:
+- **Natureza sempre `'despesa'`, `contaId` sempre o cartão da própria fatura** — nenhum dos dois é campo editável por linha (diferente do extrato, que tem os dois variáveis).
+- **Forma de pagamento não vem de heurística por prefixo de texto** (o extrato usa `formaPorPrefixoExtrato`, que não faz sentido pra fatura) — `formaCreditoParaCartao` (nova função pura em `conciliacao-fatura.js`) escolhe a forma de pagamento tipo `'credito'` cuja `contaPadraoId` bate com o cartão desta fatura; sem essa correspondência, cai na primeira forma de crédito ativa.
+- **Compra parcelada entra no lote igual a uma compra avulsa** (decisão do usuário) — cada linha já carrega `parcela_atual`/`parcela_total`/`parcelaKey`/`faturaVencimento` automaticamente, mesma propagação que o "+lançar" individual já fazia.
+- Aprendizado de regra e modal "Aplicar retroativamente?" seguem exatamente a mesma lógica do lote de extrato.
 
 ## Lógica detalhada — Conciliação de fatura (datas e períodos)
 

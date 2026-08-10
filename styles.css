@@ -575,6 +575,12 @@ button { cursor: pointer; }
   grid-template-columns: 1fr 1fr 1fr;
   column-gap: 10px;
 }
+/* Fatura só tem categoria por linha (natureza/forma não são editáveis aqui,
+   diferente do extrato) — 1 coluna em vez das 3 fixas do lote de extrato,
+   senão o select de categoria sozinho ocupava só 1/3 da largura da linha. */
+.item-form-lote-selects.uma-coluna {
+  grid-template-columns: 1fr;
+}
 .item-form-lote-selects > select {
   min-width: 0;
   font-size: 0.82rem;
