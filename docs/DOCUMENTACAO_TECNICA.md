@@ -1,10 +1,12 @@
 # Documentação Técnica — Livro de Gastos
 
-Este documento descreve a arquitetura do app para quem for ler, manter ou estender o código.
+Este documento descreve a arquitetura do app para quem for ler, manter ou estender o código. Atualizado até v11 (2026-08-10).
 
 ## Visão geral
 
 Vanilla JS (ES modules nativos do navegador), zero build step, zero dependências de runtime além das bibliotecas vendorizadas em `vendor/` (SheetJS para planilhas, PDF.js para extração de texto de PDF). PWA offline-first com service worker versionado (`sw.js`, `src/version.js` como fonte única da versão de cache).
+
+**`APP_VERSION` precisa subir a CADA publicação que muda comportamento visível do app** (qualquer arquivo em `src/ui/`, `src/domain/`, `styles.css`, ou qualquer arquivo listado no `PRECACHE` de `sw.js`). O nome do cache do service worker é derivado dessa constante — sem o bump, o navegador do usuário continua servindo a versão anterior do JS/CSS a partir do cache, mesmo depois do deploy no GitHub Pages. Esse esquecimento já causou reincidência do mesmo bug reportado como "não corrigido" múltiplas vezes em produção (ver `CONTEUDO_PROJETO.md`, seção Lições Aprendidas). A versão atual é exibida na tela, em Cadastros → Backup, exatamente para permitir essa checagem sem precisar abrir o console.
 
 Todos os dados ficam em IndexedDB, no navegador do próprio usuário. Não há backend, não há sincronização entre aparelhos — a única ponte entre instalações é o backup `.xlsx` manual (`src/importers/backup-xlsx.js`).
 
@@ -36,7 +38,7 @@ O app anterior a este projeto concentrava UI, handlers de evento, exportação d
 
 ## Schema do IndexedDB (`core/db-schema.js`)
 
-Banco `financas`, versão de schema `2` (constantes `DB_NAME`/`DB_VERSION`). `core/db-schema.js` é um módulo **puro**: não abre banco, não toca IndexedDB — só descreve o schema e converte dados de uma versão para outra. Isso permite testar a migração inteira no Node.
+Banco `financas`, versão de schema `3` (constantes `DB_NAME`/`DB_VERSION`). `core/db-schema.js` é um módulo **puro**: não abre banco, não toca IndexedDB — só descreve o schema e converte dados de uma versão para outra. Isso permite testar a migração inteira no Node.
 
 Stores (todas com `keyPath: 'id'`, exceto `meta` que usa `key`):
 
@@ -48,7 +50,10 @@ Stores (todas com `keyPath: 'id'`, exceto `meta` que usa `key`):
 | `categories` | — | categorias de gasto |
 | `statements` | `by_contaId`, `by_tipo` | documento importado: fatura ou extrato, com as linhas normalizadas em `rows[]` |
 | `classificationRules` | `by_padrao` | regras da memória de classificação |
-| `meta` | — | pares chave/valor de configuração (ex.: `onboardingConcluido`, `apelidosTitular`) |
+| `auditLog` | — | log técnico de eventos de escrita (diagnóstico); nunca guarda descrição/valor/nome — exportação própria em `.json`, fora do backup `.xlsx` |
+| `meta` | — | pares chave/valor de configuração (ex.: `onboardingConcluido`, `apelidosTitular`, `lastBackupAt`) |
+
+Uma transação confirmada por fatura (`autoConfirmParcelas`, `domain/parcelas.js`) grava dois campos de data com significados distintos: `data` guarda a `dataCorte` (usado para exibição em Lançamentos) e `faturaVencimento` guarda o vencimento real da fatura (usado para projetar parcelas futuras corretamente na aba Parcelas). Usar `data` como se fosse vencimento é um erro recorrente já corrigido em 3 formas diferentes — ver `CONTEUDO_PROJETO.md`, Fase 4.
 
 A abertura do banco e todo `get`/`put`/`delete`/`clear` passam por `core/storage.js`, inclusive as gravações multi-store atômicas (`putManyAcrossStores`, usada por exemplo na migração de backup, que grava `categories`/`transactions`/`statements`/`meta` numa única transação — ou tudo entra, ou nada entra).
 
@@ -84,6 +89,18 @@ Todo agregador de "gasto" do sistema — `sumDespesas`, `totaisPorForma`, `totai
 O motivo de existir: um mesmo evento financeiro pode aparecer em mais de um lugar (a compra no cartão e o pagamento da fatura dela, por exemplo, ou o débito no extrato e a linha de crédito correspondente na fatura seguinte — ver `pagamento-fatura.js` e a seção 7.3 da spec original). `natureza` distingue despesa de receita, transferência entre contas próprias e pagamento de fatura; `previsto` distingue uma parcela futura ainda não confirmada de um gasto já efetivado. Sem os dois filtros juntos, o mesmo dinheiro seria contado duas vezes, ou uma parcela ainda não cobrada apareceria somada como se já tivesse acontecido.
 
 `t.valor` é sempre armazenado positivo — o sentido (entra/sai) vem inteiramente de `natureza`, nunca do sinal do número.
+
+## Backup `.xlsx` (`importers/backup-xlsx.js`)
+
+Exporta TODOS os stores (exceto `auditLog`, que tem exportação própria em `.json`) num único arquivo `.xlsx`, uma aba por store. O formato XLSX tem um limite de 32.767 caracteres por célula — um campo serializado maior que isso (tipicamente `statements.rows` de um extrato bancário com muitos lançamentos, já que cada linha carrega um campo `raw` com o texto original) fazia o SheetJS lançar exceção na exportação, ou pior, em versões anteriores ao fix, truncar a célula **em silêncio**, sem lançar nada — o dado perdido só era percebido na reimportação, como uma string malformada em vez do array esperado.
+
+Fix: `datasetToSheets` divide qualquer valor serializado acima do limite seguro (`LIMITE_CELULA = 30000`) em colunas extras na mesma linha (`campo`, `campo__2`, `campo__3`, ...); `sheetsToDataset` reconstrói o valor original a partir dessas colunas antes de desserializar. Um backup exportado antes deste fix nunca tem coluna `__N` — a reconstrução é um no-op nesse caso, sem migração necessária. Um backup truncado em silêncio por uma versão anterior ao fix, no entanto, não tem conserto possível a partir do próprio arquivo — só reexportando da fonte original com a versão corrigida.
+
+`baixarBackup`/`exportarConciliacaoCompleta` (`ui/backup-comum.js`, `ui/conciliacao.js`) têm try/catch com toast de erro visível — antes desse endurecimento, qualquer exceção nessas funções fazia o botão "não fazer nada" sem nenhuma pista ao usuário.
+
+## Tratamento de erro visível nas telas
+
+`renderConciliacao` (`ui/conciliacao.js`) também ganhou try/catch: um erro ao montar os baldes de fatura/extrato deixava o painel inteiro em branco (nem os baldes vazios apareciam), sem nenhuma mensagem — bug real relatado em produção, onde a mesma lógica funcionava perfeitamente quando testada manualmente via console, mas a tela ficava muda no aparelho do usuário. Agora o erro aparece escrito na própria tela (`.aviso-erro`) além do toast. Princípio geral adotado a partir daqui: nenhuma função de tela que pode falhar de forma não prevista deve falhar em silêncio.
 
 ## Como rodar os testes
 

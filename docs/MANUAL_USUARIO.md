@@ -1,6 +1,6 @@
 # Manual do Usuário — Livro de Gastos
 
-Este manual explica como usar o aplicativo, aba por aba. Não é preciso conhecimento técnico para lê-lo.
+Este manual explica como usar o aplicativo, aba por aba. Não é preciso conhecimento técnico para lê-lo. Atualizado até v11 (2026-08-10).
 
 O Livro de Gastos é um app de controle de gastos pessoais que roda inteiramente no seu navegador. Todos os dados ficam guardados só neste aparelho (no armazenamento local do navegador); nada é enviado para nenhum servidor. A única forma de levar seus dados para outro aparelho é pelo backup manual, explicado na seção Cadastros.
 
@@ -44,6 +44,8 @@ Só lançamentos do tipo Despesa (e que não sejam uma previsão de parcela futu
 
 **Pagamento de fatura:** o débito do pagamento da fatura, visto no extrato da conta, e a linha de crédito correspondente na fatura seguinte do cartão são o mesmo evento financeiro. O app reconhece isso e cria apenas um único lançamento para o pagamento, não importa qual dos dois documentos você importar primeiro.
 
+**Exportar conciliação completa:** o botão gera uma planilha `.xlsx` com o status de conciliação de TODOS os lançamentos e documentos importados, faturas e extratos juntos — cada linha mostra se foi conciliada, se só aparece no documento, ou só no app, com a categoria já resolvida por nome. Útil para conferir tudo de uma vez fora do app.
+
 ## Aba Parcelas
 
 Uma vitrine somente de consulta (não é possível editar nada aqui) que mostra:
@@ -51,6 +53,8 @@ Uma vitrine somente de consulta (não é possível editar nada aqui) que mostra:
 - O detalhamento de cada compra parcelada em aberto, agrupado por cartão.
 
 Serve para você ter uma visão rápida do compromisso futuro assumido no cartão de crédito.
+
+**Aviso "Datas estimadas"**: quando a parcela 1 de uma compra ainda não foi confirmada (você ainda não clicou "+ lançar" nela, na aba Conciliação), o app não tem o vencimento real da fatura para essa compra — as datas mostradas são uma estimativa. Um aviso aparece no grupo nesse caso; confirme a parcela 1 na Conciliação para que a data vire definitiva.
 
 ## Aba Dashboard
 
@@ -67,13 +71,13 @@ Reúne tudo que configura o app. Está dividida em seções:
 
 **Contas & Cartões**: cadastre suas contas correntes e cartões de crédito. Um cartão pode ser marcado como "adicional" de outro (o cartão titular) — útil quando a fatura de um cartão titular também traz os gastos de um cartão adicional vinculado à mesma fatura. Contas e cartões não usados em nenhum lançamento podem ser excluídos; os que já têm histórico só podem ser desativados (ficam fora dos formulários de novos lançamentos, mas o histórico continua intacto).
 
-**Formas de Pagamento**: cadastre e organize as formas que você usa (cartão de crédito, débito, Pix, dinheiro, boleto, etc.). Cada forma tem um "tipo" que define, por exemplo, se ela concilia com fatura, com extrato, ou com nenhum dos dois.
+**Formas de Pagamento**: cadastre e organize as formas que você usa (cartão de crédito, débito, Pix, dinheiro, boleto, etc.). Cada forma tem um "tipo" que define, por exemplo, se ela concilia com fatura, com extrato, ou com nenhum dos dois. O campo "Conta padrão" preenche sozinho a conta/cartão ao lançar com essa forma — para formas do tipo Crédito, o combo mostra seus cartões; para as demais, suas contas bancárias.
 
 **Categorias**: as categorias de gasto usadas nos lançamentos e no Dashboard. A categoria "A Classificar" é fixa e não pode ser excluída — é o destino padrão de tudo que ainda não foi categorizado.
 
 **Regras**: lista as regras aprendidas (ou criadas manualmente) pela memória de classificação. Você pode editar, desativar ou excluir cada uma.
 
-**Backup**: exporta todos os seus dados para um arquivo `.xlsx`, que serve tanto como cópia de segurança quanto como forma de levar seus dados para outro aparelho ou navegador (importando o mesmo arquivo lá). Também é aqui que se importa um backup vindo de uma versão anterior do app.
+**Backup**: exporta todos os seus dados para um arquivo `.xlsx`, que serve tanto como cópia de segurança quanto como forma de levar seus dados para outro aparelho ou navegador (importando o mesmo arquivo lá). Também é aqui que se importa um backup vindo de uma versão anterior do app. A tela mostra a versão atual do app — se algo parecer não estar funcionando como o esperado logo após uma atualização, feche e reabra o app (ou force a atualização da página) e confira se a versão mudou.
 
 ## Dúvidas frequentes
 
