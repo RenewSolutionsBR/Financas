@@ -7,7 +7,8 @@ import {
   TIPOS_FORMA, listFormas, saveForma, removeForma, validatePaymentMethod, novaForma,
 } from '../domain/payment-methods.js';
 import { listTransactions } from '../domain/transactions.js';
-import { TIPO_CONTA, listAccounts } from '../domain/accounts.js';
+import { listAccounts } from '../domain/accounts.js';
+import { tipoContaParaForma } from './lancamentos-form-helpers.js';
 
 export async function secaoFormas(aoMudar) {
   const todas = await listFormas();
@@ -39,14 +40,30 @@ async function editarForma(pm, todas, aoMudar) {
   // preenche a conta sozinho a partir daqui. opcoesAtivas: uma conta
   // desativada some da lista, exceto se for a já gravada nesta forma — mesma
   // regra usada em Lançamentos e em "conta que paga a fatura" do cartão.
-  const contas = opcoesAtivas(
-    (await listAccounts()).filter((a) => a.tipo === TIPO_CONTA),
-    pm.contaPadraoId
-  );
-  const selContaPadrao = el('select', {}, [
-    el('option', { value: '', text: '— nenhuma —' }),
-    ...contas.map((c) => el('option', { value: c.id, text: rotuloComStatus(c), ...(c.id === pm.contaPadraoId ? { selected: 'selected' } : {}) })),
-  ]);
+  const todasContas = await listAccounts();
+  const selContaPadrao = el('select', {});
+
+  // Reconstroi as opcoes do combo de conta padrao a cada troca de tipo —
+  // sem isso, o formulario mostrava sempre conta bancaria como opcao,
+  // mesmo pra forma do tipo credito (que precisa de CARTAO como conta
+  // padrao). Preserva a selecao atual quando ela ainda for valida pro
+  // novo tipo; descarta quando nao for (mesma regra que
+  // contaPadraoValidaParaForma ja aplica na leitura, em
+  // lancamentos-form-helpers.js).
+  function atualizarOpcoesContaPadrao(manterSelecionado) {
+    const tipoEsperado = tipoContaParaForma(selTipo.value);
+    const contasDoTipo = tipoEsperado === null ? [] : todasContas.filter((c) => c.tipo === tipoEsperado);
+    const idAtual = manterSelecionado ? selContaPadrao.value : pm.contaPadraoId;
+    const contas = opcoesAtivas(contasDoTipo, idAtual);
+    const aindaValida = contas.some((c) => c.id === idAtual);
+    selContaPadrao.innerHTML = '';
+    selContaPadrao.append(
+      el('option', { value: '', text: '— nenhuma —' }),
+      ...contas.map((c) => el('option', { value: c.id, text: rotuloComStatus(c), ...(c.id === idAtual && aindaValida ? { selected: 'selected' } : {}) }))
+    );
+  }
+  atualizarOpcoesContaPadrao(false);
+  selTipo.addEventListener('change', () => atualizarOpcoesContaPadrao(true));
 
   const corpo = el('div', { class: 'form' }, [
     campo('Nome', inputNome),
