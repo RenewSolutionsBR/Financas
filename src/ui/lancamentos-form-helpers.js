@@ -46,11 +46,11 @@ export function contasParaForma(contas, tipoForma, idAtual) {
 
 // Pura: a conta padrão de uma forma só serve de preenchimento automático se o
 // TIPO dela bater com o que a forma espera. O editor de forma
-// (cadastros-formas.js) hoje só deixa escolher conta corrente como "conta
-// padrão", mesmo para uma forma do tipo crédito — sem esta checagem, um
-// cartão de crédito podia herdar conta corrente como padrão, e o dado errado
-// era exatamente o que a conciliação fatura/extrato da Fase 2 vai precisar
-// ler certo.
+// (cadastros-formas.js) já oferece a conta certa conforme o tipo (corrente
+// ou cartão), mas esta checagem continua como segunda camada de defesa: ela
+// protege formas cadastradas antes desse fix, que podem ter uma conta padrão
+// de tipo incompatível já salva — e esse dado errado é exatamente o que a
+// conciliação fatura/extrato da Fase 2 vai precisar ler certo.
 export function contaPadraoValidaParaForma(contas, forma) {
   if (!forma || !forma.contaPadraoId) return null;
   const conta = (contas || []).find((c) => c.id === forma.contaPadraoId);
