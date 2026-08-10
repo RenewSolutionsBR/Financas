@@ -1,6 +1,6 @@
 # Conteúdo do Projeto — Livro de Gastos
 
-Histórico do projeto, decisões de design importantes e pendências conhecidas. Atualizado até v11 (2026-08-10).
+Histórico do projeto, decisões de design importantes e pendências conhecidas. Atualizado até v12 (2026-08-10).
 
 ## Origem
 
@@ -73,6 +73,20 @@ O formato XLSX tem limite de 32.767 caracteres por célula. `statements.rows` de
 ### Conta padrão de forma de pagamento não oferecia cartão de crédito
 
 O campo "Conta padrão" no cadastro de Formas de pagamento (`cadastros-formas.js`) tinha o filtro do combo fixo em `TIPO_CONTA` — nunca oferecia cartão, mesmo quando o tipo da forma era `credito`. A lógica de LEITURA (`contaPadraoValidaParaForma`, usada no formulário de Lançamentos) já estava preparada para o caso; só a tela de EDIÇÃO da forma nunca ofereceu cartão como opção. Corrigido reusando `tipoContaParaForma` para filtrar dinamicamente, com o combo se reconstruindo ao vivo quando o usuário troca o tipo no mesmo formulário aberto.
+
+## Fase 5 — Memória de classificação ausente em fatura (2026-08-10, v11→v12)
+
+### Regras nunca eram aplicadas nem aprendidas no fluxo de fatura
+
+Usuário relatou que regras de classificação — nem as aprendidas automaticamente, nem as cadastradas manualmente em Cadastros → Regras — nunca tinham efeito nos itens vindos de importação de fatura. Investigação (systematic-debugging) achou a causa: `aplicarRegra`/`aprenderRegra` (`domain/classification.js`) só estavam conectadas ao fluxo de **extrato** (`conciliacao-extrato.js`). O botão "+lançar" da fatura (`conciliacao-fatura.js`) montava o rascunho só com `descricao/data/valor/natureza/contaId`, sem nunca consultar `aplicarRegra`; o formulário que recebe esse rascunho (`lancamentos-form.js`) é o mesmo do lançamento 100% manual, que por design (spec 8.4) nunca opina sobre classificação — e o "+lançar" de fatura caía nesse mesmo buraco por não ser diferenciado de um lançamento manual puro, apesar de ter origem numa linha importada.
+
+Corrigido em três frentes:
+
+1. **Aplicar regra ao mostrar o item da fatura**: `itemFatura` (`conciliacao-fatura.js`) agora chama `aplicarRegra` usando `item.descricaoCanonica` (já calculado pelo importador, `santander-cartao-pdf.js`) e mostra o selo "sugerido por regra" — mesmo padrão visual do extrato. O rascunho carrega a sugestão (`categoria`, `formaPagamentoId`, `regraAplicada`) e também `origem: 'fatura'` + `origemRef: { statementId, linhaId }`, que antes nunca eram gravados nesse caminho.
+2. **Aprender/corrigir regra ao salvar**: `lancamentos-form.js` agora pré-seleciona a categoria/forma sugeridas quando o rascunho vem de fatura e, ao salvar, chama `aprenderRegra` se a categoria final divergiu da sugestão (ou não havia sugestão e o usuário classificou mesmo assim) — mesma lógica de `lancarSelecionadas` em `conciliacao-extrato.js`. Também oferece o modal "Aplicar retroativamente?" (`candidatosRetroativos`) para outros lançamentos "A Classificar" com a mesma descrição canônica.
+3. **Reclassificação em massa, independente do momento de importação** (`reclassificarComRegras`, `domain/classification.js` + botão "Reaplicar regras a lançamentos existentes" em Cadastros → Regras): cobre o caso de uma regra manual cadastrada DEPOIS que a fatura/extrato já foi importado, quando `candidatosRetroativos` (que só dispara no instante em que a regra nasce) não teria mais chance de agir. Só considera transações com `origemRef` (nunca lançamento manual puro, mesma restrição de `candidatosRetroativos`); por padrão só revê "A Classificar", mas aceita `soNaoClassificados: false` para também revisar o que já foi classificado.
+
+**Por que `origemRef` importa aqui**: é o discriminador que `candidatosRetroativos`/`reclassificarComRegras` usam para nunca tocar lançamento manual puro — antes desta correção, um item lançado via "+lançar" da fatura não gravava `origemRef` nenhum, então mesmo que a memória de classificação fosse consultada, esses lançamentos nunca seriam candidatos a reclassificação retroativa depois.
 
 ## Lógica detalhada — Conciliação de fatura (datas e períodos)
 

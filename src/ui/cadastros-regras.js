@@ -5,8 +5,9 @@
 
 import { el, toast, abrirModal, confirmar } from './components.js';
 import { secao, campo, mostrarErros } from './cadastros-comuns.js';
-import { listRegras, saveRegra, removeRegra, novaRegra } from '../domain/classification.js';
+import { listRegras, saveRegra, removeRegra, novaRegra, reclassificarComRegras } from '../domain/classification.js';
 import { listCategorias } from '../domain/categories.js';
+import { listTransactions, saveTransactions } from '../domain/transactions.js';
 
 const ROTULO_TIPO_MATCH = { exato: 'Exata', contem: 'Contém', regex: 'Expressão regular' };
 const ROTULO_ESCOPO = { fatura: 'Fatura', extrato: 'Extrato', ambos: 'Fatura e extrato' };
@@ -32,8 +33,50 @@ export async function secaoRegras(aoMudar) {
     ordenadas.length ? lista : el('p', { class: 'vazio', text: 'Nenhuma regra ainda. Regras nascem sozinhas quando você corrige a categoria de um lançamento importado, ou você cria uma manualmente.' }),
     el('div', { class: 'acoes' }, [
       el('button', { class: 'btn', text: '+ Regra manual', onclick: () => editarRegra(novaRegra({ padrao: '', categoriaId: categorias[0] ? categorias[0].id : '' }), categorias, aoMudar) }),
+      el('button', {
+        class: 'btn', text: 'Reaplicar regras a lançamentos existentes',
+        onclick: () => reaplicarRegrasExistentes(todas, categorias, aoMudar),
+      }),
     ]),
   ]);
+}
+
+// Reaplica as regras ativas a lançamentos já lançados (fatura/extrato, nunca
+// manual puro — reclassificarComRegras respeita a mesma restrição de
+// candidatosRetroativos), a qualquer momento — diferente do modal "Aplicar
+// retroativamente?" da Conciliação, que só aparece no instante em que uma
+// regra é criada/corrigida. Útil quando uma regra manual é cadastrada depois
+// que a fatura/extrato já foi importado, ou quando uma importação inteira
+// passou sem aplicar nenhuma regra (bug corrigido — ver CONTEUDO_PROJETO.md).
+async function reaplicarRegrasExistentes(regras, categorias, aoMudar) {
+  const nomeCategoria = (id) => (categorias.find((c) => c.id === id) || {}).nome || '—';
+  const transacoes = await listTransactions();
+  const candidatos = reclassificarComRegras(transacoes, regras);
+
+  if (!candidatos.length) {
+    toast('Nenhum lançamento "A Classificar" bate com alguma regra ativa.', 'ok');
+    return;
+  }
+
+  const listaPreview = el('ul', { class: 'lista-preview' }, candidatos.slice(0, 20).map(({ transacao, regra }) =>
+    el('li', { text: `${transacao.descricao} → ${nomeCategoria(regra.categoriaId)}` })
+  ));
+  const aplicar = await abrirModal({
+    titulo: 'Reaplicar regras?',
+    corpo: el('div', {}, [
+      el('p', { text: `${candidatos.length} lançamento(s) em "A Classificar" batem com uma regra ativa. Aplicar a categoria sugerida a eles?` }),
+      listaPreview,
+      candidatos.length > 20 ? el('p', { class: 'ajuda', text: `...e mais ${candidatos.length - 20}.` }) : null,
+    ]),
+    acoes: [{ id: 'nao', rotulo: 'Cancelar' }, { id: 'sim', rotulo: 'Aplicar' }],
+  });
+  if (aplicar !== 'sim') return;
+
+  await saveTransactions(candidatos.map(({ transacao, regra }) => ({
+    ...transacao, categoria: regra.categoriaId, classificadoAutomaticamente: true, regraId: regra.id,
+  })));
+  toast(`${candidatos.length} lançamento(s) reclassificado(s).`, 'ok');
+  await aoMudar();
 }
 
 async function editarRegra(regra, categorias, aoMudar) {

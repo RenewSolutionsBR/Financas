@@ -65,11 +65,12 @@ export async function renderConciliacao() {
   const painelBaldes = document.getElementById('painelBaldes');
   try {
     if (doc && doc.tipo === 'fatura') {
-      const [transactions, faturasDoCartao] = await Promise.all([
+      const [transactions, faturasDoCartao, regras] = await Promise.all([
         listTransactions(),
         storage.getByIndex('statements', 'by_contaId', doc.contaId).then((lista) => lista.filter((s) => s.tipo === 'fatura')),
+        listRegras(),
       ]);
-      await renderBaldesFatura(painelBaldes, doc, faturasDoCartao, transactions, contas);
+      await renderBaldesFatura(painelBaldes, doc, faturasDoCartao, transactions, contas, regras);
     } else if (doc && doc.tipo === 'extrato') {
       const [transactions, categorias, formas, regras] = await Promise.all([
         listTransactions(), listCategorias(), listFormas(), listRegras(),

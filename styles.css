@@ -163,6 +163,15 @@ button { cursor: pointer; }
   color: var(--tinta);
 }
 .modal p { color: var(--tinta); line-height: 1.5; }
+.lista-preview {
+  max-height: 220px;
+  overflow-y: auto;
+  margin: 0 0 10px;
+  padding-left: 18px;
+  color: var(--tinta);
+  font-size: 0.85rem;
+  line-height: 1.6;
+}
 
 .modal-acoes {
   display: flex;

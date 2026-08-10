@@ -7,6 +7,7 @@ import { fmtBRL } from '../core/money.js';
 import { formatDateBR } from '../core/dates.js';
 import { runReconciliation } from '../domain/reconcile-card.js';
 import { computeParcelaKey } from '../domain/parcelas.js';
+import { aplicarRegra } from '../domain/classification.js';
 import { irParaAba } from './tabs.js';
 
 // Estado de modulo lido por ui/lancamentos.js no proximo render, mesmo
@@ -23,10 +24,18 @@ function sufixoParcela(item) {
   return item.parcela_atual ? ` (${item.parcela_atual}/${item.parcela_total})` : '';
 }
 
-function itemFatura(item, contaId, faturaVencimento) {
+function itemFatura(item, contaId, faturaVencimento, statementId, regras) {
+  // Mesma memoria de classificacao usada em extrato (conciliacao-extrato.js)
+  // — sem isso, todo item lancado a partir da fatura nascia em "A Classificar"
+  // e nenhuma regra existente (nem as cadastradas manualmente) era consultada.
+  // item.descricaoCanonica ja vem pronto do importador (santander-cartao-pdf.js
+  // grava no momento do parse), sem precisar recalcular aqui.
+  const regraAplicada = aplicarRegra({ descricaoCanonica: item.descricaoCanonica, origem: 'fatura', contaId }, regras);
+
   return el('div', { class: 'item-balde' }, [
     el('span', { class: 'item-descricao', text: `${item.descricao}${sufixoParcela(item)}` }),
     el('span', { class: 'item-meta', text: `${formatDateBR(item.data)} · ${fmtBRL(item.valor)}` }),
+    regraAplicada ? el('span', { class: 'selo-categoria-sugerida', text: 'sugerido por regra' }) : null,
     el('button', {
       class: 'btn btn-mini',
       text: '+ lançar',
@@ -41,6 +50,15 @@ function itemFatura(item, contaId, faturaVencimento) {
           // aparecendo em "nao lancado" pra sempre, e cada novo clique em
           // "+lancar" criava outro lancamento duplicado.
           contaId,
+          // Origem/descricaoCanonica propagadas para o formulario poder
+          // aprender uma regra nova quando o usuario confirma/corrige a
+          // categoria sugerida (mesmo espirito do lote de extrato).
+          origem: 'fatura',
+          origemRef: { statementId, linhaId: item.id },
+          descricaoCanonica: item.descricaoCanonica,
+          regraAplicada,
+          categoria: regraAplicada ? regraAplicada.categoriaId : undefined,
+          formaPagamentoId: (regraAplicada && regraAplicada.formaPagamentoId) || undefined,
           // Linha de parcelamento carrega parcela_atual/parcela_total: sem
           // propagar isso pro rascunho, o lançamento manual saía "solto"
           // (sem número de parcela nem parcelaKey), diferente do lançamento
@@ -85,14 +103,14 @@ function balde(titulo, itens, vazio) {
   ]);
 }
 
-export async function renderBaldesFatura(painel, fatura, faturasList, transactions, accounts) {
+export async function renderBaldesFatura(painel, fatura, faturasList, transactions, accounts, regras) {
   const { autoMatched, matched, faturaUnmatched, appUnmatched } = runReconciliation(fatura, faturasList, transactions, accounts);
 
   painel.innerHTML = '';
   painel.append(
     balde('Conciliado automaticamente', autoMatched.map(itemMatched), 'Nenhum item conciliado automaticamente.'),
     balde('Conciliado', matched.map(itemMatched), 'Nenhum item conciliado.'),
-    balde('Na fatura, não lançado no app', faturaUnmatched.map((item) => itemFatura(item, fatura.contaId, fatura.vencimento)), 'Tudo da fatura já está lançado no app.'),
+    balde('Na fatura, não lançado no app', faturaUnmatched.map((item) => itemFatura(item, fatura.contaId, fatura.vencimento, fatura.id, regras)), 'Tudo da fatura já está lançado no app.'),
     balde('No app, não na fatura', appUnmatched.map(itemApp), 'Nenhum lançamento do app ficou de fora da fatura.')
   );
 }

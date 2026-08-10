@@ -5,7 +5,7 @@
 // o valor atual e uma forma de escrevê-lo de volta (`definirEditandoId`),
 // para não duplicar a variável em dois lugares.
 
-import { el, toast } from './components.js';
+import { el, toast, abrirModal } from './components.js';
 import { campo, mostrarErros, opcoesAtivas, rotuloComStatus } from './cadastros-comuns.js';
 import { campoParceladoEModal } from './lancamentos-parcelado.js';
 import {
@@ -19,6 +19,8 @@ import { parseMoneyBR } from '../core/money.js';
 import { formatDateBR, todayISO } from '../core/dates.js';
 import * as storage from '../core/storage.js';
 import { registrarEvento, TIPOS_EVENTO } from '../domain/audit-log.js';
+import { aprenderRegra, candidatosRetroativos, canonicalizar } from '../domain/classification.js';
+import { CATEGORIA_A_CLASSIFICAR } from '../domain/categories.js';
 
 // interpretarValor, tipoContaParaForma, contasParaForma e
 // contaPadraoValidaParaForma moram em lancamentos-form-helpers.js: são
@@ -40,8 +42,13 @@ export async function montarFormularioLancamento(ctx, transacoes, editandoId, de
   const inpDescricao = el('input', { type: 'text', placeholder: 'Descrição', value: emEdicao ? emEdicao.descricao : (rascunho ? rascunho.descricao : '') });
   const inpValor = el('input', { type: 'text', inputmode: 'decimal', placeholder: '0,00', value: emEdicao ? String(emEdicao.valor).replace('.', ',') : (rascunho ? String(rascunho.valor).replace('.', ',') : '') });
 
+  // Rascunho vindo do "+lançar" da fatura já traz a categoria sugerida pela
+  // memória de classificação (aplicarRegra, calculada em conciliacao-fatura.js)
+  // — sem isso, todo item lançado a partir de fatura nascia em "A Classificar"
+  // mesmo quando já existia regra aprendida para aquela descrição.
+  const categoriaSelecionada = emEdicao ? emEdicao.categoria : (rascunho && rascunho.categoria ? rascunho.categoria : null);
   const selCategoria = el('select', {}, ctx.categorias.map((c) =>
-    el('option', { value: c.id, text: c.nome, ...(emEdicao && emEdicao.categoria === c.id ? { selected: 'selected' } : {}) })
+    el('option', { value: c.id, text: c.nome, ...(categoriaSelecionada === c.id ? { selected: 'selected' } : {}) })
   ));
 
   // A exceção de "continuar selecionável" só vale para o valor do registro em
@@ -59,8 +66,17 @@ export async function montarFormularioLancamento(ctx, transacoes, editandoId, de
   const formaParaContaDoRascunho = contaDoRascunho
     ? formasOpcoes.find((f) => tipoContaParaForma(f.tipo) === contaDoRascunho.tipo)
     : null;
+  // Forma sugerida pela regra aprendida (rascunho.formaPagamentoId) só vence
+  // a forma derivada da conta do rascunho quando bate com o tipo de conta da
+  // fatura — senão uma regra aprendida com outra forma podia direcionar o
+  // lançamento pra uma conta incompatível com o cartão da fatura atual.
+  const formaSugeridaPelaRegra = rascunho && rascunho.formaPagamentoId
+    ? formasOpcoes.find((f) => f.id === rascunho.formaPagamentoId &&
+        (!contaDoRascunho || tipoContaParaForma(f.tipo) === contaDoRascunho.tipo))
+    : null;
   const formaSelecionada = emEdicao ? emEdicao.formaPagamentoId
-    : (formaParaContaDoRascunho ? formaParaContaDoRascunho.id : ultimaForma);
+    : (formaSugeridaPelaRegra ? formaSugeridaPelaRegra.id
+      : (formaParaContaDoRascunho ? formaParaContaDoRascunho.id : ultimaForma));
   const selForma = el('select', {}, formasOpcoes.map((f) =>
     el('option', { value: f.id, text: rotuloComStatus(f), ...(f.id === formaSelecionada ? { selected: 'selected' } : {}) })
   ));
@@ -237,6 +253,18 @@ export async function montarFormularioLancamento(ctx, transacoes, editandoId, de
           parcelaKey: rascunho.parcelaKey,
           ...(rascunho.faturaVencimento ? { faturaVencimento: rascunho.faturaVencimento } : {}),
         } : {}),
+        // "+lançar" da fatura não é um lançamento manual de verdade — vem de
+        // uma linha importada (conciliacao-fatura.js), e precisa gravar
+        // origem: 'fatura' pelo mesmo motivo que autoConfirmParcelas grava:
+        // sem isso runReconciliation não reconhece o item como já lançado
+        // (poolDoCartao/matching dependem de origem) e a memória de
+        // classificação nunca tem como reaplicar a regra retroativamente.
+        ...(!emEdicao && rascunho && rascunho.origem === 'fatura' ? {
+          origem: 'fatura',
+          origemRef: rascunho.origemRef || null,
+          classificadoAutomaticamente: !!rascunho.regraAplicada,
+          regraId: rascunho.regraAplicada ? rascunho.regraAplicada.id : null,
+        } : {}),
       };
       const registro = emEdicao ? { ...emEdicao, ...base } : novaTransaction(base);
 
@@ -260,6 +288,47 @@ export async function montarFormularioLancamento(ctx, transacoes, editandoId, de
       if (erros.length) return mostrarErros(erros);
 
       await saveTransaction(registro);
+
+      // Mesmo espírito de conciliacao-extrato.js: se a categoria escolhida
+      // divergiu da sugerida pela regra (ou não havia sugestão e o usuário
+      // classificou mesmo assim), aprende/atualiza a regra — sem isso,
+      // nenhuma regra nova nascia do "+lançar" de fatura, e correções feitas
+      // aqui nunca alimentavam a memória de classificação de volta.
+      if (!emEdicao && rascunho && rascunho.origem === 'fatura' && rascunho.descricaoCanonica) {
+        const sugeriaOutraCoisa = rascunho.regraAplicada && rascunho.regraAplicada.categoriaId !== registro.categoria;
+        const semSugestaoAlguma = !rascunho.regraAplicada && registro.categoria !== CATEGORIA_A_CLASSIFICAR;
+        if (sugeriaOutraCoisa || semSugestaoAlguma) {
+          const regrasExistentes = await storage.getAll('classificationRules');
+          const regra = aprenderRegra({
+            descricaoCanonica: rascunho.descricaoCanonica, escopo: 'fatura',
+            categoriaId: registro.categoria, contaId: null,
+          }, regrasExistentes);
+          await storage.put('classificationRules', regra);
+
+          // Mesma oferta de conciliacao-extrato.js: outros lançamentos "A
+          // Classificar" com a mesma descrição canônica (vindos de fatura ou
+          // extrato, nunca manual puro — candidatosRetroativos exige
+          // origemRef) ganham a chance de ser reclassificados juntos.
+          const transacoes = await storage.getAll('transactions');
+          const descricaoCanonicaPorTransacao = new Map(
+            transacoes.filter((t) => t.id !== registro.id).map((t) => [
+              t.id, t.origemRef ? canonicalizar(t.descricao, t.origem) : null,
+            ])
+          );
+          const candidatos = candidatosRetroativos(transacoes, regra, descricaoCanonicaPorTransacao);
+          if (candidatos.length) {
+            const aplicar = await abrirModal({
+              titulo: 'Aplicar retroativamente?',
+              corpo: `${candidatos.length} lançamento(s) em "A Classificar" têm a mesma descrição. Aplicar a categoria escolhida a eles também?`,
+              acoes: [{ id: 'nao', rotulo: 'Não' }, { id: 'sim', rotulo: 'Aplicar' }],
+            });
+            if (aplicar === 'sim') {
+              await saveTransactions(candidatos.map((c) => ({ ...c, categoria: registro.categoria, classificadoAutomaticamente: true, regraId: regra.id })));
+            }
+          }
+        }
+      }
+
       await registrarEvento(
         emEdicao ? TIPOS_EVENTO.LANCAMENTO_EDITADO
           : (rascunho ? TIPOS_EVENTO.LANCAR_DA_CONCILIACAO : TIPOS_EVENTO.LANCAMENTO_CRIADO),

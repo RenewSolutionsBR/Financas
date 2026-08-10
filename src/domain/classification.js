@@ -154,6 +154,26 @@ export function candidatosRetroativos(transactions, regra, descricaoCanonicaPorT
   );
 }
 
+// Reaplica as regras ativas a lançamentos já existentes, a qualquer momento
+// (não só no instante em que uma regra nasce/muda, como candidatosRetroativos
+// cobre). Só considera transações com `origemRef` (vieram de fatura ou
+// extrato) — nunca lançamento manual puro, mesma restrição de design do
+// resto do módulo (spec 8.4). `soNaoClassificados=true` restringe a "A
+// Classificar"; `false` também revê classificação já feita (útil quando uma
+// regra foi corrigida depois de já ter sido usada em massa).
+export function reclassificarComRegras(transactions, regras, { soNaoClassificados = true } = {}) {
+  const candidatas = (transactions || []).filter((t) => t.origemRef);
+  const resultado = [];
+  for (const t of candidatas) {
+    if (soNaoClassificados && t.categoria !== CATEGORIA_A_CLASSIFICAR) continue;
+    const descricaoCanonica = canonicalizar(t.descricao, t.origem);
+    const regraAplicada = aplicarRegra({ descricaoCanonica, origem: t.origem, contaId: t.contaId }, regras);
+    if (!regraAplicada || regraAplicada.categoriaId === t.categoria) continue;
+    resultado.push({ transacao: t, regra: regraAplicada });
+  }
+  return resultado;
+}
+
 export function novaRegra(dados) {
   return {
     id: uid('rule'),

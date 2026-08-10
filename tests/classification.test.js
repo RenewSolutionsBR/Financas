@@ -1,6 +1,7 @@
 import { describe, it, assert, assertEqual, assertDeepEqual } from './harness.js';
 import {
   canonicalizar, aplicarRegra, aprenderRegra, candidatosRetroativos, novaRegra,
+  reclassificarComRegras,
 } from '../src/domain/classification.js';
 import { CATEGORIA_A_CLASSIFICAR } from '../src/domain/categories.js';
 
@@ -232,5 +233,42 @@ describe('classification: candidatosRetroativos', () => {
     const t1 = { id: 't1', categoria: CATEGORIA_A_CLASSIFICAR, origemRef: { statementId: 's1', linhaId: 'l1' } };
     const mapa = new Map([['t1', 'PADARIA XYZ']]);
     assertDeepEqual(candidatosRetroativos([t1], regra, mapa), []);
+  });
+});
+
+describe('classification: reclassificarComRegras', () => {
+  const regras = [
+    { id: 'r1', padrao: 'PADARIA XYZ', tipoMatch: 'exato', escopo: 'ambos', categoriaId: 'alimentacao', ativa: true },
+  ];
+
+  it('ignora lancamento manual puro (sem origemRef), mesmo com descricao batendo', () => {
+    const t1 = { id: 't1', descricao: 'PADARIA XYZ', origem: 'manual', categoria: CATEGORIA_A_CLASSIFICAR, origemRef: null };
+    assertDeepEqual(reclassificarComRegras([t1], regras), []);
+  });
+
+  it('por padrao so revê "A Classificar"', () => {
+    const t1 = { id: 't1', descricao: 'PADARIA XYZ', origem: 'fatura', categoria: 'outra_categoria', origemRef: { statementId: 's1', linhaId: 'l1' } };
+    assertDeepEqual(reclassificarComRegras([t1], regras), []);
+  });
+
+  it('com soNaoClassificados:false, revê tambem ja classificado que diverge da regra', () => {
+    const t1 = { id: 't1', descricao: 'PADARIA XYZ', origem: 'fatura', categoria: 'outra_categoria', origemRef: { statementId: 's1', linhaId: 'l1' } };
+    const resultado = reclassificarComRegras([t1], regras, { soNaoClassificados: false });
+    assertEqual(resultado.length, 1);
+    assertEqual(resultado[0].transacao.id, 't1');
+    assertEqual(resultado[0].regra.id, 'r1');
+  });
+
+  it('nao lista quando a categoria ja bate com a regra', () => {
+    const t1 = { id: 't1', descricao: 'PADARIA XYZ', origem: 'fatura', categoria: 'alimentacao', origemRef: { statementId: 's1', linhaId: 'l1' } };
+    assertDeepEqual(reclassificarComRegras([t1], regras, { soNaoClassificados: false }), []);
+  });
+
+  it('achando "A Classificar" com regra aplicavel, retorna o par transacao+regra', () => {
+    const t1 = { id: 't1', descricao: 'PADARIA XYZ', origem: 'extrato', categoria: CATEGORIA_A_CLASSIFICAR, origemRef: { statementId: 's1', linhaId: 'l1' } };
+    const resultado = reclassificarComRegras([t1], regras);
+    assertEqual(resultado.length, 1);
+    assertEqual(resultado[0].transacao.id, 't1');
+    assertEqual(resultado[0].regra.categoriaId, 'alimentacao');
   });
 });
