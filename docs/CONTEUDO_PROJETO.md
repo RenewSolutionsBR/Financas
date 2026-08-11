@@ -1,6 +1,6 @@
 # Conteúdo do Projeto — Livro de Gastos
 
-Histórico do projeto, decisões de design importantes e pendências conhecidas. Atualizado até v14 (2026-08-10).
+Histórico do projeto, decisões de design importantes e pendências conhecidas. Atualizado até v15 (2026-08-10).
 
 ## Origem
 
@@ -107,6 +107,12 @@ Depois do fix de fatura (v12), usuário reportou que uma regra aprendida de **ex
 Por que os testes não pegaram: os testes de `aplicarRegra` em `classification.test.js` mockam a linha já com `origem: 'extrato'` explícito no objeto literal — um shape que o pipeline real (`atribuirNatureza`) nunca produz sozinho. Lição repetida do projeto: mock que não reflete o shape exato do dado real esconde bugs de integração inteiros.
 
 **Fix**: `montarLinhaFormulario` agora chama `aplicarRegra({ ...linha, origem: 'extrato' }, ctx.regras)`, injetando o campo que faltava — mesmo princípio que `conciliacao-fatura.js` já usava (`origem: 'fatura'` passado explicitamente). Teste de regressão em `reconcile-bank.test.js` roda o pipeline real (`atribuirNatureza` de verdade, sem mock de `origem`) e prova o `null` sem o fix / match com o fix.
+
+### Editar categoria de uma parcela não propagava às outras parcelas da mesma compra (v14→v15)
+
+Usuário relatou que corrigir a categoria de uma parcela (ex.: 3/12) não atualizava as demais parcelas já lançadas da mesma compra. Não era regressão — nunca tinha sido implementado: editar uma transação sempre salvou só ela mesma (`saveTransaction(registro)`, sem tocar em nenhuma outra). `syncPredictions` (`domain/parcelas.js`) já propagava a categoria de uma parcela confirmada para as **previsões futuras** ainda não lançadas (`previsto: true`) — mas isso cobria só metade do problema: duas parcelas já **confirmadas** (reais) nunca se sincronizavam entre si.
+
+Nova função pura `outrasParcelasParaAtualizar(transactionEditada, transactions)` em `domain/parcelas.js`: dado o registro editado, devolve as demais transações com o mesmo `parcelaKey`, `previsto: false` (nunca mexe em previsão — isso já é papel do `syncPredictions`) e categoria diferente da recém-escolhida. Plugada em `lancamentos-form.js`: ao salvar uma edição que mudou a categoria de uma transação com `parcelaKey`, oferece o modal "Aplicar às outras parcelas?" (decisão do usuário: perguntar antes, nunca aplicar direto sem confirmação — evita corrigir em massa quando a intenção era só uma parcela específica).
 
 ## Lógica detalhada — Conciliação de fatura (datas e períodos)
 

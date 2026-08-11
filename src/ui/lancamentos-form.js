@@ -21,6 +21,7 @@ import * as storage from '../core/storage.js';
 import { registrarEvento, TIPOS_EVENTO } from '../domain/audit-log.js';
 import { aprenderRegra, candidatosRetroativos, canonicalizar } from '../domain/classification.js';
 import { CATEGORIA_A_CLASSIFICAR } from '../domain/categories.js';
+import { outrasParcelasParaAtualizar } from '../domain/parcelas.js';
 
 // interpretarValor, tipoContaParaForma, contasParaForma e
 // contaPadraoValidaParaForma moram em lancamentos-form-helpers.js: são
@@ -325,6 +326,29 @@ export async function montarFormularioLancamento(ctx, transacoes, editandoId, de
             if (aplicar === 'sim') {
               await saveTransactions(candidatos.map((c) => ({ ...c, categoria: registro.categoria, classificadoAutomaticamente: true, regraId: regra.id })));
             }
+          }
+        }
+      }
+
+      // Editar a categoria de uma parcela não tocava as outras parcelas da
+      // MESMA compra — cada uma era salva isolada. syncPredictions já
+      // propaga a categoria de uma parcela confirmada para as PREVISÕES
+      // futuras ainda não lançadas; isso cobria só metade do problema, nunca
+      // as parcelas REAIS já existentes. Pergunta antes de aplicar (mesmo
+      // padrão do modal "Aplicar retroativamente?"), porque o usuário pode
+      // querer corrigir só aquela parcela específica de propósito.
+      if (emEdicao && emEdicao.categoria !== registro.categoria && registro.parcelaKey) {
+        const transacoesAtuais = await storage.getAll('transactions');
+        const outrasParcelas = outrasParcelasParaAtualizar(registro, transacoesAtuais);
+        if (outrasParcelas.length) {
+          const nomeCategoria = (ctx.categorias.find((c) => c.id === registro.categoria) || {}).nome || 'A Classificar';
+          const aplicar = await abrirModal({
+            titulo: 'Aplicar às outras parcelas?',
+            corpo: `${outrasParcelas.length} outra(s) parcela(s) desta mesma compra têm categoria diferente. Aplicar "${nomeCategoria}" a elas também?`,
+            acoes: [{ id: 'nao', rotulo: 'Não' }, { id: 'sim', rotulo: 'Aplicar' }],
+          });
+          if (aplicar === 'sim') {
+            await saveTransactions(outrasParcelas.map((p) => ({ ...p, categoria: registro.categoria })));
           }
         }
       }

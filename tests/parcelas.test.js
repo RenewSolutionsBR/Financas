@@ -1,7 +1,7 @@
 import { describe, it, assert, assertEqual, assertDeepEqual } from './harness.js';
 import {
   computeParcelaKey, computeParcelaGroups, syncPredictions, autoConfirmParcelas,
-  splitParcelas, findParcelaDuplicates, parcelaGroupsDaConta,
+  splitParcelas, findParcelaDuplicates, parcelaGroupsDaConta, outrasParcelasParaAtualizar,
 } from '../src/domain/parcelas.js';
 import { CATEGORIA_A_CLASSIFICAR } from '../src/domain/categories.js';
 
@@ -542,5 +542,50 @@ describe('parcelas: parcelaGroupsDaConta (reconstroi grupos a partir de TRANSACT
     const grupos = parcelaGroupsDaConta([confirmada], CONTA);
     assertEqual(grupos.length, 1);
     assertEqual(grupos[0].ancoraNaoConfirmada, false, 'ancora confirmada significa vencimento real, nao precisa avisar');
+  });
+});
+
+describe('parcelas: outrasParcelasParaAtualizar', () => {
+  const key = computeParcelaKey('LOJA X', '2026-01-01', 3);
+  const p1 = { id: 't1', previsto: false, parcelaKey: key, categoria: 'a_classificar', parcela_atual: 1 };
+  const p2 = { id: 't2', previsto: false, parcelaKey: key, categoria: 'a_classificar', parcela_atual: 2 };
+  const p3 = { id: 't3', previsto: false, parcelaKey: key, categoria: 'a_classificar', parcela_atual: 3 };
+
+  it('acha as outras parcelas confirmadas da mesma compra com categoria diferente', () => {
+    const editada = { ...p1, categoria: 'alimentacao' };
+    const r = outrasParcelasParaAtualizar(editada, [editada, p2, p3]);
+    assertDeepEqual(r.map((t) => t.id), ['t2', 't3']);
+  });
+
+  it('nao inclui a propria transacao editada', () => {
+    const editada = { ...p1, categoria: 'alimentacao' };
+    const r = outrasParcelasParaAtualizar(editada, [editada, p2, p3]);
+    assert(!r.some((t) => t.id === 't1'));
+  });
+
+  it('nao inclui parcela que ja tem a MESMA categoria (nada a atualizar)', () => {
+    const editada = { ...p1, categoria: 'alimentacao' };
+    const p2Igual = { ...p2, categoria: 'alimentacao' };
+    const r = outrasParcelasParaAtualizar(editada, [editada, p2Igual, p3]);
+    assertDeepEqual(r.map((t) => t.id), ['t3']);
+  });
+
+  it('nao inclui PREVISOES (previsto:true) — essas ja sao cobertas por syncPredictions', () => {
+    const editada = { ...p1, categoria: 'alimentacao' };
+    const previsao = { id: 't4', previsto: true, parcelaKey: key, categoria: 'a_classificar', parcela_atual: 3 };
+    const r = outrasParcelasParaAtualizar(editada, [editada, previsao]);
+    assertDeepEqual(r.map((t) => t.id), []);
+  });
+
+  it('nao inclui parcela de OUTRA compra (parcelaKey diferente)', () => {
+    const editada = { ...p1, categoria: 'alimentacao' };
+    const outraCompra = { id: 't5', previsto: false, parcelaKey: computeParcelaKey('LOJA Y', '2026-01-01', 3), categoria: 'a_classificar' };
+    const r = outrasParcelasParaAtualizar(editada, [editada, outraCompra]);
+    assertDeepEqual(r.map((t) => t.id), []);
+  });
+
+  it('transacao sem parcelaKey (nao e parcela) devolve lista vazia', () => {
+    const semParcela = { id: 't1', previsto: false, categoria: 'alimentacao' };
+    assertDeepEqual(outrasParcelasParaAtualizar(semParcela, [semParcela, p2]), []);
   });
 });
