@@ -1,5 +1,6 @@
 import { describe, it, assert, assertEqual, assertDeepEqual } from './harness.js';
 import { atribuirNatureza, confrontarFaturaDebito, runReconciliationBank } from '../src/domain/reconcile-bank.js';
+import { canonicalizar, aplicarRegra } from '../src/domain/classification.js';
 import { TIPO_CARTAO, TIPO_CONTA } from '../src/domain/accounts.js';
 
 const CARTAO = { id: 'acc_cartao_1', tipo: TIPO_CARTAO, matchers: ['MASTER CARD FINAL 0000'] };
@@ -140,5 +141,34 @@ describe('reconcile-bank: runReconciliationBank — 4 baldes e idempotencia', ()
     const semOrigem = { id: 't1', previsto: false, natureza: 'despesa', contaId: 'acc_corrente_1', data: '2026-05-05', valor: 50 };
     const { appUnmatched } = runReconciliationBank(extrato, [semOrigem], accounts, apelidos, []);
     assertEqual(appUnmatched.length, 1, 'lancamento manual/de extrato sem casamento ainda precisa aparecer, senao o usuario nunca sabe que falta reconciliar');
+  });
+});
+
+// Regressao (achada 2026-08-10, "regra de extrato aprendida nunca aplica em
+// producao"): a linha que sai de atribuirNatureza (o que a UI realmente
+// recebe em extratoUnmatched) nunca carregou um campo `origem` — so
+// `natureza`. aplicarRegra (classification.js) compara regra.escopo ===
+// linha.origem, entao com origem sempre undefined nenhuma regra de escopo
+// 'extrato' jamais casava, mesmo com descricaoCanonica identica ao padrao
+// salvo. Os testes de aplicarRegra sozinhos nao pegavam isso porque mockam a
+// linha ja com origem:'extrato' — shape que este pipeline real nunca produz
+// sozinho. Corrigido no CALLER (conciliacao-extrato.js), injetando
+// origem:'extrato' explicitamente ao chamar aplicarRegra — este teste prova
+// que o pipeline real (atribuirNatureza -> aplicarRegra) hoje casa a regra.
+describe('reconcile-bank + classification: integracao real (sem mock de origem)', () => {
+  it('linha de extrato processada por atribuirNatureza NUNCA carrega origem — reproduz o shape real que a UI recebe', () => {
+    const l = linha({ descricao: 'PIX ENVIADO   Mariam Makki', sinal: 'debito' });
+    const linhaProcessada = { ...l, ...atribuirNatureza(l, accounts, apelidos) };
+    assertEqual(linhaProcessada.origem, undefined);
+  });
+
+  it('regra de escopo "extrato" casa quando origem e injetada explicitamente pelo caller (fix aplicado)', () => {
+    const l = linha({ descricao: 'PIX ENVIADO   Mariam Makki', sinal: 'debito' });
+    const linhaProcessada = { ...l, ...atribuirNatureza(l, accounts, apelidos), descricaoCanonica: canonicalizar('PIX ENVIADO   Mariam Makki', 'extrato') };
+    const regras = [{ id: 'r1', padrao: 'MARIAM MAKKI', tipoMatch: 'exato', escopo: 'extrato', categoriaId: 'moradia', ativa: true, acertos: 0 }];
+    // Mesma correcao aplicada em conciliacao-extrato.js: sem o spread de
+    // origem, este assert falharia (regraAplicada seria null).
+    const regraAplicada = aplicarRegra({ ...linhaProcessada, origem: 'extrato' }, regras);
+    assertEqual(regraAplicada && regraAplicada.id, 'r1');
   });
 });

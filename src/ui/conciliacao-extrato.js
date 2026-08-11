@@ -94,7 +94,15 @@ function balde(titulo, itens, vazio) {
 // ATUAL (o usuario pode corrigir natureza/categoria/forma antes de lancar),
 // nao o sugerido de novo a cada render — o lote usa exatamente este estado.
 function montarLinhaFormulario(linha, ctx) {
-  const regraAplicada = aplicarRegra(linha, ctx.regras);
+  // BUG (achado 2026-08-10, investigando "regra de extrato nao aplica"):
+  // `linha` (extratoUnmatched, vinda de runReconciliationBank) nunca teve um
+  // campo `origem` — ela so carrega `natureza` (atribuirNatureza). aplicarRegra
+  // compara regra.escopo === linha.origem, entao com origem sempre undefined
+  // NENHUMA regra de escopo 'extrato' jamais casava (so 'ambos' passava,
+  // porque a comparacao vira 'ambos' === 'ambos' por outro caminho). Os
+  // testes de aplicarRegra nao pegaram isso porque mockam a linha ja com
+  // origem:'extrato' explicito, shape que o caller real nunca produzia.
+  const regraAplicada = aplicarRegra({ ...linha, origem: 'extrato' }, ctx.regras);
   const formaSugerida = formaPorPrefixoExtrato(linha.tipoDetectado, ctx.formas);
   const estado = {
     selecionado: false,

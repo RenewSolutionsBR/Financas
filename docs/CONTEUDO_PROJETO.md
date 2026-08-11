@@ -1,6 +1,6 @@
 # Conteúdo do Projeto — Livro de Gastos
 
-Histórico do projeto, decisões de design importantes e pendências conhecidas. Atualizado até v13 (2026-08-10).
+Histórico do projeto, decisões de design importantes e pendências conhecidas. Atualizado até v14 (2026-08-10).
 
 ## Origem
 
@@ -97,6 +97,16 @@ Diferenças do lote de extrato, por a fatura ter menos graus de liberdade por li
 - **Forma de pagamento não vem de heurística por prefixo de texto** (o extrato usa `formaPorPrefixoExtrato`, que não faz sentido pra fatura) — `formaCreditoParaCartao` (nova função pura em `conciliacao-fatura.js`) escolhe a forma de pagamento tipo `'credito'` cuja `contaPadraoId` bate com o cartão desta fatura; sem essa correspondência, cai na primeira forma de crédito ativa.
 - **Compra parcelada entra no lote igual a uma compra avulsa** (decisão do usuário) — cada linha já carrega `parcela_atual`/`parcela_total`/`parcelaKey`/`faturaVencimento` automaticamente, mesma propagação que o "+lançar" individual já fazia.
 - Aprendizado de regra e modal "Aplicar retroativamente?" seguem exatamente a mesma lógica do lote de extrato.
+
+### Bug real de produção: regra de extrato nunca aplicava, mesmo com descrição idêntica (v13→v14)
+
+Depois do fix de fatura (v12), usuário reportou que uma regra aprendida de **extrato** (`MARIAM MAKKI`, escopo `extrato`) também não aplicava a um item real (`PIX ENVIADO␣␣␣Mariam Makki`) — confirmado com dado real (export de conciliação, texto bruto inspecionado no XML do `.xlsx`), descartando cache/versão antiga (usuário já estava na v13, testou com transações apagadas e extrato reimportado do zero).
+
+**Root cause**: `aplicarRegra` (`domain/classification.js`) decide compatibilidade de escopo comparando `regra.escopo === linha.origem`. A linha que `montarLinhaFormulario` (`conciliacao-extrato.js`) passa pra essa função vem de `extratoUnmatched`, produzida por `runReconciliationBank` → `atribuirNatureza` — e essa linha **nunca teve um campo `origem`**, só `natureza` (despesa/receita/transferência/pagamento_fatura). Com `linha.origem` sempre `undefined`, a comparação de escopo só passava para regras `escopo: 'ambos'`; toda regra `escopo: 'extrato'` (a maioria, inclusive as aprendidas automaticamente) nunca casava com nada, silenciosamente, desde que o lote de extrato existe (Fase 2). Confirmado no Node: `aplicarRegra(linhaReal, regras)` devolve `null` sem o fix, e a regra correta com ele.
+
+Por que os testes não pegaram: os testes de `aplicarRegra` em `classification.test.js` mockam a linha já com `origem: 'extrato'` explícito no objeto literal — um shape que o pipeline real (`atribuirNatureza`) nunca produz sozinho. Lição repetida do projeto: mock que não reflete o shape exato do dado real esconde bugs de integração inteiros.
+
+**Fix**: `montarLinhaFormulario` agora chama `aplicarRegra({ ...linha, origem: 'extrato' }, ctx.regras)`, injetando o campo que faltava — mesmo princípio que `conciliacao-fatura.js` já usava (`origem: 'fatura'` passado explicitamente). Teste de regressão em `reconcile-bank.test.js` roda o pipeline real (`atribuirNatureza` de verdade, sem mock de `origem`) e prova o `null` sem o fix / match com o fix.
 
 ## Lógica detalhada — Conciliação de fatura (datas e períodos)
 
