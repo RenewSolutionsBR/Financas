@@ -331,12 +331,13 @@ export async function montarFormularioLancamento(ctx, transacoes, editandoId, de
       }
 
       // Editar a categoria de uma parcela não tocava as outras parcelas da
-      // MESMA compra — cada uma era salva isolada. syncPredictions já
-      // propaga a categoria de uma parcela confirmada para as PREVISÕES
-      // futuras ainda não lançadas; isso cobria só metade do problema, nunca
-      // as parcelas REAIS já existentes. Pergunta antes de aplicar (mesmo
-      // padrão do modal "Aplicar retroativamente?"), porque o usuário pode
-      // querer corrigir só aquela parcela específica de propósito.
+      // MESMA compra — cada uma era salva isolada. syncPredictions só
+      // propaga a categoria de uma parcela confirmada pras PREVISÕES na
+      // PRÓXIMA importação de fatura, não na hora — outrasParcelasParaAtualizar
+      // inclui confirmadas e previstas de propósito, pra corrigir na hora.
+      // Pergunta antes de aplicar (mesmo padrão do modal "Aplicar
+      // retroativamente?"), porque o usuário pode querer corrigir só aquela
+      // parcela específica de propósito.
       if (emEdicao && emEdicao.categoria !== registro.categoria && registro.parcelaKey) {
         const transacoesAtuais = await storage.getAll('transactions');
         const outrasParcelas = outrasParcelasParaAtualizar(registro, transacoesAtuais);

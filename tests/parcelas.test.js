@@ -570,11 +570,11 @@ describe('parcelas: outrasParcelasParaAtualizar', () => {
     assertDeepEqual(r.map((t) => t.id), ['t3']);
   });
 
-  it('nao inclui PREVISOES (previsto:true) — essas ja sao cobertas por syncPredictions', () => {
+  it('INCLUI previsoes (previsto:true) com categoria diferente — sem isso as parcelas seguintes so herdam a categoria na proxima importacao de fatura (syncPredictions), nao na hora', () => {
     const editada = { ...p1, categoria: 'alimentacao' };
     const previsao = { id: 't4', previsto: true, parcelaKey: key, categoria: 'a_classificar', parcela_atual: 3 };
     const r = outrasParcelasParaAtualizar(editada, [editada, previsao]);
-    assertDeepEqual(r.map((t) => t.id), []);
+    assertDeepEqual(r.map((t) => t.id), ['t4']);
   });
 
   it('nao inclui parcela de OUTRA compra (parcelaKey diferente)', () => {

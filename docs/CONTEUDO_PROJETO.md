@@ -1,6 +1,6 @@
 # Conteúdo do Projeto — Livro de Gastos
 
-Histórico do projeto, decisões de design importantes e pendências conhecidas. Atualizado até v15 (2026-08-10).
+Histórico do projeto, decisões de design importantes e pendências conhecidas. Atualizado até v16 (2026-08-11).
 
 ## Origem
 
@@ -112,7 +112,13 @@ Por que os testes não pegaram: os testes de `aplicarRegra` em `classification.t
 
 Usuário relatou que corrigir a categoria de uma parcela (ex.: 3/12) não atualizava as demais parcelas já lançadas da mesma compra. Não era regressão — nunca tinha sido implementado: editar uma transação sempre salvou só ela mesma (`saveTransaction(registro)`, sem tocar em nenhuma outra). `syncPredictions` (`domain/parcelas.js`) já propagava a categoria de uma parcela confirmada para as **previsões futuras** ainda não lançadas (`previsto: true`) — mas isso cobria só metade do problema: duas parcelas já **confirmadas** (reais) nunca se sincronizavam entre si.
 
-Nova função pura `outrasParcelasParaAtualizar(transactionEditada, transactions)` em `domain/parcelas.js`: dado o registro editado, devolve as demais transações com o mesmo `parcelaKey`, `previsto: false` (nunca mexe em previsão — isso já é papel do `syncPredictions`) e categoria diferente da recém-escolhida. Plugada em `lancamentos-form.js`: ao salvar uma edição que mudou a categoria de uma transação com `parcelaKey`, oferece o modal "Aplicar às outras parcelas?" (decisão do usuário: perguntar antes, nunca aplicar direto sem confirmação — evita corrigir em massa quando a intenção era só uma parcela específica).
+Nova função pura `outrasParcelasParaAtualizar(transactionEditada, transactions)` em `domain/parcelas.js`: dado o registro editado, devolve as demais transações com o mesmo `parcelaKey` e categoria diferente da recém-escolhida. Plugada em `lancamentos-form.js`: ao salvar uma edição que mudou a categoria de uma transação com `parcelaKey`, oferece o modal "Aplicar às outras parcelas?" (decisão do usuário: perguntar antes, nunca aplicar direto sem confirmação — evita corrigir em massa quando a intenção era só uma parcela específica).
+
+### v15 excluía as previsões futuras do escopo — usuário via a correção "não pegar" nas parcelas seguintes (v15→v16)
+
+A primeira versão de `outrasParcelasParaAtualizar` (v15) excluía de propósito qualquer transação `previsto: true`, com o raciocínio "isso já é papel do `syncPredictions`". Na prática isso deixava a experiência quebrada: `syncPredictions` só roda **durante importação de fatura** (`conciliacao-import.js`, único call site) — corrigir a categoria da parcela 3/12 hoje não propagava para as previsões 4/12...12/12 (ainda em "A Classificar") até a *próxima* fatura ser importada, não na hora. Usuário reportou exatamente esse sintoma: "classifica uma parcela, as seguintes continuam a classificar".
+
+Corrigido removendo o filtro `!t.previsto` de `outrasParcelasParaAtualizar` — agora inclui tanto parcelas confirmadas quanto previsões do mesmo `parcelaKey`, todas atualizadas juntas pelo mesmo modal "Aplicar às outras parcelas?", na hora. `syncPredictions` continua existindo e fazendo seu papel (herdar categoria ao *recriar* previsões numa nova importação) — os dois mecanismos não conflitam, só cobrem momentos diferentes.
 
 ## Lógica detalhada — Conciliação de fatura (datas e períodos)
 

@@ -346,18 +346,18 @@ export function findParcelaDuplicates(transactions, allFaturaRows, desc, data, n
   return (transactions || []).filter((t) => t.parcelaKey === key || (t.parcelaKey && fuzzyKeys.has(t.parcelaKey)));
 }
 
-// Outras parcelas JÁ CONFIRMADAS (previsto:false) da mesma compra, com
-// categoria diferente da que acabou de ser escolhida — usado para oferecer
-// "aplicar às outras parcelas?" ao editar a categoria de uma parcela.
-// Diferente de syncPredictions (que já propaga categoria de parcela
-// confirmada para as PREVISÕES futuras ainda não lançadas), isso cobre o
-// caso de duas parcelas REAIS já existentes divergindo entre si — nunca
-// coberto antes, porque editar uma transação só salvava ela mesma.
+// Outras parcelas da mesma compra (confirmadas OU previstas) com categoria
+// diferente da que acabou de ser escolhida — usado para oferecer "aplicar às
+// outras parcelas?" ao editar a categoria de uma parcela. Inclui previsões
+// (previsto:true) de propósito: syncPredictions só propaga a categoria de
+// uma parcela confirmada pras previsões futuras na PRÓXIMA importação de
+// fatura, então sem incluir previsão aqui as parcelas seguintes continuavam
+// em "A Classificar" até a próxima fatura chegar — o usuário via a correção
+// não "pegar" nas parcelas seguintes, mesmo tendo acabado de corrigir.
 export function outrasParcelasParaAtualizar(transactionEditada, transactions) {
   if (!transactionEditada || !transactionEditada.parcelaKey) return [];
   return (transactions || []).filter((t) =>
     t.id !== transactionEditada.id &&
-    !t.previsto &&
     t.parcelaKey === transactionEditada.parcelaKey &&
     t.categoria !== transactionEditada.categoria
   );
