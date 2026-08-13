@@ -16,7 +16,25 @@ import { detectarMelhorAdaptador, adaptadoresParaExtensao } from '../importers/r
 import '../importers/generic-table.js';
 import '../importers/santander-cartao-pdf.js';
 import '../importers/santander-extrato-xls.js';
-import { MAPEAMENTO_MODELO } from '../importers/modelos-planilha.js';
+import { MAPEAMENTO_MODELO, tipoDoMarcador } from '../importers/modelos-planilha.js';
+
+// Lê a primeira aba do arquivo só para ver se ele é um modelo baixado do
+// app (marcador na primeira célula). Devolve 'fatura' | 'extrato' |
+// 'lancamentos', ou null — inclusive quando o arquivo não é planilha
+// nenhuma (um PDF, por exemplo), que é o caso do `catch`.
+async function detectarTipoDeModelo(buffer, nomeArquivo) {
+  if (!/\.(xlsx|xls|csv)$/i.test(nomeArquivo || '')) return null;
+  try {
+    const isCsv = /\.csv$/i.test(nomeArquivo);
+    const wb = isCsv
+      ? XLSX.read(new TextDecoder('utf-8').decode(buffer), { type: 'string' })
+      : XLSX.read(buffer, { type: 'array' });
+    const matriz = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true, defval: '' });
+    return tipoDoMarcador(matriz);
+  } catch {
+    return null;
+  }
+}
 import { autoConfirmParcelas, syncPredictions } from '../domain/parcelas.js';
 import { atribuirNatureza, confrontarFaturaDebito } from '../domain/reconcile-bank.js';
 import { processarPagamentoFatura } from '../domain/pagamento-fatura.js';
@@ -167,7 +185,15 @@ export async function renderImportacao(painel, contaId, escopoSugerido, aoImport
     const buffer = await arquivo.arrayBuffer();
     const candidatos = adaptadoresParaExtensao(arquivo.name);
     const melhor = await detectarMelhorAdaptador(buffer, arquivo.name);
-    estado = { buffer, arquivo: arquivo.name, candidatos, adaptadorId: melhor ? melhor.adaptador.id : (candidatos[0] || {}).id, mapeamento: null };
+    // Arquivo baixado em "Modelos de planilha" se identifica sozinho: o
+    // mapeamento de colunas vem pronto e não faz sentido pedir ao usuário
+    // que conte colunas de um arquivo que o próprio app gerou.
+    const tipoModelo = await detectarTipoDeModelo(buffer, arquivo.name);
+    estado = {
+      buffer, arquivo: arquivo.name, candidatos,
+      adaptadorId: melhor ? melhor.adaptador.id : (candidatos[0] || {}).id,
+      mapeamento: null, tipoModelo,
+    };
     areaResultado.innerHTML = '';
     renderEscolhaAdaptador();
   });
@@ -184,12 +210,31 @@ export async function renderImportacao(painel, contaId, escopoSugerido, aoImport
     selAdaptador.addEventListener('change', () => { estado.adaptadorId = selAdaptador.value; estado.mapeamento = null; renderEscolhaAdaptador(); });
 
     const adaptadorEscolhido = estado.candidatos.find((a) => a.id === estado.adaptadorId);
+    const ehModelo = estado.tipoModelo && adaptadorEscolhido && adaptadorEscolhido.id === 'generic-table';
     const botaoAnalisar = el('button', { class: 'btn btn-primario', text: 'Analisar arquivo', onclick: () => analisar(adaptadorEscolhido) });
     areaPreview.append(el('div', { class: 'form' }, [
       el('label', { class: 'campo' }, [el('span', { text: 'Adaptador' }), selAdaptador]),
-      adaptadorEscolhido && adaptadorEscolhido.id === 'generic-table' ? painelMapeamentoManual() : null,
+      ehModelo ? painelModeloReconhecido() : null,
+      adaptadorEscolhido && adaptadorEscolhido.id === 'generic-table' && !ehModelo ? painelMapeamentoManual() : null,
       el('div', { class: 'acoes' }, [botaoAnalisar]),
     ]));
+  }
+
+  // Modelo do app: nada de contar coluna. Só o vencimento, que a planilha
+  // não tem como saber (ver periodoDoStatement em generic-table.js).
+  function painelModeloReconhecido() {
+    const inpVencimento = el('input', { type: 'date' });
+    const ehFatura = estado.tipoModelo === 'fatura';
+    const capturar = () => {
+      estado.mapeamento = { ...MAPEAMENTO_MODELO[estado.tipoModelo], vencimento: ehFatura ? (inpVencimento.value || null) : null };
+    };
+    inpVencimento.addEventListener('change', capturar);
+    capturar();
+
+    return el('div', { class: 'mapeamento-manual' }, [
+      el('p', { class: 'aviso-ok', text: `Modelo de ${estado.tipoModelo} reconhecido — as colunas já estão mapeadas.` }),
+      ehFatura ? el('label', { class: 'campo' }, [el('span', { text: 'Vencimento da fatura' }), inpVencimento]) : null,
+    ]);
   }
 
   function painelMapeamentoManual() {

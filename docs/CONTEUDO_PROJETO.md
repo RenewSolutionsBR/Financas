@@ -1,6 +1,6 @@
 # Conteúdo do Projeto — Livro de Gastos
 
-Histórico do projeto, decisões de design importantes e pendências conhecidas. Atualizado até v24 (2026-08-13).
+Histórico do projeto, decisões de design importantes e pendências conhecidas. Atualizado até v25 (2026-08-13).
 
 ## Origem
 
@@ -383,6 +383,18 @@ Bug de infraestrutura que já tinha custado três investigações inteiras (v20,
 **`src/core/modulos.js`** passou a ser a fonte única da lista de módulos, gerada por `tools/gerar-modulos.mjs` e consumida tanto pelo import map quanto pelo precache do service worker. A lista manual do `sw.js` tinha silenciosamente ficado com **29 dos 50 módulos** — um arquivo esquecido ali só se manifestava como falha offline, sem erro visível. Rodar o gerador depois de criar ou remover qualquer arquivo de `src/` passa a fazer parte do fluxo de publicação.
 
 **Erro cometido e corrigido durante a implementação**, registrado porque é fácil repetir: `document.currentScript` é sempre `null` dentro de um módulo ES (só existe em script clássico). Usá-lo para posicionar o import map quebrava o boot inteiro com `Cannot read properties of null`.
+
+### Modelos de planilha eram detectados como "Extrato Santander" (v24→v25, 2026-08-13)
+
+Relatado pelo usuário na primeira tentativa real de importar o modelo de fatura: a tela abria com o adaptador **"Extrato Santander (.xls)"** pré-selecionado e a análise falhava com "0 linha(s) lidas. Checksum NÃO confere — não encontrei o cabeçalho de tabela do extrato".
+
+**Causa.** Os dois adaptadores aceitam `.xlsx`, então quem decide é a pontuação de `detectar`. O detector do extrato Santander dá **0.3** para qualquer planilha que tenha "Data" na coluna 0 e algo com "Descri" na coluna 1 (`santander-extrato-xls.js`) — que é exatamente o cabeçalho dos modelos que eu mesmo criei em v21. O adaptador genérico pontua **0.05** de propósito (rede de segurança, nunca deve vencer quem reconhece o formato de verdade). Resultado medido: os **três** modelos perdiam para o adaptador errado, e o usuário teria de trocar o adaptador à mão sem nenhuma pista de que precisava.
+
+**Correção: o arquivo passa a se identificar em vez de ser adivinhado.** `baixarModelo` escreve uma linha de marcador na primeira célula (`LIVRO DE GASTOS — MODELO FATURA`), e `detectar` do adaptador genérico devolve **1** quando reconhece o marcador. Como efeito colateral desejável, o mapeamento de colunas passa a vir pronto: não faz sentido pedir ao usuário que conte colunas de um arquivo que o próprio app gerou. A tela agora mostra "Modelo de fatura reconhecido — as colunas já estão mapeadas" e pede só o vencimento (que a planilha não tem como saber).
+
+**Consequência para quem já baixou:** modelos baixados antes da v25 não têm o marcador e continuam caindo no adaptador errado. O texto do grupo "Modelos de planilha" avisa para baixar de novo.
+
+**Detalhes de implementação.** O marcador empurrou o cabeçalho para a linha 2, então `MAPEAMENTO_MODELO` ganhou `linhasDeCabecalho: 2` (o `temCabecalho` booleano continua servindo ao mapeamento manual, que só sabe pular uma linha) e `parseLancamentosPlanilha` passou a localizar o cabeçalho dinamicamente — inclusive os números de linha dos avisos, que precisam continuar batendo com o que o usuário vê no Excel. `tipoDoMarcador` compara sem caixa e com trim, porque o Excel pode devolver a célula com espaço.
 
 ## Pendências conhecidas, fora de escopo
 

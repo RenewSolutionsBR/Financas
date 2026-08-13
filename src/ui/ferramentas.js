@@ -273,7 +273,7 @@ export function abrirFerramentas(aoMudar) {
       el('button', { class: 'btn', type: 'button', text: 'Conciliação completa (.xlsx)', onclick: exportarConciliacaoCompleta }),
       el('button', { class: 'btn', type: 'button', text: 'Log de auditoria (.json)', onclick: exportarLog }),
     ]),
-    grupo('Modelos de planilha', 'Baixe o modelo, preencha fora do app e importe. Fatura e extrato são importados na aba Conciliação; lançamentos entram direto, pelo botão abaixo.', [
+    grupo('Modelos de planilha', 'Baixe o modelo, preencha fora do app e importe. Fatura e extrato são importados na aba Conciliação; lançamentos entram direto, pelo botão abaixo. Se você baixou um modelo antes da v25, baixe de novo: os modelos agora se identificam sozinhos na importação.', [
       el('button', { class: 'btn', type: 'button', text: 'Modelo de fatura (.xlsx)', onclick: () => baixar('fatura') }),
       el('button', { class: 'btn', type: 'button', text: 'Modelo de extrato (.xlsx)', onclick: () => baixar('extrato') }),
       el('button', { class: 'btn', type: 'button', text: 'Modelo de lançamentos (.xlsx)', onclick: () => baixar('lancamentos') }),

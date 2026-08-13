@@ -15,7 +15,7 @@ import { canonicalizar } from '../domain/classification.js';
 import { parseMoneyBR } from '../core/money.js';
 import { novaTransaction, NATUREZAS } from '../domain/transactions.js';
 import { CATEGORIA_A_CLASSIFICAR } from '../domain/categories.js';
-import { COLUNAS_LANCAMENTOS } from './modelos-planilha.js';
+import { COLUNAS_LANCAMENTOS, tipoDoMarcador } from './modelos-planilha.js';
 
 // Aceita as duas formas que uma célula de data chega de uma planilha real:
 //
@@ -98,13 +98,20 @@ function acharPorNome(lista, texto) {
 export function parseLancamentosPlanilha(matriz, { categorias, formas, contas, temCabecalho = true } = {}) {
   const avisos = [];
   const erros = [];
-  const linhas = temCabecalho ? (matriz || []).slice(1) : (matriz || []);
+  // O modelo tem uma linha de MARCADOR acima do cabeçalho (ver
+  // modelos-planilha.js): ela existe para o arquivo se identificar em vez de
+  // ser adivinhado pelo formato. Quando está presente, os títulos são a
+  // linha 2 e os dados começam na 3. Arquivo montado à mão (sem marcador)
+  // segue com títulos na linha 1.
+  const temMarcador = !!tipoDoMarcador(matriz);
+  const linhaDoCabecalho = temMarcador ? 1 : 0;
+  const linhas = temCabecalho ? (matriz || []).slice(linhaDoCabecalho + 1) : (matriz || []);
 
   // Cabeçalho conferido antes de tudo: uma planilha com as colunas noutra
   // ordem seria lida inteira "com sucesso" e gravaria descrição no lugar do
   // valor. Falhar cedo e dizer o que se esperava é melhor que importar lixo.
   if (temCabecalho && (matriz || []).length) {
-    const cabecalho = (matriz[0] || []).map((c) => chaveDeNome(c));
+    const cabecalho = ((matriz || [])[linhaDoCabecalho] || []).map((c) => chaveDeNome(c));
     const esperado = COLUNAS_LANCAMENTOS.map((c) => chaveDeNome(c));
     const confere = esperado.every((col, i) => cabecalho[i] === col);
     if (!confere) {
@@ -118,7 +125,9 @@ export function parseLancamentosPlanilha(matriz, { categorias, formas, contas, t
 
   const transacoes = [];
   linhas.forEach((l, i) => {
-    const numeroLinha = i + (temCabecalho ? 2 : 1); // linha como o usuário vê no Excel
+    // Linha como o usuário vê no Excel: soma as linhas puladas (marcador
+    // e/ou cabeçalho) mais o índice 1-based.
+    const numeroLinha = i + (temCabecalho ? linhaDoCabecalho + 2 : 1);
     // Célula de data e de valor ficam CRUAS (Date/number) — só o texto é
     // aparado. Converter tudo para string aqui destruía o Date antes de
     // dataParaISO poder lê-lo, que era exatamente o bug de "data preenchida

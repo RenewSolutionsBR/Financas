@@ -22,9 +22,12 @@ export const COLUNAS_LANCAMENTOS = ['Data', 'Descrição', 'Valor', 'Categoria',
 
 // Índice de cada coluna nos modelos acima — o "mapeamento" que o usuário
 // teria de preencher à mão se a planilha não viesse de um modelo.
+// `linhasDeCabecalho: 2` = a linha do marcador (MARCADOR_MODELO, abaixo) e a
+// linha de títulos. `temCabecalho` continua para compatibilidade com o
+// mapeamento manual, onde o usuário só diz "tem cabeçalho ou não".
 export const MAPEAMENTO_MODELO = {
-  fatura: { colData: 0, colDescricao: 1, colValor: 2, colParcela: 3, colDocumento: null, temCabecalho: true, escopo: 'fatura' },
-  extrato: { colData: 0, colDescricao: 1, colValor: 2, colDocumento: 3, colParcela: null, temCabecalho: true, escopo: 'extrato' },
+  fatura: { colData: 0, colDescricao: 1, colValor: 2, colParcela: 3, colDocumento: null, temCabecalho: true, linhasDeCabecalho: 2, escopo: 'fatura' },
+  extrato: { colData: 0, colDescricao: 1, colValor: 2, colDocumento: 3, colParcela: null, temCabecalho: true, linhasDeCabecalho: 2, escopo: 'extrato' },
 };
 
 // Linhas de exemplo: mostram o FORMATO esperado de cada célula (data
@@ -97,10 +100,40 @@ export function tiposDeModelo() {
 
 // Pura: devolve a matriz (array de arrays) da aba principal do modelo —
 // cabeçalho + exemplos. Testável sem XLSX nem DOM.
+// Marcador na PRIMEIRA célula do arquivo, acima do cabeçalho. Existe para o
+// arquivo dizer o que é, em vez de ser adivinhado pelo formato.
+//
+// Bug real (2026-08-13, relatado pelo usuário na primeira tentativa de
+// importar o modelo de fatura): os três modelos eram detectados como
+// "Extrato Santander (.xls)" e a importação falhava com "não encontrei o
+// cabeçalho de tabela do extrato". O detector daquele adaptador dá 0.3 de
+// pontuação para uma planilha cuja linha tenha "Data" na coluna 0 e algo com
+// "Descri" na coluna 1 — exatamente o cabeçalho dos modelos — enquanto o
+// adaptador genérico pontua só 0.05 de propósito (rede de segurança, nunca
+// deve vencer quem reconhece o formato de verdade). Resultado: o modelo do
+// próprio app perdia para o adaptador errado, e o usuário teria de trocar o
+// adaptador à mão sem nenhuma pista de que precisava.
+export const MARCADOR_MODELO = 'LIVRO DE GASTOS — MODELO';
+
+export function marcadorDoModelo(tipo) {
+  return `${MARCADOR_MODELO} ${String(tipo).toUpperCase()}`;
+}
+
+// Reconhece um arquivo gerado por baixarModelo() e diz de qual tipo ele é.
+// Devolve 'fatura' | 'extrato' | 'lancamentos', ou null se não for modelo.
+export function tipoDoMarcador(matriz) {
+  const primeira = String(((matriz || [])[0] || [])[0] || '').trim().toUpperCase();
+  if (!primeira.startsWith(MARCADOR_MODELO.toUpperCase())) return null;
+  return tiposDeModelo().find((t) => primeira.endsWith(String(t).toUpperCase())) || null;
+}
+
+// Matriz COMPLETA do arquivo: linha de marcador, cabeçalho e exemplos. O
+// cabeçalho deixa de ser a primeira linha — quem lê o modelo usa
+// MAPEAMENTO_MODELO, que já contabiliza isso em `linhasDeCabecalho`.
 export function matrizDoModelo(tipo) {
   const modelo = MODELOS[tipo];
   if (!modelo) throw new Error(`Modelo desconhecido: ${tipo}`);
-  return [modelo.colunas, ...modelo.exemplos];
+  return [[marcadorDoModelo(tipo)], modelo.colunas, ...modelo.exemplos];
 }
 
 export function ajudaDoModelo(tipo) {

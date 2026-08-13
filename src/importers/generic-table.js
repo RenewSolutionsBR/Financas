@@ -7,6 +7,7 @@ import { register } from './registry.js';
 import { canonicalizar } from '../domain/classification.js';
 import { parseMoneyBR } from '../core/money.js';
 import { stableHash } from '../core/ids.js';
+import { tipoDoMarcador, MAPEAMENTO_MODELO } from './modelos-planilha.js';
 
 // Aceita texto "dd/mm/aaaa" E célula de data DE VERDADE do Excel (Date).
 // Mesmo bug corrigido em lancamentos-xlsx.js (medido 2026-08-13): com
@@ -56,7 +57,12 @@ export function parseParcela(txt) {
 export function parseLinhasGenerico(linhas, mapeamento, contaId, arquivo) {
   const avisos = [];
   const rows = [];
-  const dados = mapeamento.temCabecalho ? (linhas || []).slice(1) : (linhas || []);
+  // `linhasDeCabecalho` (2 nos modelos: marcador + títulos) vence
+  // `temCabecalho` (booleano do mapeamento manual, que só sabe pular 1).
+  const pular = mapeamento.linhasDeCabecalho != null
+    ? mapeamento.linhasDeCabecalho
+    : (mapeamento.temCabecalho ? 1 : 0);
+  const dados = (linhas || []).slice(pular);
   let ordinal = 0;
 
   for (const l of dados) {
@@ -102,8 +108,29 @@ export function parseLinhasGenerico(linhas, mapeamento, contaId, arquivo) {
   return { rows, avisos, checksum: { ok: true, sections: [], nota: 'Formato genérico não tem total impresso para validar automaticamente.' } };
 }
 
-function detectar() {
-  return 0.05; // rede de segurança: nunca vence um adaptador que reconhece o formato de verdade
+// Uma planilha gerada por "Modelos de planilha" (Ferramentas) se identifica
+// na primeira célula, e aí este adaptador é o dono do arquivo com certeza:
+// pontuação máxima. Sem isso os três modelos perdiam para o adaptador de
+// extrato Santander, que dá 0.3 para qualquer planilha com "Data" na coluna
+// 0 e "Descri..." na coluna 1 — exatamente o cabeçalho dos modelos — e a
+// importação morria em "não encontrei o cabeçalho de tabela do extrato"
+// (bug real relatado 2026-08-13).
+//
+// Fora esse caso, segue valendo 0.05: rede de segurança que nunca deve
+// vencer um adaptador que reconhece o formato de verdade.
+async function detectar(arrayBuffer) {
+  try {
+    // Sem nome de arquivo aqui (o registry só passa o buffer): lerMatriz cai
+    // no ramo de planilha binária, que é o dos modelos gerados pelo app. Um
+    // .csv de modelo não é detectado por marcador, mas o app nunca gera .csv
+    // — os modelos saem sempre em .xlsx.
+    const matriz = await lerMatriz(arrayBuffer, '');
+    if (tipoDoMarcador(matriz)) return 1;
+  } catch {
+    // Arquivo ilegível como planilha (ex.: um PDF com extensão trocada):
+    // não é modelo, e a pontuação baixa deixa outro adaptador tentar.
+  }
+  return 0.05;
 }
 
 async function lerMatriz(arrayBuffer, nomeArquivo) {
@@ -118,14 +145,26 @@ async function lerMatriz(arrayBuffer, nomeArquivo) {
   return XLSX.utils.sheet_to_json(wb.Sheets[primeiraAba], { header: 1, raw: true, defval: '' });
 }
 
+// Mapeamento a usar: o do modelo (quando o arquivo se identifica pelo
+// marcador) ou o que o usuário preencheu à mão. O `vencimento` digitado na
+// tela é preservado nos dois casos — ele nunca vem da planilha.
+export function mapeamentoEfetivo(matriz, mapeamentoDaTela) {
+  const tipo = tipoDoMarcador(matriz);
+  if (!tipo || !MAPEAMENTO_MODELO[tipo]) return mapeamentoDaTela;
+  return { ...MAPEAMENTO_MODELO[tipo], vencimento: (mapeamentoDaTela || {}).vencimento || null };
+}
+
 async function parse(arrayBuffer, opcoes) {
   const matriz = await lerMatriz(arrayBuffer, opcoes.arquivo);
-  const { rows, avisos, checksum } = parseLinhasGenerico(matriz, opcoes.mapeamento, opcoes.contaId, opcoes.arquivo);
+  // Modelo baixado do app traz o próprio mapeamento: o usuário não precisa
+  // (nem deveria) contar colunas para importar um arquivo que o app gerou.
+  const mapeamento = mapeamentoEfetivo(matriz, opcoes.mapeamento);
+  const { rows, avisos, checksum } = parseLinhasGenerico(matriz, mapeamento, opcoes.contaId, opcoes.arquivo);
   return {
     statement: {
-      tipo: opcoes.mapeamento.escopo, contaId: opcoes.contaId, adaptador: 'generic-table',
+      tipo: mapeamento.escopo, contaId: opcoes.contaId, adaptador: 'generic-table',
       arquivo: opcoes.arquivo, importadoEm: Date.now(), rows,
-      ...periodoDoStatement(opcoes.mapeamento, rows),
+      ...periodoDoStatement(mapeamento, rows),
     },
     rows, avisos, checksum,
   };

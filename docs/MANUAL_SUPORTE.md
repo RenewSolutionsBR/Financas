@@ -260,11 +260,17 @@ Cada linha resume um problema real já investigado (ver `CONTEUDO_PROJETO.md` pa
 - **Ação**: confirmar v23+. O modal de confirmação passa a listar as linhas com MESMA DATA e MESMO VALOR de algo já lançado, e oferece "Importar só N nova(s)". Se o usuário já criou duplicatas numa versão anterior, elas precisam ser apagadas à mão (aba Lançamentos) — o app não remove nada retroativamente.
 - **Não é bug**: a heurística é data+valor de propósito, sem exigir descrição igual. Dois gastos legítimos de mesmo valor no mesmo dia (dois cafés de R$ 5,00) são marcados como possível duplicata e trazem o aviso "(descrição diferente — confira)"; cabe ao usuário escolher "Importar tudo".
 
+### 16. Modelo de planilha importado cai no adaptador errado ("Extrato Santander")
+
+- **Sintoma**: ao escolher `modelo-fatura.xlsx` (ou extrato/lançamentos) na aba Conciliação, o campo Adaptador vem com "Extrato Santander (.xls)" e a análise falha com "0 linha(s) lidas" e "não encontrei o cabeçalho de tabela do extrato".
+- **Causa (até v24)**: os dois adaptadores aceitam `.xlsx` e quem decide é a pontuação de `detectar`. O detector do Santander dá 0.3 para qualquer planilha com "Data" na coluna 0 e "Descri..." na coluna 1 — o cabeçalho dos próprios modelos — contra 0.05 do adaptador genérico.
+- **Ação**: confirmar v25+ **e** que o modelo foi baixado na v25 ou depois. Modelos antigos não têm a linha de marcador (`LIVRO DE GASTOS — MODELO ...` na primeira célula) e continuam caindo no adaptador errado: basta rebaixar o modelo em Ferramentas → Modelos de planilha. Como contorno imediato em arquivo antigo, dá para trocar o adaptador à mão para "Planilha genérica" e preencher o mapeamento de colunas.
+
 ## Checklist rápido de investigação técnica
 
 1. Reproduzir com **dado real** do usuário sempre que possível (backup/export), não com dado sintético inventado.
 2. Checar `APP_VERSION` primeiro, antes de qualquer outra coisa.
-3. Rodar `node tools/run-tests.mjs` (497+ testes de lógica pura) para confirmar que a base está íntegra antes de investigar um sintoma específico.
+3. Rodar `node tools/run-tests.mjs` (500+ testes de lógica pura) para confirmar que a base está íntegra antes de investigar um sintoma específico.
 4. Identificar a função de domínio responsável (a maior parte da lógica financeira mora em `domain/`, é pura, testável isoladamente em Node sem abrir navegador).
 5. Testar a função isolada com o dado real, comparando entrada/saída esperada.
 6. Se o sintoma persistir após 2 hipóteses testadas e descartadas, considerar se não é uma decisão de produto disfarçada de bug (voltar ao Capítulo 1, Pergunta 2) antes de insistir numa 3ª hipótese técnica.
