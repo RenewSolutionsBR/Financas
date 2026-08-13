@@ -70,8 +70,29 @@ export function parseFaturaTexto(linhas, arquivo, vencimentoDate) {
 
   // Fecha a seção corrente ao ver "VALOR TOTAL": vira entrada AVALIADA em
   // sections[] (expected/ok preenchidos de verdade).
+  //
+  // Caso real (fatura com cartão adicional, medido 2026-08-12): quando a
+  // fatura tem título + adicional, o Santander às vezes imprime um "VALOR
+  // TOTAL 0,00 0,00" logo após uma seção de crédito com lançamento(s) reais
+  // (ex.: o débito de pagamento da fatura anterior, -7.456,06) — esse "0,00"
+  // pertence de fato ao total (vazio) de uma seção adjacente sem lançamento
+  // nenhum, mas a extração de texto o anexa à seção errada por estar mais
+  // perto dela na ordem do PDF. Reconhecido pela combinação impossível de
+  // acontecer por engano do usuário: expected é exatamente zero, mas a soma
+  // calculada não é — nenhuma fatura real fecha uma seção com lançamentos
+  // reais somando para R$0,00. Tratado como seção NÃO AVALIADA (mesmo
+  // caminho de "sem total impresso" abaixo), não como divergência: o valor
+  // calculado (que bate com o Saldo Anterior/Total de créditos no Resumo da
+  // Fatura) é confiável mesmo sem confirmação impressa.
   const flushSection = (expected) => {
     const secaoTipo = mode === 'credito' ? 'pagamentos_creditos' : 'despesas';
+    if (expected === 0 && sectionSum !== 0) {
+      sections.push({ cardEnding, secaoTipo, expected: null, computed: Math.round(sectionSum * 100) / 100, ok: null, nLinhas: sectionCount });
+      avisos.push(`Cartão final ${cardEnding}: "VALOR TOTAL 0,00" impresso após a seção ${secaoTipo} (soma calculada R$ ${sectionSum.toFixed(2)}) não corresponde a ela — provavelmente pertence a outra seção vazia da fatura. Valor calculado usado mesmo sem confirmação impressa.`);
+      sectionSum = 0;
+      sectionCount = 0;
+      return;
+    }
     const ok = Math.abs(sectionSum - expected) < 0.02;
     sections.push({ cardEnding, secaoTipo, expected, computed: Math.round(sectionSum * 100) / 100, ok, nLinhas: sectionCount });
     if (!ok) avisos.push(`Cartão final ${cardEnding}: soma calculada (R$ ${sectionSum.toFixed(2)}) não bate com o "VALOR TOTAL" da fatura (R$ ${expected.toFixed(2)}).`);

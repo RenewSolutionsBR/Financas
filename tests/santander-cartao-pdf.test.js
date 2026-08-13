@@ -387,3 +387,82 @@ describe('santander-cartao-pdf: vencimentoFromText', () => {
     assertEqual(vencimentoFromText(linhas), null, 'sem cabecalho reconhecivel antes, nenhuma data deve ser extraida daqui');
   });
 });
+
+// Reproduz o caso real medido 2026-08-12 (fatura Visa com cartão titular +
+// adicional): o Santander imprime "VALOR TOTAL 0,00 0,00" logo após um
+// único crédito de valor grande (o débito de pagamento da fatura anterior)
+// — esse "0,00" pertence de fato a outra seção vazia da fatura (sem
+// lançamento nenhum), mas a extração de texto o anexa à seção de crédito
+// errada. Sem tratamento especial, o checksum acusava "NÃO confere" mesmo
+// a fatura estando correta (valor calculado batia com o Saldo Anterior do
+// Resumo da Fatura do próprio PDF).
+describe('santander-cartao-pdf: "VALOR TOTAL 0,00" órfão não pertencente à seção de crédito com lançamento real', () => {
+  const LINHAS_CREDITO_ZERO_ORFAO = [
+    'Detalhamento da Fatura',
+    'TITULAR EXEMPLO - 4108 XXXX XXXX 9352',
+    'Pagamento e Demais Créditos',
+    '10/07 DEB AUTOM DE FATURA EM C/ -7.456,06',
+    'VALOR TOTAL 0,00 0,00',
+    '@ ADICIONAL EXEMPLO - 4108 XXXX XXXX 6617',
+    'Despesas',
+    '01/07 LOJA EXEMPLO 100,00',
+    'VALOR TOTAL 100,00',
+    'Resumo da Fatura',
+  ];
+
+  it('checksum bate (não acusa divergência) quando "VALOR TOTAL 0,00" vem logo após crédito com lançamento real != 0', () => {
+    const { checksum } = parseFaturaTexto(LINHAS_CREDITO_ZERO_ORFAO, 'fatura-teste.pdf', VENCIMENTO);
+    assert(checksum.ok, JSON.stringify(checksum.sections));
+  });
+
+  it('a seção de crédito vira NÃO AVALIADA (ok:null), não "diverge" — o valor calculado (7456.06) é preservado em computed', () => {
+    const { checksum } = parseFaturaTexto(LINHAS_CREDITO_ZERO_ORFAO, 'fatura-teste.pdf', VENCIMENTO);
+    const secaoCredito = checksum.sections.find((s) => s.secaoTipo === 'pagamentos_creditos');
+    assert(secaoCredito, 'a seção de crédito precisa aparecer em sections[]');
+    assertEqual(secaoCredito.ok, null);
+    assertEqual(secaoCredito.expected, null);
+    assertEqual(secaoCredito.computed, 7456.06);
+  });
+
+  it('avisa sobre o "VALOR TOTAL 0,00" órfão, mas o aviso não é de divergência — o lançamento continua em rows', () => {
+    const { avisos, rows } = parseFaturaTexto(LINHAS_CREDITO_ZERO_ORFAO, 'fatura-teste.pdf', VENCIMENTO);
+    assert(avisos.some((a) => /não corresponde a ela/i.test(a)), 'precisa avisar que o total impresso não é confiável, sem soar como erro do usuário');
+    assert(!avisos.some((a) => /não bate com o "VALOR TOTAL"/i.test(a)), 'não deveria soar como divergência de conferência — é limitação de leitura, não erro na fatura');
+    const credito = rows.find((r) => r.descricao === 'DEB AUTOM DE FATURA EM C/');
+    assert(credito, 'a linha de crédito continua aparecendo em rows normalmente, apesar do total órfão');
+    assertEqual(credito.valor, 7456.06);
+  });
+
+  it('uma seção de crédito que REALMENTE soma zero (nenhum lançamento) continua tratada como "sem total impresso" normal, não como o caso órfão', () => {
+    const linhas = [
+      'Detalhamento da Fatura',
+      'TITULAR EXEMPLO - 4108 XXXX XXXX 9352',
+      'Despesas',
+      '01/07 LOJA EXEMPLO 100,00',
+      'VALOR TOTAL 100,00',
+      'Resumo da Fatura',
+    ];
+    const { checksum } = parseFaturaTexto(linhas, 'fatura-teste.pdf', VENCIMENTO);
+    assert(checksum.ok, JSON.stringify(checksum.sections));
+    assertEqual(checksum.sections.length, 1, 'sem nenhuma seção de crédito nesta fatura, só a de despesas aparece');
+  });
+
+  it('um "VALOR TOTAL" de verdade igual a zero (seção de crédito sem lançamento algum) nunca aciona o caso órfão — expected:0 com sectionSum:0 é só um "bate normal"', () => {
+    const linhas = [
+      'Detalhamento da Fatura',
+      'TITULAR EXEMPLO - 4108 XXXX XXXX 9352',
+      'Pagamento e Demais Créditos',
+      'VALOR TOTAL 0,00',
+      'Despesas',
+      '01/07 LOJA EXEMPLO 100,00',
+      'VALOR TOTAL 100,00',
+      'Resumo da Fatura',
+    ];
+    const { checksum } = parseFaturaTexto(linhas, 'fatura-teste.pdf', VENCIMENTO);
+    const secaoCredito = checksum.sections.find((s) => s.secaoTipo === 'pagamentos_creditos');
+    // Sem lançamento nenhum na seção, sectionCount é 0 — flushSection nunca é
+    // chamado de fato pro branch órfão (mode ainda é 'credito', mas sem itens
+    // pra acumular). Continua batendo normalmente.
+    assert(!secaoCredito || secaoCredito.ok !== false, 'seção de crédito genuinamente vazia não deveria nunca aparecer como divergência');
+  });
+});

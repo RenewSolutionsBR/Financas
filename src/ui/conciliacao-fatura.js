@@ -133,9 +133,30 @@ function montarLinhaFatura(item, ctx) {
 // Grava em lote as linhas com checkbox marcado — mesma lógica de gravação +
 // aprendizado de regra + aplicação retroativa que lancarSelecionadas de
 // conciliacao-extrato.js, adaptada ao formato de item de fatura.
-async function lancarEmLoteFatura(linhasFormulario, ctx, aoConcluir) {
+//
+// `botaoLote` some desabilitado por toda a duração da função (bug real,
+// medido 2026-08-12): sem essa guarda, o botão continuava clicável enquanto
+// o modal "Aplicar retroativamente?" esperava resposta do usuário (ou
+// enquanto o primeiro saveTransactions ainda rodava) — cliques extras
+// nesse intervalo reentravam na função com o MESMO `linhasFormulario`
+// (closure antigo, DOM ainda não re-renderizado pelo aoConcluir), gerando
+// várias transações idênticas (mesmo origemRef.linhaId) para a mesma linha
+// da fatura. Cada cópia extra nunca casa no runReconciliation (só a
+// primeira usa o único slot disponível), então a linha real da fatura
+// parecia "presa" no balde e cada nova tentativa criava mais uma duplicata.
+async function lancarEmLoteFatura(linhasFormulario, ctx, aoConcluir, botaoLote) {
   const selecionadas = linhasFormulario.filter((lf) => lf.estado.selecionado);
   if (!selecionadas.length) return;
+
+  botaoLote.disabled = true;
+  try {
+    await lancarEmLoteFaturaInterno(selecionadas, ctx, aoConcluir);
+  } finally {
+    botaoLote.disabled = false;
+  }
+}
+
+async function lancarEmLoteFaturaInterno(selecionadas, ctx, aoConcluir) {
 
   const novosLancamentos = selecionadas.map((lf) => novaTransaction({
     descricao: lf.item.descricao,
@@ -233,7 +254,7 @@ export async function renderBaldesFatura(painel, fatura, faturasList, transactio
   // razão de conciliacao-extrato.js: reusar os dados capturados neste
   // closure logo após o lote gravar mostraria itens já lançados como se
   // ainda estivessem pendentes.
-  botaoLote.addEventListener('click', () => lancarEmLoteFatura(linhasFormulario, ctx, aoMudar));
+  botaoLote.addEventListener('click', () => lancarEmLoteFatura(linhasFormulario, ctx, aoMudar, botaoLote));
 
   painel.innerHTML = '';
   painel.append(

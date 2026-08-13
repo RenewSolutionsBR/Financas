@@ -166,8 +166,24 @@ function montarLinhaFormulario(linha, ctx) {
 // marcado) e "+ lançar" individual (uma linha só, sem depender do
 // checkbox) — mesma lógica de gravação + aprendizado de regra +
 // aplicação retroativa nos dois casos.
-async function lancarSelecionadas(selecionadas, ctx, aoConcluir, emLote = true) {
+//
+// `botoes` (array de botões a desabilitar durante a execução) evita a
+// mesma classe de bug já visto em conciliacao-fatura.js (2026-08-12): sem
+// desabilitar o botão enquanto o modal "Aplicar retroativamente?" espera
+// resposta (ou enquanto o primeiro saveTransactions ainda roda), um clique
+// extra reentra na função com o MESMO `selecionadas` (closure antigo, DOM
+// ainda não re-renderizado), criando transações duplicadas idênticas.
+async function lancarSelecionadas(selecionadas, ctx, aoConcluir, emLote = true, botoes = []) {
   if (!selecionadas.length) return;
+  botoes.forEach((b) => { b.disabled = true; });
+  try {
+    await lancarSelecionadasInterno(selecionadas, ctx, aoConcluir, emLote);
+  } finally {
+    botoes.forEach((b) => { b.disabled = false; });
+  }
+}
+
+async function lancarSelecionadasInterno(selecionadas, ctx, aoConcluir, emLote) {
 
   const novosLancamentos = selecionadas.map((lf) => novaTransaction({
     descricao: lf.linha.descricao,
@@ -227,12 +243,12 @@ async function lancarSelecionadas(selecionadas, ctx, aoConcluir, emLote = true) 
   await aoConcluir();
 }
 
-async function lancarEmLote(linhasFormulario, ctx, aoConcluir) {
-  await lancarSelecionadas(linhasFormulario.filter((lf) => lf.estado.selecionado), ctx, aoConcluir, true);
+async function lancarEmLote(linhasFormulario, ctx, aoConcluir, botaoLote) {
+  await lancarSelecionadas(linhasFormulario.filter((lf) => lf.estado.selecionado), ctx, aoConcluir, true, [botaoLote]);
 }
 
-async function lancarUma(lf, ctx, aoConcluir) {
-  await lancarSelecionadas([lf], ctx, aoConcluir, false);
+async function lancarUma(lf, ctx, aoConcluir, botaoLote) {
+  await lancarSelecionadas([lf], ctx, aoConcluir, false, [lf.botaoLancarUma, botaoLote]);
 }
 
 export async function renderBaldesExtrato(painel, extrato, transactions, accounts, apelidosTitular, categorias, formas, regras, aoMudar) {
@@ -248,9 +264,9 @@ export async function renderBaldesExtrato(painel, extrato, transactions, account
   const linhasPorId = new Map((extrato.rows || []).map((linha) => [linha.id, linha]));
   const ctx = { contaId: extrato.contaId, statementId: extrato.id, categorias, formas, regras, transactions, linhasPorId };
   const linhasFormulario = extratoUnmatchedFiltrado.map((linha) => montarLinhaFormulario(linha, ctx));
-  linhasFormulario.forEach((lf) => lf.botaoLancarUma.addEventListener('click', () => lancarUma(lf, ctx, aoMudar)));
 
   const botaoLote = el('button', { class: 'btn btn-primario', text: '+ lançar em lote', disabled: 'disabled' });
+  linhasFormulario.forEach((lf) => lf.botaoLancarUma.addEventListener('click', () => lancarUma(lf, ctx, aoMudar, botaoLote)));
   const atualizarBotaoLote = () => { botaoLote.disabled = !linhasFormulario.some((lf) => lf.estado.selecionado); };
   linhasFormulario.forEach((lf) => lf.linhaEl.querySelector('input[type=checkbox]').addEventListener('change', atualizarBotaoLote));
   // aoMudar (renderConciliacao, injetado por conciliacao.js) refaz o fetch de
@@ -258,7 +274,7 @@ export async function renderBaldesExtrato(painel, extrato, transactions, account
   // capturado por este closure serviria dados JA DESATUALIZADOS logo apos o
   // lote gravar novos lancamentos, e os baldes ficariam mostrando linhas que
   // acabaram de ser lancadas como se ainda estivessem pendentes.
-  botaoLote.addEventListener('click', () => lancarEmLote(linhasFormulario, ctx, aoMudar));
+  botaoLote.addEventListener('click', () => lancarEmLote(linhasFormulario, ctx, aoMudar, botaoLote));
 
   painel.innerHTML = '';
   painel.append(

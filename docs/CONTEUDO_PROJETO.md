@@ -1,6 +1,6 @@
 # Conteúdo do Projeto — Livro de Gastos
 
-Histórico do projeto, decisões de design importantes e pendências conhecidas. Atualizado até v16 (2026-08-11).
+Histórico do projeto, decisões de design importantes e pendências conhecidas. Atualizado até v17 (2026-08-13).
 
 ## Origem
 
@@ -119,6 +119,24 @@ Nova função pura `outrasParcelasParaAtualizar(transactionEditada, transactions
 A primeira versão de `outrasParcelasParaAtualizar` (v15) excluía de propósito qualquer transação `previsto: true`, com o raciocínio "isso já é papel do `syncPredictions`". Na prática isso deixava a experiência quebrada: `syncPredictions` só roda **durante importação de fatura** (`conciliacao-import.js`, único call site) — corrigir a categoria da parcela 3/12 hoje não propagava para as previsões 4/12...12/12 (ainda em "A Classificar") até a *próxima* fatura ser importada, não na hora. Usuário reportou exatamente esse sintoma: "classifica uma parcela, as seguintes continuam a classificar".
 
 Corrigido removendo o filtro `!t.previsto` de `outrasParcelasParaAtualizar` — agora inclui tanto parcelas confirmadas quanto previsões do mesmo `parcelaKey`, todas atualizadas juntas pelo mesmo modal "Aplicar às outras parcelas?", na hora. `syncPredictions` continua existindo e fazendo seu papel (herdar categoria ao *recriar* previsões numa nova importação) — os dois mecanismos não conflitam, só cobrem momentos diferentes.
+
+## Fase 6 — Fatura com cartão adicional: checksum falso-positivo e reentrância no lote (2026-08-12/13, v16→v17)
+
+Usuário importou pela primeira vez uma fatura Santander com **cartão adicional** (título + adicional na mesma fatura, plásticos 9352/6617) — combinação nunca antes vista nas 8 faturas anteriores (todas de titular único). Dois bugs reais surgiram juntos, investigados com o PDF real (leitura direta do arquivo, depois extração com o parser de verdade rodando fora do navegador via Node, comparando linha a linha contra o texto bruto do PDF).
+
+### Checksum "NÃO confere" (falso positivo) — VALOR TOTAL 0,00 órfão
+
+O texto extraído do PDF real, verificado linha a linha com `extractLines` de verdade (não reprodução sintética), mostrou que o próprio Santander imprime `"VALOR TOTAL 0,00 0,00"` logo após o único lançamento de crédito do cartão titular (`"DEB AUTOM DE FATURA EM C/ -7.456,06"`) — um total visivelmente errado para aquela seção (soma real R$ 7.456,06, bate exatamente com o "Saldo Anterior" do Resumo da Fatura do próprio PDF). Esse padrão só apareceu porque a fatura tem cartão adicional: o "0,00" pertence de fato ao total de uma seção vazia adjacente (sem lançamento nenhum), mas a ordem de extração de texto do PDF (que reconstrói colunas por posição X/Y) o anexou à seção de crédito errada.
+
+`flushSection` (`santander-cartao-pdf.js`) agora reconhece essa combinação (`expected === 0` mas `sectionSum !== 0` — nenhuma fatura real fecha uma seção com lançamentos somando para R$0,00 de propósito) e trata a seção como **não avaliada** (mesmo caminho de "sem total impresso"), preservando o valor calculado em vez de acusar divergência. Regra deliberadamente conservadora — só dispara nesse padrão exato, não muda nada para faturas onde o total bate ou onde a soma é zero de verdade (seção sem nenhum lançamento). 5 testes novos em `santander-cartao-pdf.test.js`, incluindo um caso negativo garantindo que uma seção genuinamente vazia não aciona o novo caminho.
+
+### Lançamentos duplicados no lote — falta de guarda de reentrância
+
+Usuário reportou 3 itens de despesa (SYMPLA, 2x UBERRIDES) que nunca saíam do balde "Na fatura, não no app" mesmo depois de lançar em lote várias vezes, criando "2 lançamentos duplicados" a cada tentativa. Confirmado com o backup real do usuário: essas 3 linhas tinham **4 cópias cada** no banco, todas com o mesmo `origemRef.linhaId` — prova de que o botão "+ lançar em lote" foi acionado várias vezes para o mesmo conjunto selecionado.
+
+**Root cause**: nem `lancarEmLoteFatura` (`conciliacao-fatura.js`) nem `lancarSelecionadas`/`lancarUma` (`conciliacao-extrato.js`, mesma vulnerabilidade nunca antes reportada) desabilitavam o botão durante a execução. O modal "Aplicar retroativamente?" (que espera resposta do usuário) deixava a janela de risco especialmente longa: um clique extra no botão, enquanto o modal ainda estava aberto, reentrava na função inteira com o `linhasFormulario`/`selecionadas` do closure antigo — o DOM ainda não tinha sido re-renderizado pelo `aoConcluir`, então os checkboxes continuavam marcados e o botão continuava clicável. Cada duplicata extra nunca casa em `runReconciliation` (só a primeira cópia ocupa o único slot de casamento disponível por valor+data), deixando a linha real da fatura com aparência de "presa" no balde.
+
+**Fix**: os botões (`botaoLote`, e também `botaoLancarUma` no caso individual do extrato) ficam `disabled` por toda a duração da função de gravação, reabilitados só no `finally`. Não corrige dados já duplicados — usuário optou por apagar e reimportar a fatura de teste em vez de limpeza manual.
 
 ## Lógica detalhada — Conciliação de fatura (datas e períodos)
 
