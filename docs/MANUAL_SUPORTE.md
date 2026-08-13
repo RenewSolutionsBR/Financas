@@ -251,11 +251,18 @@ Cada linha resume um problema real já investigado (ver `CONTEUDO_PROJETO.md` pa
 - **Causa**: `"3/10"` digitado numa célula de formato Geral é convertido pelo Excel em 3 de outubro; o texto original se perde no arquivo. O app não tem como recuperar a parcela sem risco de inventar um parcelamento errado, então gera aviso e trata como compra à vista.
 - **Ação**: orientar a formatar a coluna Parcela como TEXTO antes de digitar (as instruções do modelo já dizem isso). Não é bug: é limitação do formato de arquivo.
 
+### 15. Planilha de lançamentos importada duas vezes gerou duplicatas
+
+- **Contexto**: a importação de lançamentos grava DIRETO, sem os baldes da conciliação — não há tela para revisar o casamento depois.
+- **Causa (até v22)**: não havia nenhuma checagem de duplicata; reimportar o mesmo arquivo, ou dois arquivos com meses sobrepostos, criava cópias em silêncio.
+- **Ação**: confirmar v23+. O modal de confirmação passa a listar as linhas com MESMA DATA e MESMO VALOR de algo já lançado, e oferece "Importar só N nova(s)". Se o usuário já criou duplicatas numa versão anterior, elas precisam ser apagadas à mão (aba Lançamentos) — o app não remove nada retroativamente.
+- **Não é bug**: a heurística é data+valor de propósito, sem exigir descrição igual. Dois gastos legítimos de mesmo valor no mesmo dia (dois cafés de R$ 5,00) são marcados como possível duplicata e trazem o aviso "(descrição diferente — confira)"; cabe ao usuário escolher "Importar tudo".
+
 ## Checklist rápido de investigação técnica
 
 1. Reproduzir com **dado real** do usuário sempre que possível (backup/export), não com dado sintético inventado.
 2. Checar `APP_VERSION` primeiro, antes de qualquer outra coisa.
-3. Rodar `node tools/run-tests.mjs` (489+ testes de lógica pura) para confirmar que a base está íntegra antes de investigar um sintoma específico.
+3. Rodar `node tools/run-tests.mjs` (497+ testes de lógica pura) para confirmar que a base está íntegra antes de investigar um sintoma específico.
 4. Identificar a função de domínio responsável (a maior parte da lógica financeira mora em `domain/`, é pura, testável isoladamente em Node sem abrir navegador).
 5. Testar a função isolada com o dado real, comparando entrada/saída esperada.
 6. Se o sintoma persistir após 2 hipóteses testadas e descartadas, considerar se não é uma decisão de produto disfarçada de bug (voltar ao Capítulo 1, Pergunta 2) antes de insistir numa 3ª hipótese técnica.

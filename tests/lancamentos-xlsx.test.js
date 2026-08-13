@@ -1,5 +1,5 @@
 import { describe, it, assert, assertEqual } from './harness.js';
-import { parseLancamentosPlanilha, parseNatureza } from '../src/importers/lancamentos-xlsx.js';
+import { parseLancamentosPlanilha, parseNatureza, marcarPossiveisDuplicatas } from '../src/importers/lancamentos-xlsx.js';
 import { COLUNAS_LANCAMENTOS } from '../src/importers/modelos-planilha.js';
 import { CATEGORIA_A_CLASSIFICAR } from '../src/domain/categories.js';
 
@@ -160,5 +160,75 @@ describe('lancamentos-xlsx: parseLancamentosPlanilha', () => {
     assertEqual(transacoes.length, 0);
     assertEqual(erros.length, 1);
     assert(erros[0].includes('modelo'), erros[0]);
+  });
+});
+
+// Esta importacao grava DIRETO, sem os baldes da conciliacao onde daria pra
+// revisar o casamento depois — reimportar o mesmo arquivo (ou dois arquivos
+// com meses sobrepostos) criava copias em silencio.
+describe('lancamentos-xlsx: marcarPossiveisDuplicatas', () => {
+  const existentes = [
+    { id: 't1', data: '2026-07-05', valor: 30.3, descricao: 'Teste 1' },
+    { id: 't2', data: '2026-07-08', valor: 45.45, descricao: 'Mercado' },
+  ];
+
+  it('marca lancamento com mesma data e mesmo valor', () => {
+    const r = marcarPossiveisDuplicatas([{ data: '2026-07-05', valor: 30.3, descricao: 'Teste 1' }], existentes);
+    assert(r[0].possivelDuplicata !== null, 'deveria marcar');
+    assertEqual(r[0].possivelDuplicata.descricaoIgual, true);
+    assertEqual(r[0].possivelDuplicata.existente.id, 't1');
+  });
+
+  it('nao marca quando a data OU o valor diferem', () => {
+    const r = marcarPossiveisDuplicatas([
+      { data: '2026-07-06', valor: 30.3, descricao: 'Teste 1' },
+      { data: '2026-07-05', valor: 31.0, descricao: 'Teste 1' },
+    ], existentes);
+    assertEqual(r[0].possivelDuplicata, null, 'data diferente nao e duplicata');
+    assertEqual(r[1].possivelDuplicata, null, 'valor diferente nao e duplicata');
+  });
+
+  it('marca mesmo com descricao diferente, mas sinaliza que ela NAO bate', () => {
+    // Quem monta planilha a mao raramente escreve a descricao igual duas
+    // vezes; o objetivo e avisar, nao bloquear — mas a tela precisa poder
+    // distinguir "quase certamente duplicata" de "pode ser coincidencia".
+    const r = marcarPossiveisDuplicatas([{ data: '2026-07-08', valor: 45.45, descricao: 'Supermercado ABC' }], existentes);
+    assert(r[0].possivelDuplicata !== null);
+    assertEqual(r[0].possivelDuplicata.descricaoIgual, false);
+  });
+
+  it('compara descricao ignorando acento e caixa', () => {
+    const r = marcarPossiveisDuplicatas(
+      [{ data: '2026-07-01', valor: 10, descricao: 'ALMOCO' }],
+      [{ id: 'x', data: '2026-07-01', valor: 10, descricao: 'Almoço' }]
+    );
+    assertEqual(r[0].possivelDuplicata.descricaoIgual, true);
+  });
+
+  it('ignora previsoes de parcela — ainda nao sao gasto lancado', () => {
+    const comPrevisao = [{ id: 'p1', data: '2026-07-05', valor: 30.3, descricao: 'Parcela prevista', previsto: true }];
+    const r = marcarPossiveisDuplicatas([{ data: '2026-07-05', valor: 30.3, descricao: 'Teste' }], comPrevisao);
+    assertEqual(r[0].possivelDuplicata, null);
+  });
+
+  it('valor negativo casa com o positivo equivalente (o app grava sempre positivo)', () => {
+    const r = marcarPossiveisDuplicatas([{ data: '2026-07-05', valor: 30.3, descricao: 'X' }],
+      [{ id: 'n1', data: '2026-07-05', valor: -30.3, descricao: 'X' }]);
+    assert(r[0].possivelDuplicata !== null);
+  });
+
+  it('lista vazia de existentes nao marca nada e nao quebra', () => {
+    const r = marcarPossiveisDuplicatas([{ data: '2026-07-05', valor: 10, descricao: 'X' }], []);
+    assertEqual(r[0].possivelDuplicata, null);
+    assertEqual(marcarPossiveisDuplicatas([], null).length, 0);
+  });
+
+  it('conta quantos existentes casam, para a tela poder avisar', () => {
+    const dois = [
+      { id: 'a', data: '2026-07-05', valor: 5, descricao: 'Café' },
+      { id: 'b', data: '2026-07-05', valor: 5, descricao: 'Café' },
+    ];
+    const r = marcarPossiveisDuplicatas([{ data: '2026-07-05', valor: 5, descricao: 'Café' }], dois);
+    assertEqual(r[0].possivelDuplicata.quantas, 2);
   });
 });

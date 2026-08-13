@@ -182,6 +182,55 @@ export function parseLancamentosPlanilha(matriz, { categorias, formas, contas, t
   return { transacoes, avisos, erros };
 }
 
+/**
+ * Marca quais das transações a importar já parecem existir no app.
+ *
+ * Existe porque esta importação NÃO passa pela conciliação (que tem os
+ * baldes para revisar o casamento linha a linha) e grava direto: reimportar
+ * o mesmo arquivo, ou dois arquivos com meses sobrepostos, criava cópias
+ * silenciosas sem nada na tela avisando.
+ *
+ * O critério é MESMA DATA + MESMO VALOR, deliberadamente sem exigir
+ * descrição igual: quem monta a planilha à mão raramente escreve a
+ * descrição do mesmo jeito duas vezes ("Almoço" vs "Almoco restaurante"),
+ * e o objetivo aqui é AVISAR, não bloquear. Em compensação, descrição
+ * parecida vira um sinal a mais (`descricaoIgual`) para a tela separar o
+ * que é quase certamente duplicata do que pode ser coincidência legítima
+ * — dois cafés de R$ 5,00 no mesmo dia são gastos diferentes de verdade.
+ *
+ * Compara contra TODAS as transações do app (não só as importadas de
+ * planilha): um gasto digitado à mão e depois trazido numa planilha é
+ * duplicata do mesmo jeito.
+ *
+ * Não decide nada sozinha — quem chama mostra o aviso e o usuário escolhe.
+ */
+export function marcarPossiveisDuplicatas(transacoes, existentes) {
+  const porChave = new Map();
+  for (const t of existentes || []) {
+    // Previsões de parcela não são gasto lançado: casar contra elas
+    // acusaria duplicata de algo que ainda nem aconteceu.
+    if (t.previsto) continue;
+    const chave = `${t.data}|${Math.abs(Number(t.valor)).toFixed(2)}`;
+    if (!porChave.has(chave)) porChave.set(chave, []);
+    porChave.get(chave).push(t);
+  }
+
+  return (transacoes || []).map((nova) => {
+    const iguais = porChave.get(`${nova.data}|${Math.abs(Number(nova.valor)).toFixed(2)}`) || [];
+    if (!iguais.length) return { ...nova, possivelDuplicata: null };
+    const alvo = chaveDeNome(nova.descricao);
+    const comDescricaoIgual = iguais.find((t) => chaveDeNome(t.descricao) === alvo);
+    return {
+      ...nova,
+      possivelDuplicata: {
+        descricaoIgual: !!comDescricaoIgual,
+        existente: comDescricaoIgual || iguais[0],
+        quantas: iguais.length,
+      },
+    };
+  });
+}
+
 // Lê o arquivo (.xlsx/.xls/.csv) e devolve a matriz da PRIMEIRA aba — a aba
 // "Instruções" do modelo é ignorada por vir depois.
 export function matrizDoArquivo(arrayBuffer, nomeArquivo) {

@@ -90,6 +90,8 @@ Fica no alto da tela, ao lado do nome do app, e está disponível de qualquer ab
 - **Fatura e extrato**: importe pela aba Conciliação, escolhendo a conta/cartão e o arquivo. Use o botão "Usar ordem do modelo" para o app preencher sozinho de qual coluna vem cada dado. Para fatura, informe também a data de vencimento — é ela que distingue uma fatura da outra.
 - **Lançamentos**: importe pelo próprio botão "Importar planilha de lançamentos", aqui em Ferramentas. Eles entram direto na aba Lançamentos, sem passar pela conciliação. A categoria e a forma de pagamento precisam estar escritas como você as cadastrou no app (acento e maiúscula não importam); se alguma não existir, o app avisa e pula só aquela linha.
 
+Antes de gravar, o app sempre mostra um resumo do que vai importar. Se alguma linha da planilha tiver **a mesma data e o mesmo valor** de algo já lançado, ela aparece destacada como possível duplicata — útil quando você importa o mesmo arquivo duas vezes sem querer, ou dois arquivos com meses que se sobrepõem. Aí você escolhe: cancelar, importar tudo mesmo assim, ou importar só as que são novas. Quando a descrição também for diferente, o app marca "(descrição diferente — confira)", porque pode ser só coincidência — dois cafés de R$ 5,00 no mesmo dia são gastos diferentes de verdade.
+
 **Suporte**: o botão Diagnóstico mostra informações técnicas dos documentos importados, útil se for preciso investigar algum problema.
 
 **Apagar dados**: apaga todas as transações, ou todos os dados do app. As duas ações não têm volta — exporte um backup antes.

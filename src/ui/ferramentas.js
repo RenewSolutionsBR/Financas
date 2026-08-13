@@ -15,6 +15,7 @@
 
 import { el, toast, abrirModal } from './components.js';
 import { fmtBRL } from '../core/money.js';
+import { formatDateBR } from '../core/dates.js';
 import { baixarBackup, montarInputImportarBackup } from './backup-comum.js';
 import { APP_VERSION } from '../version.js';
 import * as storage from '../core/storage.js';
@@ -25,7 +26,7 @@ import { listAccounts } from '../domain/accounts.js';
 import { listFormas } from '../domain/payment-methods.js';
 import { buildFullReconciliationRows } from '../domain/reconcile-card.js';
 import { baixarModelo } from '../importers/modelos-planilha.js';
-import { parseLancamentosPlanilha, matrizDoArquivo } from '../importers/lancamentos-xlsx.js';
+import { parseLancamentosPlanilha, matrizDoArquivo, marcarPossiveisDuplicatas } from '../importers/lancamentos-xlsx.js';
 
 // --- Ações que já existiam em outras telas, movidas para cá sem alteração ---
 
@@ -166,22 +167,58 @@ async function importarPlanilhaLancamentos(arquivo, aoConcluir) {
     return;
   }
 
-  const total = transacoes.reduce((s, t) => s + (t.natureza === 'despesa' ? t.valor : 0), 0);
+  // Aviso de duplicata: esta importação grava direto, sem os baldes da
+  // conciliação onde daria pra revisar depois. Reimportar o mesmo arquivo
+  // (ou dois arquivos com meses sobrepostos) criava cópias em silêncio.
+  const existentes = await listTransactions();
+  const marcadas = marcarPossiveisDuplicatas(transacoes, existentes);
+  const duplicadas = marcadas.filter((t) => t.possivelDuplicata);
+  const novas = marcadas.filter((t) => !t.possivelDuplicata);
+
+  const total = marcadas.reduce((s, t) => s + (t.natureza === 'despesa' ? t.valor : 0), 0);
+  const totalNovas = novas.reduce((s, t) => s + (t.natureza === 'despesa' ? t.valor : 0), 0);
+
+  const linhaDuplicata = (t) => {
+    const jaExiste = t.possivelDuplicata.existente;
+    const certeza = t.possivelDuplicata.descricaoIgual ? '' : ' (descrição diferente — confira)';
+    return el('li', { text: `${formatDateBR(t.data)} — ${t.descricao} — ${fmtBRL(t.valor)} · já lançado como "${jaExiste.descricao}"${certeza}` });
+  };
+
+  const acoes = duplicadas.length
+    ? [
+        { id: 'cancelar', rotulo: 'Cancelar' },
+        // "Importar tudo" fica disponível porque a heurística é data+valor:
+        // dois gastos iguais no mesmo dia (dois cafés de R$ 5,00) são
+        // legítimos, e só o usuário sabe. O padrão, porém, é pular.
+        { id: 'tudo', rotulo: 'Importar tudo' },
+        ...(novas.length ? [{ id: 'so_novas', rotulo: `Importar só ${novas.length} nova(s)` }] : []),
+      ]
+    : [{ id: 'cancelar', rotulo: 'Cancelar' }, { id: 'tudo', rotulo: 'Importar' }];
+
   const escolha = await abrirModal({
     titulo: 'Confirmar importação',
     corpo: el('div', {}, [
-      el('p', { text: `${transacoes.length} lançamento(s) prontos para importar (${fmtBRL(total)} em gastos).` }),
+      el('p', { text: `${marcadas.length} lançamento(s) prontos para importar (${fmtBRL(total)} em gastos).` }),
+      duplicadas.length ? el('p', { class: 'aviso-erro', text: `${duplicadas.length} já parece(m) estar lançado(s) no app (mesma data e mesmo valor):` }) : null,
+      duplicadas.length ? el('ul', { class: 'lista-preview' }, duplicadas.map(linhaDuplicata)) : null,
+      duplicadas.length && novas.length ? el('p', { class: 'ajuda', text: `As outras ${novas.length} são novas (${fmtBRL(totalNovas)} em gastos).` }) : null,
       avisos.length ? el('p', { class: 'aviso-erro', text: `${avisos.length} linha(s) serão puladas:` }) : null,
       avisos.length ? el('ul', { class: 'lista-preview' }, avisos.map((a) => el('li', { text: a }))) : null,
       el('p', { class: 'ajuda', text: 'Os lançamentos entram direto na aba Lançamentos, sem passar pela conciliação.' }),
     ]),
-    acoes: [{ id: 'cancelar', rotulo: 'Cancelar' }, { id: 'importar', rotulo: 'Importar' }],
+    acoes,
   });
-  if (escolha !== 'importar') return;
+  if (escolha !== 'tudo' && escolha !== 'so_novas') return;
 
-  await saveTransactions(transacoes);
-  await registrarEvento(TIPOS_EVENTO.LANCAMENTO_CRIADO, `Importou ${transacoes.length} lançamento(s) de planilha`);
-  toast(`${transacoes.length} lançamento(s) importados.`, 'ok');
+  // `possivelDuplicata` é só um adorno da tela — nunca vai para o banco.
+  const aGravar = (escolha === 'so_novas' ? novas : marcadas).map(({ possivelDuplicata, ...t }) => t);
+  await saveTransactions(aGravar);
+  await registrarEvento(
+    TIPOS_EVENTO.LANCAMENTO_CRIADO,
+    `Importou ${aGravar.length} lançamento(s) de planilha` +
+    (duplicadas.length ? ` (${duplicadas.length} possível(is) duplicata(s), ${escolha === 'so_novas' ? 'ignorada(s)' : 'importada(s) mesmo assim'})` : '')
+  );
+  toast(`${aGravar.length} lançamento(s) importados.`, 'ok');
   await aoConcluir();
 }
 

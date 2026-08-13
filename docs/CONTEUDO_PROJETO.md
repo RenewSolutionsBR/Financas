@@ -1,6 +1,6 @@
 # Conteúdo do Projeto — Livro de Gastos
 
-Histórico do projeto, decisões de design importantes e pendências conhecidas. Atualizado até v22 (2026-08-13).
+Histórico do projeto, decisões de design importantes e pendências conhecidas. Atualizado até v23 (2026-08-13).
 
 ## Origem
 
@@ -355,6 +355,18 @@ Achado no primeiro teste real do usuário com a importação de lançamentos, um
 **O mesmo defeito existia em `generic-table.js`** (fatura e extrato), com sua própria cópia de `dataParaISO` — corrigido nos dois arquivos. Não tinha aparecido antes porque os adaptadores dedicados (PDF Santander, `.xls` de extrato) não passam por esse caminho, e a planilha genérica até então só tinha sido usada com datas em texto.
 
 **Lição registrada.** O bug só apareceu com o arquivo REAL do usuário: todos os testes usavam matrizes montadas à mão, onde a data é sempre string — a mesma armadilha de "mockar o shape que o pipeline real nunca produz" já documentada no caso da regra de extrato (v13→v14). Os testes novos cobrem `Date` e `number` explicitamente.
+
+### Aviso de duplicata na importação de lançamentos (v22→v23, 2026-08-13)
+
+Pedido do usuário durante o teste da v22: reimportar o mesmo arquivo, ou dois arquivos com meses sobrepostos, criava cópias silenciosas. É o único fluxo de importação que grava DIRETO, sem os baldes da conciliação onde daria para revisar o casamento depois — então o aviso precisa vir antes de gravar.
+
+**Critério: mesma data + mesmo valor**, deliberadamente sem exigir descrição igual. Quem monta a planilha à mão raramente escreve a descrição do mesmo jeito duas vezes ("Almoço" vs "Almoco restaurante"), e o objetivo é AVISAR, não bloquear. Em compensação, descrição parecida vira sinal extra (`descricaoIgual`): o modal marca "(descrição diferente — confira)" quando só data e valor batem, para separar o que é quase certamente duplicata do que pode ser coincidência legítima — dois cafés de R$ 5,00 no mesmo dia são gastos diferentes de verdade.
+
+A comparação é contra TODAS as transações do app, não só as importadas de planilha: um gasto digitado à mão e depois trazido numa planilha é duplicata do mesmo jeito. Previsões de parcela (`previsto: true`) são ignoradas — casar contra elas acusaria duplicata de algo que ainda nem aconteceu.
+
+**Três saídas no modal** quando há duplicata: Cancelar, "Importar tudo" e "Importar só N nova(s)". A última é a ação primária (última posição, que `abrirModal` estiliza como principal) e resolve o caso comum de arquivos com meses sobrepostos sem obrigar o usuário a editar a planilha. "Importar tudo" continua disponível porque a heurística é intencionalmente frouxa e só o usuário sabe se os dois lançamentos iguais são legítimos. `.modal-acoes` ganhou `flex-wrap` por causa desses três rótulos longos em tela de celular.
+
+`marcarPossiveisDuplicatas` é pura e não decide nada sozinha — devolve as transações anotadas e quem chama monta a tela. O campo `possivelDuplicata` é adorno de UI e é removido antes de gravar.
 
 ## Pendências conhecidas, fora de escopo
 

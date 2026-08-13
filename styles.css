@@ -251,11 +251,18 @@ input[type=date] {
   line-height: 1.6;
 }
 
+/* `flex-wrap` porque um modal pode ter 3 saídas com rótulos longos (ex.:
+   "Cancelar / Importar tudo / Importar só 4 nova(s)" no aviso de duplicata
+   da planilha) — em tela de celular os três lado a lado espremiam o texto
+   a ponto de truncar. `min-width` mantém cada botão com alvo de toque
+   utilizável mesmo quando os três cabem na mesma linha. */
 .modal-acoes {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
   margin-top: 18px;
 }
+.modal-acoes .btn { min-width: 120px; }
 
 .btn {
   flex: 1;
