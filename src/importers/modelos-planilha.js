@@ -64,6 +64,8 @@ const AJUDA_POR_TIPO = {
     ['5. Valor: use número positivo para compras. Crédito/estorno com sinal negativo.'],
     ['6. Parcela: só para compra parcelada, no formato 3/10 (parcela 3 de 10).'],
     ['   Compra à vista: deixe a célula vazia.'],
+    ['   IMPORTANTE: formate a coluna Parcela como TEXTO antes de digitar.'],
+    ['   Sem isso o Excel entende "3/10" como a data 3 de outubro.'],
     [''],
     ['A data de vencimento da fatura é informada no app, na hora de importar.'],
   ],

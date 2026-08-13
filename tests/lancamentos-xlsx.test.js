@@ -122,6 +122,36 @@ describe('lancamentos-xlsx: parseLancamentosPlanilha', () => {
     assertEqual(transacoes[0].natureza, 'receita');
   });
 
+  // Bug real (2026-08-13, planilha do usuario): quem preenche a data como
+  // DATA DE VERDADE no Excel tinha a linha PULADA, enquanto quem digitava
+  // como texto funcionava — o oposto do esperado. A leitura convertia a
+  // celula para a string de exibicao do arquivo ("7/5/26": sem zero a
+  // esquerda, ano de 2 digitos e ambigua entre dia e mes, dependendo do
+  // locale de quem salvou), e o regex exigia dd/mm/aaaa.
+  it('aceita celula de data DE VERDADE do Excel (objeto Date), nao so texto', () => {
+    const matriz = [cabecalho, [new Date(2026, 6, 5), 'Teste 1', '30,30', 'Alimentação', 'Dinheiro', 'Gasto']];
+    const { transacoes, avisos } = parseLancamentosPlanilha(matriz, ctx);
+    assertEqual(avisos.length, 0, avisos.join(' | '));
+    assertEqual(transacoes[0].data, '2026-07-05', '5 de julho, nao 7 de maio');
+  });
+
+  it('data como Date usa componentes locais — nunca recua um dia por fuso', () => {
+    // toISOString() converteria para UTC e, num fuso negativo (Brasil), uma
+    // data a meia-noite local viraria o dia anterior.
+    const matriz = [cabecalho, [new Date(2026, 0, 1), 'Ano novo', '10,00', 'Alimentação', 'Dinheiro', 'Gasto']];
+    const { transacoes } = parseLancamentosPlanilha(matriz, ctx);
+    assertEqual(transacoes[0].data, '2026-01-01');
+  });
+
+  it('aceita valor numerico puro (celula formatada como numero/moeda no Excel)', () => {
+    // Com cellDates/raw, uma celula de numero chega como number, nao string:
+    // parseMoneyBR receberia 30.3 e nao entenderia o ponto decimal.
+    const matriz = [cabecalho, ['05/07/2026', 'Teste', 30.3, 'Alimentação', 'Dinheiro', 'Gasto']];
+    const { transacoes, avisos } = parseLancamentosPlanilha(matriz, ctx);
+    assertEqual(avisos.length, 0, avisos.join(' | '));
+    assertEqual(transacoes[0].valor, 30.3);
+  });
+
   it('cabecalho fora do modelo vira ERRO (nao aviso) e nao importa nada', () => {
     // Colunas trocadas seriam lidas "com sucesso" e gravariam descricao no
     // lugar do valor — falhar cedo e melhor que importar lixo.

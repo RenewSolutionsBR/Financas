@@ -1,6 +1,6 @@
 # Conteúdo do Projeto — Livro de Gastos
 
-Histórico do projeto, decisões de design importantes e pendências conhecidas. Atualizado até v21 (2026-08-13).
+Histórico do projeto, decisões de design importantes e pendências conhecidas. Atualizado até v22 (2026-08-13).
 
 ## Origem
 
@@ -339,6 +339,22 @@ Terceira e última parte da rodada de navegabilidade. O pedido era "poder import
 **Importação de lançamentos** (`src/importers/lancamentos-xlsx.js`) é o único caminho que NÃO passa por conciliação: as linhas viram transações direto. Por isso o adaptador não se registra no `registry.js` (que serve à tela de Conciliação) e é chamado pelo menu Ferramentas. Categoria e forma são resolvidas por NOME contra o que já está cadastrado, ignorando acento e caixa — nunca criadas na hora, porque criar cadastro a partir de texto solto encheria o app de quase-duplicatas ("Alimentacao"/"alimentação"/"Alimentaçao") sem o usuário perceber; a linha é recusada com aviso dizendo o que falta cadastrar. Um cabeçalho fora do modelo é ERRO (não aviso) e cancela tudo: colunas trocadas seriam lidas "com sucesso" e gravariam lixo. Como não existe tela de baldes onde revisar depois, a importação sempre mostra um resumo antes de gravar.
 
 A comparação de nomes usa uma função local (`chaveDeNome`), não `normalizeDescricao` de `core/text.js` — aquela preserva acentos de propósito, porque é a base de `computeParcelaKey` e a identidade das parcelas já gravadas depende dela não mudar.
+
+### Data preenchida CORRETAMENTE no Excel fazia a linha ser pulada (v21→v22, 2026-08-13)
+
+Achado no primeiro teste real do usuário com a importação de lançamentos, uma hora depois de publicar a v21. A planilha tinha 7 linhas; 3 eram puladas com "data inválida (use dd/mm/aaaa)" — justamente as 3 em que ele digitou a data como DATA DE VERDADE no Excel. As 4 que funcionaram tinham a data digitada como TEXTO. O caminho certo era o que falhava.
+
+**Causa.** A leitura usava `raw: false`, que devolve a string de EXIBIÇÃO da célula em vez do valor. Medido no arquivo real: as células problemáticas eram `t=n v=46208` (número de série de data do Excel) e o `w` (texto exibido) vinha `"7/5/26"` — sem zero à esquerda, ano de 2 dígitos e, pior, ambíguo entre dia e mês conforme o locale de quem salvou. O regex exigia `dd/mm/aaaa` e rejeitava.
+
+**Correção.** `cellDates: true` + `raw: true` na leitura: uma data real chega como `Date` já resolvido pelo número de série (46208 → 2026-07-05, confirmado com `XLSX.SSF.parse_date_code`), sem passar por texto nenhum. `dataParaISO` passou a aceitar `Date` além do texto `dd/mm/aaaa`, usando componentes LOCAIS — `toISOString()` converteria para UTC e recuaria um dia em fuso negativo, que é o do usuário.
+
+**Dois efeitos colaterais tratados junto**, ambos consequência de `raw: true`:
+- Célula de valor formatada como número chega como `number` (`30.3`), não string. Passar isso por `parseMoneyBR` (que espera vírgula decimal) devolveria nulo. Agora número puro é usado direto; só texto passa pelo parser.
+- `"3/10"` digitado numa coluna de formato Geral vira DATA no Excel (3 de outubro) e o texto original se perde. Não dá para recuperar a parcela sem risco de inventar um parcelamento errado, então `parseParcela` trata `Date` como célula inválida: gera aviso e a linha entra como compra à vista. As instruções do modelo de fatura passaram a pedir explicitamente que a coluna Parcela seja formatada como Texto.
+
+**O mesmo defeito existia em `generic-table.js`** (fatura e extrato), com sua própria cópia de `dataParaISO` — corrigido nos dois arquivos. Não tinha aparecido antes porque os adaptadores dedicados (PDF Santander, `.xls` de extrato) não passam por esse caminho, e a planilha genérica até então só tinha sido usada com datas em texto.
+
+**Lição registrada.** O bug só apareceu com o arquivo REAL do usuário: todos os testes usavam matrizes montadas à mão, onde a data é sempre string — a mesma armadilha de "mockar o shape que o pipeline real nunca produz" já documentada no caso da regra de extrato (v13→v14). Os testes novos cobrem `Date` e `number` explicitamente.
 
 ## Pendências conhecidas, fora de escopo
 

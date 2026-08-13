@@ -17,8 +17,27 @@ import { novaTransaction, NATUREZAS } from '../domain/transactions.js';
 import { CATEGORIA_A_CLASSIFICAR } from '../domain/categories.js';
 import { COLUNAS_LANCAMENTOS } from './modelos-planilha.js';
 
-function dataParaISO(txt) {
-  const m = /(\d{2})\/(\d{2})\/(\d{4})/.exec(String(txt || ''));
+// Aceita as duas formas que uma célula de data chega de uma planilha real:
+//
+// 1. Texto "dd/mm/aaaa" — quando o usuário digita a data como TEXTO.
+// 2. Objeto Date — quando a célula é uma data DE VERDADE no Excel.
+//
+// O caso (2) foi um bug real (medido 2026-08-13 com a planilha do usuário):
+// a leitura usava `raw: false`, que converte a data para a string de
+// EXIBIÇÃO do arquivo — no caso, "7/5/26", sem zero à esquerda e com ano de
+// 2 dígitos. O regex exigia dd/mm/aaaa e rejeitava a linha, então preencher
+// a data corretamente no Excel fazia a linha ser PULADA, enquanto digitar
+// como texto funcionava. Pior: "7/5/26" é ambíguo (5 de julho ou 7 de
+// maio?) e depende do locale de quem salvou o arquivo — por isso a leitura
+// passou a usar `cellDates: true`, que entrega um Date já resolvido pelo
+// número de série da planilha, sem passar por texto nenhum.
+function dataParaISO(valor) {
+  if (valor instanceof Date && !isNaN(valor)) {
+    // Componentes LOCAIS (não toISOString, que converte para UTC e pode
+    // recuar um dia dependendo do fuso do aparelho).
+    return `${valor.getFullYear()}-${String(valor.getMonth() + 1).padStart(2, '0')}-${String(valor.getDate()).padStart(2, '0')}`;
+  }
+  const m = /(\d{2})\/(\d{2})\/(\d{4})/.exec(String(valor || ''));
   return m ? `${m[3]}-${m[2]}-${m[1]}` : null;
 }
 
@@ -100,13 +119,20 @@ export function parseLancamentosPlanilha(matriz, { categorias, formas, contas, t
   const transacoes = [];
   linhas.forEach((l, i) => {
     const numeroLinha = i + (temCabecalho ? 2 : 1); // linha como o usuário vê no Excel
-    const bruta = (l || []).map((c) => String(c == null ? '' : c).trim());
-    if (bruta.every((c) => !c)) return; // linha totalmente vazia: ignorada em silêncio
+    // Célula de data e de valor ficam CRUAS (Date/number) — só o texto é
+    // aparado. Converter tudo para string aqui destruía o Date antes de
+    // dataParaISO poder lê-lo, que era exatamente o bug de "data preenchida
+    // certo no Excel faz a linha ser pulada".
+    const celula = (v) => (v instanceof Date || typeof v === 'number' ? v : String(v == null ? '' : v).trim());
+    const bruta = (l || []).map(celula);
+    if (bruta.every((c) => c === '' || c === null || c === undefined)) return; // linha vazia: ignorada em silêncio
 
     const [colData, colDescricao, colValor, colCategoria, colForma, colNatureza] = bruta;
     const dataISO = dataParaISO(colData);
-    const descricao = colDescricao;
-    const valor = parseMoneyBR(colValor);
+    const descricao = String(colDescricao == null ? '' : colDescricao).trim();
+    // Número puro (célula formatada como moeda/número no Excel) já é o valor
+    // final; só texto passa por parseMoneyBR, que interpreta vírgula decimal.
+    const valor = typeof colValor === 'number' ? colValor : parseMoneyBR(colValor);
 
     if (!dataISO) return avisos.push(`Linha ${numeroLinha} pulada: data "${colData}" inválida (use dd/mm/aaaa).`);
     if (!descricao) return avisos.push(`Linha ${numeroLinha} pulada: descrição vazia.`);
@@ -160,8 +186,12 @@ export function parseLancamentosPlanilha(matriz, { categorias, formas, contas, t
 // "Instruções" do modelo é ignorada por vir depois.
 export function matrizDoArquivo(arrayBuffer, nomeArquivo) {
   const isCsv = /\.csv$/i.test(nomeArquivo || '');
+  // `cellDates: true` + `raw: true`: uma célula de data de verdade chega
+  // como Date (resolvido pelo número de série da planilha), nunca como a
+  // string de exibição do arquivo — que vem no locale de quem salvou
+  // ("7/5/26") e é ambígua entre dia e mês. Ver dataParaISO acima.
   const wb = isCsv
-    ? XLSX.read(new TextDecoder('utf-8').decode(arrayBuffer), { type: 'string' })
-    : XLSX.read(arrayBuffer, { type: 'array' });
-  return XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: false, defval: '' });
+    ? XLSX.read(new TextDecoder('utf-8').decode(arrayBuffer), { type: 'string', cellDates: true })
+    : XLSX.read(arrayBuffer, { type: 'array', cellDates: true });
+  return XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true, defval: '' });
 }

@@ -8,8 +8,19 @@ import { canonicalizar } from '../domain/classification.js';
 import { parseMoneyBR } from '../core/money.js';
 import { stableHash } from '../core/ids.js';
 
-function dataParaISO(txt) {
-  const m = /(\d{2})\/(\d{2})\/(\d{4})/.exec(String(txt || ''));
+// Aceita texto "dd/mm/aaaa" E célula de data DE VERDADE do Excel (Date).
+// Mesmo bug corrigido em lancamentos-xlsx.js (medido 2026-08-13): com
+// `raw: false`, a célula chegava como a string de EXIBIÇÃO do arquivo
+// ("7/5/26" — sem zero à esquerda, ano de 2 dígitos, ambígua entre dia e
+// mês conforme o locale de quem salvou), o regex rejeitava, e a linha era
+// pulada. Preencher a data corretamente no Excel não pode ser o caminho que
+// falha. Componentes LOCAIS (não toISOString, que converte para UTC e pode
+// recuar um dia em fuso negativo).
+function dataParaISO(valor) {
+  if (valor instanceof Date && !isNaN(valor)) {
+    return `${valor.getFullYear()}-${String(valor.getMonth() + 1).padStart(2, '0')}-${String(valor.getDate()).padStart(2, '0')}`;
+  }
+  const m = /(\d{2})\/(\d{2})\/(\d{4})/.exec(String(valor || ''));
   return m ? `${m[3]}-${m[2]}-${m[1]}` : null;
 }
 
@@ -23,6 +34,13 @@ function dataParaISO(txt) {
 // seguintes (syncPredictions depende desses dois campos) — o dado ia embora
 // em silêncio, sem nem um aviso na tela.
 export function parseParcela(txt) {
+  // "3/10" digitado numa célula de formato Geral vira DATA no Excel (3 de
+  // outubro) — a célula chega como Date e o texto original se perdeu. Não dá
+  // para adivinhar a parcela a partir disso sem arriscar inventar um
+  // parcelamento errado, então é tratado como célula inválida: gera aviso e
+  // a linha entra como compra à vista. As instruções do modelo pedem para
+  // formatar a coluna Parcela como Texto justamente por isso.
+  if (txt instanceof Date) return { atual: null, total: null, invalido: true };
   const limpo = String(txt == null ? '' : txt).trim();
   if (!limpo) return { atual: null, total: null };
   const m = /^(\d{1,2})\s*(?:\/|\s+de\s+)\s*(\d{1,2})$/i.exec(limpo);
@@ -44,7 +62,14 @@ export function parseLinhasGenerico(linhas, mapeamento, contaId, arquivo) {
   for (const l of dados) {
     const dataISO = dataParaISO(l[mapeamento.colData]);
     const descricao = String(l[mapeamento.colDescricao] || '').trim();
-    const valorBruto = parseMoneyBR(String(l[mapeamento.colValor] || '').trim());
+    // Célula numérica (formatada como número/moeda no Excel) já é o valor
+    // final — só texto passa por parseMoneyBR, que interpreta vírgula
+    // decimal. Com `raw: true` na leitura, converter para string primeiro
+    // faria "30.3" cair no parser de vírgula e virar nulo.
+    const celulaValor = l[mapeamento.colValor];
+    const valorBruto = typeof celulaValor === 'number'
+      ? celulaValor
+      : parseMoneyBR(String(celulaValor || '').trim());
     if (!dataISO || !descricao || valorBruto === null) {
       avisos.push(`Linha ignorada por dado ilegível: ${JSON.stringify(l)}`);
       continue;
@@ -83,11 +108,14 @@ function detectar() {
 
 async function lerMatriz(arrayBuffer, nomeArquivo) {
   const isCsv = /\.csv$/i.test(nomeArquivo || '');
+  // `cellDates: true` + `raw: true`: data de verdade chega como Date (ver
+  // dataParaISO acima) e número como number, em vez da string de exibição
+  // no locale de quem salvou o arquivo.
   const wb = isCsv
-    ? XLSX.read(new TextDecoder('utf-8').decode(arrayBuffer), { type: 'string' })
-    : XLSX.read(arrayBuffer, { type: 'array' });
+    ? XLSX.read(new TextDecoder('utf-8').decode(arrayBuffer), { type: 'string', cellDates: true })
+    : XLSX.read(arrayBuffer, { type: 'array', cellDates: true });
   const primeiraAba = wb.SheetNames[0];
-  return XLSX.utils.sheet_to_json(wb.Sheets[primeiraAba], { header: 1, raw: false, defval: '' });
+  return XLSX.utils.sheet_to_json(wb.Sheets[primeiraAba], { header: 1, raw: true, defval: '' });
 }
 
 async function parse(arrayBuffer, opcoes) {

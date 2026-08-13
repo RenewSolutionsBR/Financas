@@ -102,6 +102,40 @@ describe('generic-table: coluna de parcela (modelo de planilha)', () => {
   });
 });
 
+// Mesmo bug corrigido em lancamentos-xlsx.js (2026-08-13, planilha real do
+// usuario): preencher a data como DATA DE VERDADE no Excel fazia a linha ser
+// ignorada, enquanto digitar como texto funcionava.
+describe('generic-table: celula de data e de valor vindas do Excel (nao texto)', () => {
+  const mapa = { colData: 0, colDescricao: 1, colValor: 2, colDocumento: null, colParcela: 3, temCabecalho: true, escopo: 'fatura' };
+  const cab = ['Data', 'Descricao', 'Valor', 'Parcela'];
+
+  it('aceita objeto Date na coluna de data', () => {
+    const { rows, avisos } = parseLinhasGenerico([cab, [new Date(2026, 6, 5), 'Teste', '-30,30', '']], mapa, 'acc_1', 'x.xlsx');
+    assertEqual(avisos.length, 0, avisos.join(' | '));
+    assertEqual(rows[0].data, '2026-07-05', '5 de julho, nao 7 de maio');
+  });
+
+  it('data como Date usa componentes locais — nunca recua um dia por fuso', () => {
+    const { rows } = parseLinhasGenerico([cab, [new Date(2026, 0, 1), 'Ano novo', '-10,00', '']], mapa, 'acc_1', 'x.xlsx');
+    assertEqual(rows[0].data, '2026-01-01');
+  });
+
+  it('aceita valor numerico puro (celula formatada como numero no Excel)', () => {
+    const { rows, avisos } = parseLinhasGenerico([cab, ['05/07/2026', 'Teste', -30.3, '']], mapa, 'acc_1', 'x.xlsx');
+    assertEqual(avisos.length, 0, avisos.join(' | '));
+    assertEqual(rows[0].valor, 30.3);
+    assertEqual(rows[0].sinal, 'debito', 'numero negativo continua sendo saida');
+  });
+
+  it('"3/10" que o Excel converteu em data vira aviso, nao parcelamento inventado', () => {
+    const { rows, avisos } = parseLinhasGenerico([cab, ['05/07/2026', 'Loja', '-200,00', new Date(2026, 9, 3)]], mapa, 'acc_1', 'x.xlsx');
+    assertEqual(rows.length, 1, 'a linha entra como compra a vista');
+    assertEqual(rows[0].tipo, null);
+    assertEqual(avisos.length, 1);
+    assert(avisos[0].includes('Parcela ilegível'), avisos[0]);
+  });
+});
+
 // Colisao de id: idDeterministicoDoDocumento monta `contaId|tipo|vencimento
 // ||periodoFim`. O adaptador generico nao preenchia nenhum dos dois, entao
 // TODA planilha da mesma conta gerava `contaId|fatura|undefined` — importar

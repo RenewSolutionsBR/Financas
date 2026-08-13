@@ -240,11 +240,22 @@ Cada linha resume um problema real já investigado (ver `CONTEUDO_PROJETO.md` pa
 - **Causa**: até v20, `parseLinhasGenerico` cravava `parcela_atual`/`parcela_total` em `null` e nunca definia `tipo`. Como `autoConfirmParcelas` e `syncPredictions` filtram por `tipo === 'parcelamento'`, a informação de parcela era lida e descartada sem aviso.
 - **Ação**: confirmar v21+ e que a coluna "Parcela" foi preenchida no formato `3/10` (ou `3 de 10`). Célula vazia é compra à vista, não erro. Valores impossíveis (`7/5`, `0/5`) geram aviso na tela de análise e a linha entra como à vista. Se o usuário montou a planilha à mão, conferir se indicou o índice da coluna de parcela no mapeamento (ou usou "Usar ordem do modelo").
 
+### 13. Planilha: linha pulada com "data inválida" justamente onde a data foi preenchida certo
+
+- **Sintoma**: algumas linhas importam e outras não; as que falham são as que têm data DE VERDADE (célula de data do Excel), enquanto as digitadas como texto funcionam — o inverso do esperado.
+- **Causa**: até v21, a leitura usava `raw: false` e recebia a string de EXIBIÇÃO da célula, no locale de quem salvou o arquivo (ex.: `"7/5/26"` — sem zero à esquerda, ano de 2 dígitos, ambíguo entre dia e mês). O regex exigia `dd/mm/aaaa` e rejeitava. Valia para os dois caminhos: `lancamentos-xlsx.js` e `generic-table.js` (fatura/extrato por planilha).
+- **Ação**: confirmar v22+. Se reaparecer, inspecionar a célula crua com `XLSX.read(buf, {cellDates:true})` e olhar `t` (tipo) e `v` (valor): `t=n` com `v` numérico é data de série do Excel, e o parser tem que receber `Date`, nunca o texto `w`.
+
+### 14. Planilha: coluna Parcela vira data e a compra entra como à vista
+
+- **Causa**: `"3/10"` digitado numa célula de formato Geral é convertido pelo Excel em 3 de outubro; o texto original se perde no arquivo. O app não tem como recuperar a parcela sem risco de inventar um parcelamento errado, então gera aviso e trata como compra à vista.
+- **Ação**: orientar a formatar a coluna Parcela como TEXTO antes de digitar (as instruções do modelo já dizem isso). Não é bug: é limitação do formato de arquivo.
+
 ## Checklist rápido de investigação técnica
 
 1. Reproduzir com **dado real** do usuário sempre que possível (backup/export), não com dado sintético inventado.
 2. Checar `APP_VERSION` primeiro, antes de qualquer outra coisa.
-3. Rodar `node tools/run-tests.mjs` (482+ testes de lógica pura) para confirmar que a base está íntegra antes de investigar um sintoma específico.
+3. Rodar `node tools/run-tests.mjs` (489+ testes de lógica pura) para confirmar que a base está íntegra antes de investigar um sintoma específico.
 4. Identificar a função de domínio responsável (a maior parte da lógica financeira mora em `domain/`, é pura, testável isoladamente em Node sem abrir navegador).
 5. Testar a função isolada com o dado real, comparando entrada/saída esperada.
 6. Se o sintoma persistir após 2 hipóteses testadas e descartadas, considerar se não é uma decisão de produto disfarçada de bug (voltar ao Capítulo 1, Pergunta 2) antes de insistir numa 3ª hipótese técnica.
