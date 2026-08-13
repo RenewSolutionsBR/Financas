@@ -214,6 +214,18 @@ O pool de transações candidatas é restrito por `plasticosDoTitular` (titular 
 
 O mesmo pagamento aparece no EXTRATO (débito saindo da conta) e na FATURA seguinte (linha "pagamentos_creditos"). `processarPagamentoFatura` (`pagamento-fatura.js`) usa valor+data (tolerância 2 dias) pra reconhecer que é o MESMO evento, não importa qual lado chegou primeiro — o segundo lado a chegar só complementa `origemRef`, nunca duplica o lançamento.
 
+### Reimportar um documento com o MESMO vencimento — o que muda e o que NUNCA muda
+
+`idDeterministicoDoDocumento` (`contaId|tipo|vencimento`) faz duas faturas do mesmo cartão com o mesmo vencimento colidirem no mesmo `statement` salvo — é assim que o app reconhece "isso já foi importado" e oferece substituir. Vale entender exatamente o que essa substituição faz, porque a resposta não é intuitiva (esclarecido para o usuário em 2026-08-14, depois de testes reais com 73 linhas de fatura):
+
+- **O documento (`statement.rows`) é sobrescrito** pelas linhas do arquivo novo — é só o que os baldes de conciliação leem para montar a tela.
+- **Lançamentos já confirmados NUNCA são apagados nem alterados automaticamente**, mesmo que a linha correspondente tenha sumido do arquivo novo ou mudado de valor. Testado (`ui/conciliacao-import.js` → `commitImportacao` → `runReconciliation`):
+  - **Compra que sumiu do arquivo novo**: o lançamento antigo continua intacto, mas passa a aparecer em "No app, não na fatura" — o app não decide sozinho se foi remoção por engano no arquivo ou cancelamento real da compra.
+  - **Compra com valor diferente no arquivo novo**: o lançamento antigo mantém o valor ANTIGO. A linha nova (valor certo) aparece em "Na fatura, não no app"; a antiga (valor errado) aparece em "No app, não na fatura" — como se fossem duas compras diferentes, porque a identidade de casamento é por texto+data+valor, não por alguma chave estável de "é a mesma linha". Corrigir de verdade exige editar o lançamento antigo à mão.
+  - **Compra à vista nunca é tocada automaticamente de qualquer forma** — só existe transação para ela depois de "+lançar" manual (parcela 1/n é igual: sempre exige confirmação manual, ver "Decisões críticas de design"). `autoConfirmParcelas` só age em `parcela_atual > 1`.
+  - **Previsões de parcela futura SÃO recalculadas** a cada importação (`syncPredictions`), mas só das compras cuja `parcelaKey` está mencionada nas linhas do arquivo importado — nunca de compras alheias (bug corrigido em v25→v26, ver changelog).
+- **Em resumo**: trocar o documento-fonte de uma fatura pode criar DIVERGÊNCIAS VISÍVEIS nos baldes de conciliação (itens duplicados nos dois lados, por exemplo), mas nunca apaga dado silenciosamente. O caminho de correção sempre passa pela tela — nunca é automático.
+
 ## Fluxo entre abas e origens de dado
 
 ```

@@ -272,6 +272,15 @@ Cada linha resume um problema real já investigado (ver `CONTEUDO_PROJETO.md` pa
 - **Causa (até v25)**: `syncPredictions` apagava previsões de QUALQUER compra parcelada da mesma conta sempre que uma fatura era (re)importada, mesmo que a fatura nova não tivesse nenhuma linha relacionada àquela compra. Disparava ao reimportar um documento que substitui outro (mesmo vencimento, ex.: PDF trocado por planilha equivalente) quando o arquivo novo não repete a mesma linha de parcelamento.
 - **Ação**: confirmar v26+. Se a perda já aconteceu numa versão anterior, não há como recuperar as previsões automaticamente — o usuário precisa reimportar a fatura correta daquela compra (ou lançar a parcela manualmente) para o app recalcular.
 
+### 18. "Se eu reimportar com menos linhas / com valor diferente, o app apaga ou corrige os lançamentos antigos?"
+
+Pergunta recorrente de usuário testando duas fontes do mesmo documento (ex.: fatura em PDF vs. a mesma fatura digitada numa planilha, mesmo vencimento — o app reconhece como o mesmo `statement` por `idDeterministicoDoDocumento` e oferece substituir). Testado com dado real (73 linhas de fatura, ver `CONTEUDO_PROJETO.md` → "Reimportar um documento com o MESMO vencimento"):
+
+- **NUNCA apaga nem corrige lançamento já confirmado automaticamente.** Nem quando a linha some do arquivo novo, nem quando o valor muda. O único efeito automático é sobre PREVISÕES de parcela futura (item 17 acima), nunca sobre lançamento real.
+- **Compra que sumiu do arquivo novo**: o lançamento antigo continua, mas migra para o balde "No app, não na fatura" na próxima vez que a tela de conciliação for aberta.
+- **Compra com valor diferente**: o lançamento antigo mantém o valor velho. A conciliação passa a mostrar a MESMA compra em dois lugares (linha nova em "Na fatura, não no app", lançamento antigo em "No app, não na fatura") — o casamento é por texto+data+valor, então um valor diferente quebra o casamento e os dois lados aparecem como itens distintos.
+- **Ação de suporte**: se o usuário relatar sumiço/duplicação depois de reimportar, primeiro checar se há duas versões do mesmo documento importadas (vencimento igual, arquivos diferentes) antes de suspeitar de outra causa — é o comportamento esperado, não um bug, e a correção é manual (editar o lançamento antigo em Lançamentos).
+
 ## Checklist rápido de investigação técnica
 
 1. Reproduzir com **dado real** do usuário sempre que possível (backup/export), não com dado sintético inventado.
