@@ -3,6 +3,7 @@
 // servindo arquivos antigos do cache indefinidamente.
 import { APP_VERSION } from './src/version.js';
 import { respostaCacheavel, cachesParaApagar } from './src/core/cache-policy.js';
+import { MODULOS } from './src/core/modulos.js';
 
 // Mesmo namespace do banco deste app (db-schema.js: DB_NAME = 'financas'),
 // nunca o nome do app anterior ('livro-de-gastos'): caches.keys() é por
@@ -13,22 +14,17 @@ import { respostaCacheavel, cachesParaApagar } from './src/core/cache-policy.js'
 const PREFIXO_CACHE = 'financas-';
 const CACHE = `${PREFIXO_CACHE}${APP_VERSION}`;
 
+// A lista de modulos vem de src/core/modulos.js (gerada por
+// tools/gerar-modulos.mjs), nao mais escrita a mao aqui: a versao manual
+// tinha silenciosamente ficado com 29 dos 50 modulos do app, e um arquivo
+// esquecido so se manifestava como falha offline, sem erro visivel.
+//
+// Cada modulo e precacheado COM a query `?v=APP_VERSION`, porque e essa a
+// URL que o import map do index.html manda o navegador buscar — precachear
+// a URL sem query encheria o cache de entradas que nunca seriam usadas.
 const PRECACHE = [
   './', './index.html', './styles.css', './manifest.webmanifest',
-  './src/app.js', './src/version.js',
-  './src/core/storage.js', './src/core/db-schema.js', './src/core/money.js',
-  './src/core/dates.js', './src/core/text.js', './src/core/ids.js',
-  './src/core/cache-policy.js',
-  './src/domain/categories.js', './src/domain/accounts.js',
-  './src/domain/payment-methods.js', './src/domain/transactions.js',
-  './src/importers/backup-xlsx.js',
-  './src/importers/modelos-planilha.js', './src/importers/lancamentos-xlsx.js',
-  './src/ui/components.js', './src/ui/tabs.js', './src/ui/cadastros.js',
-  './src/ui/cadastros-contas.js', './src/ui/cadastros-formas.js',
-  './src/ui/cadastros-categorias.js',
-  './src/ui/cadastros-comuns.js',
-  './src/ui/lancamentos.js', './src/ui/onboarding.js',
-  './src/ui/ferramentas.js', './src/ui/backup-comum.js',
+  ...MODULOS.map((m) => `${m}?v=${APP_VERSION}`),
   './vendor/xlsx.full.min.js',
   './icons/icon-192.png', './icons/icon-512.png',
   './icons/icon-512-maskable.png', './icons/apple-touch-icon-180.png',
@@ -46,10 +42,38 @@ self.addEventListener('activate', (ev) => {
   );
 });
 
+// Arquivos que DECIDEM qual versao do app roda e que, por isso, nunca podem
+// vir do cache HTTP do navegador:
+//
+// - o HTML (entrypoint, carrega o import map com a versao)
+// - version.js (a propria versao)
+// - modulos.js (a lista que o import map percorre)
+//
+// Os tres sao buscados antes de o import map existir, entao a query
+// `?v=APP_VERSION` nao os protege. E o GitHub Pages manda
+// `Cache-Control: max-age=600` (medido 2026-08-13): por 10 minutos o
+// navegador serviria a copia velha SEM perguntar ao servidor, e o app
+// ficaria rodando codigo antigo mesmo depois de uma publicacao — foi
+// exatamente o que aconteceu em v20, v22 e v23.
+//
+// `cache: 'reload'` obriga a ida ao servidor para esses tres (o resto da
+// arvore ja esta protegido pela query de versao). Se a rede falhar, o
+// `.catch` abaixo continua servindo o cache — offline segue funcionando.
+function ignoraCacheHTTP(request) {
+  if (request.mode === 'navigate') return true;
+  const caminho = new URL(request.url).pathname;
+  return /\/(index\.html)?$/.test(caminho) ||
+    caminho.endsWith('/src/version.js') ||
+    caminho.endsWith('/src/core/modulos.js');
+}
+
 self.addEventListener('fetch', (ev) => {
   if (ev.request.method !== 'GET') return;
+  const requisicao = ignoraCacheHTTP(ev.request)
+    ? new Request(ev.request, { cache: 'reload' })
+    : ev.request;
   ev.respondWith(
-    fetch(ev.request)
+    fetch(requisicao)
       .then((resp) => {
         // Só grava no cache resposta de sucesso da própria origem. Gravar um
         // 503/404 transitório por cima do precache bom envenenaria o cache

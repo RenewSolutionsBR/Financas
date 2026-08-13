@@ -46,6 +46,46 @@
   <div id="toastRaiz" aria-live="polite"></div>
 
   <script src="vendor/xlsx.full.min.js"></script>
-  <script type="module" src="src/app.js"></script>
+  <!-- Carregador com "cache busting" por versao.
+
+       O problema (medido 2026-08-13): o GitHub Pages manda
+       `Cache-Control: max-age=600` em cada modulo. Por 10 minutos o
+       navegador serve a copia VELHA sem nem perguntar ao servidor, e o
+       service worker (network-first) nao ajuda, porque a requisicao nem
+       chega nele. O app entao mostrava a versao nova no rodape (version.js
+       buscado noutro momento) rodando codigo antigo — aconteceu em v20,
+       v22 e v23, sempre custando uma investigacao inteira ate perceber.
+
+       A solucao e um IMPORT MAP: ele reescreve o caminho de CADA modulo
+       para incluir `?v=APP_VERSION`. Testado em navegador (2026-08-13):
+       so a query no import inicial NAO basta — um modulo ES resolve seus
+       imports relativos SEM herdar a query string do pai, entao `app.js`
+       vinha novo e todo o resto vinha do cache. Com o import map, a arvore
+       inteira ganha URL nova a cada publicacao.
+
+       A lista de modulos e gerada a partir de MODULOS (abaixo), que e a
+       mesma fonte usada pelo precache do service worker — ver sw.js. -->
+  <script type="module">
+    import { APP_VERSION } from './src/version.js';
+    import { MODULOS } from './src/core/modulos.js';
+
+    const mapa = { imports: {} };
+    for (const caminho of MODULOS) {
+      // Chave e valor absolutos a partir da raiz do app: o import map casa
+      // pela URL JA RESOLVIDA do modulo, nao pelo texto do `import`.
+      const url = new URL(caminho, document.baseURI).href;
+      mapa.imports[url] = `${url}?v=${APP_VERSION}`;
+    }
+    const tag = document.createElement('script');
+    tag.type = 'importmap';
+    tag.textContent = JSON.stringify(mapa);
+    // `document.currentScript` e SEMPRE null dentro de um modulo ES (so
+    // funciona em script classico) — usar ele aqui quebrava o boot inteiro
+    // com "Cannot read properties of null". O import map so precisa existir
+    // no documento antes do primeiro import(), e appendChild garante isso.
+    document.head.appendChild(tag);
+
+    await import(`./src/app.js?v=${APP_VERSION}`);
+  </script>
 </body>
 </html>

@@ -1,6 +1,6 @@
 # Conteúdo do Projeto — Livro de Gastos
 
-Histórico do projeto, decisões de design importantes e pendências conhecidas. Atualizado até v23 (2026-08-13).
+Histórico do projeto, decisões de design importantes e pendências conhecidas. Atualizado até v24 (2026-08-13).
 
 ## Origem
 
@@ -367,6 +367,22 @@ A comparação é contra TODAS as transações do app, não só as importadas de
 **Três saídas no modal** quando há duplicata: Cancelar, "Importar tudo" e "Importar só N nova(s)". A última é a ação primária (última posição, que `abrirModal` estiliza como principal) e resolve o caso comum de arquivos com meses sobrepostos sem obrigar o usuário a editar a planilha. "Importar tudo" continua disponível porque a heurística é intencionalmente frouxa e só o usuário sabe se os dois lançamentos iguais são legítimos. `.modal-acoes` ganhou `flex-wrap` por causa desses três rótulos longos em tela de celular.
 
 `marcarPossiveisDuplicatas` é pura e não decide nada sozinha — devolve as transações anotadas e quem chama monta a tela. O campo `possivelDuplicata` é adorno de UI e é removido antes de gravar.
+
+### Cache do navegador servindo código velho depois de publicar (v23→v24, 2026-08-13)
+
+Bug de infraestrutura que já tinha custado três investigações inteiras (v20, v22 e v23) antes de ser atacado na raiz. O sintoma é sempre o mesmo e engana: **o app mostra a versão NOVA no rodapé do menu Ferramentas, mas roda a lógica ANTIGA**. Em v23 apareceu como "o aviso de duplicata não aparece"; a detecção estava correta e testada contra o arquivo real do usuário (7 de 7 marcadas), mas o aparelho executava o `ferramentas.js` da v22.
+
+**Causa medida.** O GitHub Pages responde `Cache-Control: max-age=600` em todo arquivo (medido com `curl -I` em 2026-08-13, tanto para `index.html` quanto para os módulos). Por 10 minutos o navegador serve a cópia em cache **sem sequer perguntar ao servidor**. O service worker não ajuda: ele é network-first, mas a requisição nem chega nele — o cache HTTP é uma camada anterior. E `version.js` ser buscado num momento diferente dos outros módulos é o que produz a combinação enganosa de "versão nova + código velho".
+
+**Correção em duas frentes:**
+
+1. **Import map com `?v=APP_VERSION`** (`index.html`): reescreve a URL de cada módulo a cada publicação, tornando o cache velho inalcançável. Uma tentativa mais simples foi testada e DESCARTADA por medição: pôr a query só no import inicial não funciona, porque um módulo ES resolve seus imports relativos **sem herdar a query string do pai** — `app.js` vinha novo e todo o resto vinha do cache. O teste em navegador mostrou `app.js?v=42` seguido de `dep.js` sem query, e com o import map os dois passaram a vir com `?v=`.
+
+2. **`cache: 'reload'` no service worker** para os três arquivos que decidem qual versão roda (`index.html`, `version.js`, `modulos.js`). Eles são buscados ANTES de o import map existir, então a query não os protege. Sem isso, sobrava uma janela de 10 minutos em que nem o HTML novo chegava — foi o que aconteceu no meio deste próprio teste: a correção do loader estava no servidor e o navegador seguia rodando a anterior. Offline continua funcionando: o `.catch` do fetch segue servindo o cache quando a rede falha.
+
+**`src/core/modulos.js`** passou a ser a fonte única da lista de módulos, gerada por `tools/gerar-modulos.mjs` e consumida tanto pelo import map quanto pelo precache do service worker. A lista manual do `sw.js` tinha silenciosamente ficado com **29 dos 50 módulos** — um arquivo esquecido ali só se manifestava como falha offline, sem erro visível. Rodar o gerador depois de criar ou remover qualquer arquivo de `src/` passa a fazer parte do fluxo de publicação.
+
+**Erro cometido e corrigido durante a implementação**, registrado porque é fácil repetir: `document.currentScript` é sempre `null` dentro de um módulo ES (só existe em script clássico). Usá-lo para posicionar o import map quebrava o boot inteiro com `Cannot read properties of null`.
 
 ## Pendências conhecidas, fora de escopo
 

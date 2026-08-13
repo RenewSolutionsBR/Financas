@@ -57,6 +57,8 @@ Como resolver:
 - **Computador/navegador desktop**: force-reload (`Ctrl+Shift+R` ou `Ctrl+F5`).
 - **Celular / PWA instalado**: feche o app completamente (não só minimizar) e reabra. Se não pegar, limpe cache/dados do site nas configurações do navegador (não confundir com "limpar dados do app" do Android, que apagaria o IndexedDB local).
 
+**ATENÇÃO — a versão no rodapé NÃO é prova de que o código é novo (até v23).** O GitHub Pages manda `Cache-Control: max-age=600`, então por 10 minutos o navegador servia módulos velhos sem perguntar ao servidor, e `version.js` podia vir novo enquanto o resto vinha antigo: o app mostrava a versão nova rodando lógica antiga. Isso causou investigações inteiras em v20, v22 e v23. A partir da **v24** o app se defende sozinho (import map com `?v=APP_VERSION` + `cache: 'reload'` no service worker para HTML/version.js/modulos.js), mas ao dar suporte a um aparelho que ainda não passou pela v24, confirme o código de verdade — por exemplo, pedindo um sintoma que só a versão nova produz — antes de concluir que o fix não funcionou.
+
 Se depois de confirmar a versão nova o problema persistir, aí sim é hora de investigar (Capítulo 2).
 
 ## Pergunta 4: dado sintético vs. dado real
