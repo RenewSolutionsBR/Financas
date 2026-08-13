@@ -22,6 +22,7 @@ const PRECACHE = [
   './src/domain/categories.js', './src/domain/accounts.js',
   './src/domain/payment-methods.js', './src/domain/transactions.js',
   './src/importers/backup-xlsx.js',
+  './src/importers/modelos-planilha.js', './src/importers/lancamentos-xlsx.js',
   './src/ui/components.js', './src/ui/tabs.js', './src/ui/cadastros.js',
   './src/ui/cadastros-contas.js', './src/ui/cadastros-formas.js',
   './src/ui/cadastros-categorias.js',

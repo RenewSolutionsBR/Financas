@@ -1,6 +1,6 @@
 # Conteúdo do Projeto — Livro de Gastos
 
-Histórico do projeto, decisões de design importantes e pendências conhecidas. Atualizado até v20 (2026-08-13).
+Histórico do projeto, decisões de design importantes e pendências conhecidas. Atualizado até v21 (2026-08-13).
 
 ## Origem
 
@@ -320,6 +320,26 @@ Segunda parte da rodada de navegabilidade: as funções que não são de uso di�
 
 **Armadilha de teste encontrada no caminho.** Durante a verificação em navegador, o botão parecia não funcionar: o clique não abria nada e o console não acusava erro nenhum. A causa era o cache HTTP de módulos ES do próprio navegador servindo o `app.js` e o `lancamentos.js` ANTERIORES — o sinal que desmascarou isso foi o rodapé antigo de Lançamentos ainda estar na tela, num código que já não o renderiza. Servir os arquivos com `Cache-Control: no-store` resolveu, e a função sempre esteve correta. Vale lembrar em investigações futuras: limpar `caches` e desregistrar o service worker NÃO basta, porque o cache HTTP de módulos é uma camada separada.
 
+### Modelos de planilha e importação de lançamentos (v20→v21, 2026-08-13)
+
+Terceira e última parte da rodada de navegabilidade. O pedido era "poder importar faturas e extratos em Excel, baixando um modelo, preenchendo fora do app e importando".
+
+**O que já existia.** O adaptador genérico (`generic-table.js`) sempre aceitou `.csv`/`.xls`/`.xlsx` para fatura e extrato — mas exigia que o usuário informasse À MÃO o índice de cada coluna ("coluna 0 = Data, coluna 1 = Descrição..."). Quem monta a planilha do zero não tem por que adivinhar essa ordem. A entrega, então, não foi um pipeline novo: foi tirar a fricção do que já funcionava.
+
+**Os modelos** (`src/importers/modelos-planilha.js`) são três, baixáveis em Ferramentas → Modelos de planilha: fatura (Data, Descrição, Valor, Parcela), extrato (Data, Descrição, Valor, Documento) e lançamentos (Data, Descrição, Valor, Categoria, Forma de pagamento, Natureza). Cada arquivo sai com linhas de exemplo obviamente fictícias (quem esquecer de apagá-las percebe na conferência) e uma segunda aba "Instruções" — o arquivo viaja sozinho até o Excel do usuário, então a explicação de formato precisa viajar junto. Na importação, o botão "Usar ordem do modelo" preenche o mapeamento sozinho.
+
+`COLUNAS_*` e `MAPEAMENTO_MODELO` moram no mesmo arquivo de propósito: se as duas constantes saírem de sincronia, a planilha passa a ser lida com as colunas TROCADAS e sem erro nenhum (descrição viraria valor). `tests/modelos-planilha.test.js` trava esse contrato e ainda faz o teste de ida e volta — gera cada modelo e lê de volta com o adaptador real, sem fixture externa.
+
+**Dois defeitos reais achados no caminho**, ambos no adaptador genérico que já estava em produção, e ambos acionados justamente pelos modelos novos:
+
+1. **A coluna de parcela era descartada.** `parcela_atual`/`parcela_total` eram cravados em `null`, e o campo `tipo` nunca era preenchido. Como `autoConfirmParcelas` e `syncPredictions` filtram por `tipo === 'parcelamento'` (`domain/parcelas.js:44` e `:228`), uma compra parcelada importada de planilha jamais gerava as previsões dos meses seguintes — o dado ia embora em silêncio. Corrigido com `parseParcela` (aceita "3/10" e "3 de 10"; célula vazia é compra à vista, não erro; "7/5" ou "0/5" viram aviso, não parcelamento torto).
+
+2. **Duas faturas de meses diferentes colidiam no mesmo id.** `idDeterministicoDoDocumento` monta `contaId|tipo|vencimento||periodoFim`, e o adaptador genérico não preenchia NENHUM dos dois: toda planilha da mesma conta gerava `contaId|fatura|undefined`. Importar a fatura de junho **substituía a de maio sem aviso** — nem o alerta de "já importado" disparava, porque ele compara justamente por esse id. Corrigido com `periodoDoStatement`: fatura usa o vencimento informado num campo novo da tela de importação (a planilha traz só os lançamentos, e uma fatura pode conter compras de vários meses — deduzir o ciclo das datas seria chute); extrato deriva o período do intervalo real coberto pelas linhas. A tela recusa analisar uma fatura de planilha sem vencimento.
+
+**Importação de lançamentos** (`src/importers/lancamentos-xlsx.js`) é o único caminho que NÃO passa por conciliação: as linhas viram transações direto. Por isso o adaptador não se registra no `registry.js` (que serve à tela de Conciliação) e é chamado pelo menu Ferramentas. Categoria e forma são resolvidas por NOME contra o que já está cadastrado, ignorando acento e caixa — nunca criadas na hora, porque criar cadastro a partir de texto solto encheria o app de quase-duplicatas ("Alimentacao"/"alimentação"/"Alimentaçao") sem o usuário perceber; a linha é recusada com aviso dizendo o que falta cadastrar. Um cabeçalho fora do modelo é ERRO (não aviso) e cancela tudo: colunas trocadas seriam lidas "com sucesso" e gravariam lixo. Como não existe tela de baldes onde revisar depois, a importação sempre mostra um resumo antes de gravar.
+
+A comparação de nomes usa uma função local (`chaveDeNome`), não `normalizeDescricao` de `core/text.js` — aquela preserva acentos de propósito, porque é a base de `computeParcelaKey` e a identidade das parcelas já gravadas depende dela não mudar.
+
 ## Pendências conhecidas, fora de escopo
 
 Registradas aqui com o motivo de terem ficado de fora, para não serem confundidas com esquecimento:
@@ -335,4 +355,4 @@ Registradas aqui com o motivo de terem ficado de fora, para não serem confundid
 
 ## Estado da suíte de testes
 
-A suíte roda em dois alvos a partir dos mesmos arquivos de teste (ver `DOCUMENTACAO_TECNICA.md`): `node tools/run-tests.mjs` para a lógica pura (424 testes em v11), e `tools/tests.html` (aberto via `localhost`) para os testes que dependem de navegador. Cobre, entre outras áreas: identidade e auto-confirmação de parcelas, os três níveis de janela de conciliação de fatura, atribuição de natureza e casamento na conciliação de extrato e de fatura, a regra de registro único do pagamento de fatura nas duas ordens de importação possíveis, a canonicalização e precedência da memória de classificação, os parsers de fatura e extrato Santander contra fixtures anonimizadas, a migração v1→v2, e o ciclo completo de backup (incluindo divisão/remontagem de célula grande).
+A suíte roda em dois alvos a partir dos mesmos arquivos de teste (ver `DOCUMENTACAO_TECNICA.md`): `node tools/run-tests.mjs` para a lógica pura (482 testes em v21), e `tools/tests.html` (aberto via `localhost`) para os testes que dependem de navegador. Cobre, entre outras áreas: identidade e auto-confirmação de parcelas, os três níveis de janela de conciliação de fatura, atribuição de natureza e casamento na conciliação de extrato e de fatura, a regra de registro único do pagamento de fatura nas duas ordens de importação possíveis, a canonicalização e precedência da memória de classificação, os parsers de fatura e extrato Santander contra fixtures anonimizadas, a migração v1→v2, e o ciclo completo de backup (incluindo divisão/remontagem de célula grande).

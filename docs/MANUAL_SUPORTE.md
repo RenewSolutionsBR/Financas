@@ -51,7 +51,7 @@ Decisões de produto conhecidas que costumam ser confundidas com bug:
 
 ## Pergunta 3: "eu corrigi mas continua igual" — antes de tudo, é cache?
 
-**Regra de ouro do suporte**: sempre que o usuário diz que um fix não funcionou, a PRIMEIRA coisa a checar é a versão do app exibida em **Cadastros → Backup** (`v16`, por exemplo), comparando com a versão do commit mais recente publicado. Isso já causou pelo menos 4 falsos alarmes de "bug não corrigido" documentados em `CONTEUDO_PROJETO.md`.
+**Regra de ouro do suporte**: sempre que o usuário diz que um fix não funcionou, a PRIMEIRA coisa a checar é a versão do app exibida no rodapé do menu **Ferramentas** (`v16`, por exemplo), comparando com a versão do commit mais recente publicado. Isso já causou pelo menos 4 falsos alarmes de "bug não corrigido" documentados em `CONTEUDO_PROJETO.md`.
 
 Como resolver:
 - **Computador/navegador desktop**: force-reload (`Ctrl+Shift+R` ou `Ctrl+F5`).
@@ -63,7 +63,7 @@ Se depois de confirmar a versão nova o problema persistir, aí sim é hora de i
 
 Se depois das perguntas acima o problema parece real e a versão está atualizada, o próximo passo é sempre pedir o **dado real** do usuário, não tentar reproduzir "razoavelmente" — a canonicalização de texto, formatos de PDF/planilha e nomes reais têm nuances (espaçamento, acentuação, prefixos de banco) que uma reprodução sintética costuma errar. Formas de obter o dado real sem comprometer privacidade desnecessariamente:
 
-- **Exportar backup completo** (Cadastros → Backup → Backup completo) — traz tudo, incluindo `statements.rows` com o texto bruto de cada linha importada.
+- **Exportar backup completo** (Ferramentas → Backup → Exportar backup) — traz tudo, incluindo `statements.rows` com o texto bruto de cada linha importada.
 - **Exportar "Conciliação completa"** (aba Conciliação) — mais focado, mostra o status de casamento de cada linha.
 - **Exportar log** (aba Lançamentos → Exportar log) — histórico de eventos, útil para entender a sequência de ações que levou ao estado atual.
 
@@ -179,7 +179,7 @@ Cada linha resume um problema real já investigado (ver `CONTEUDO_PROJETO.md` pa
 ### 1. "Corrigi um bug mas o app continua com o problema"
 
 - **Causa quase sempre**: cache do service worker servindo JS antigo, `APP_VERSION` não subiu, ou o usuário não recarregou de verdade.
-- **Ação**: confirmar a versão exibida em Cadastros → Backup contra o último commit publicado, ANTES de reinvestigar lógica. Force-reload (desktop) ou fechar/reabrir + limpar cache do site (celular).
+- **Ação**: confirmar a versão exibida no rodapé do menu Ferramentas contra o último commit publicado, ANTES de reinvestigar lógica. Force-reload (desktop) ou fechar/reabrir + limpar cache do site (celular).
 
 ### 2. "A aba Parcelas mostra o mês errado"
 
@@ -230,11 +230,21 @@ Cada linha resume um problema real já investigado (ver `CONTEUDO_PROJETO.md` pa
 - **Causa histórica**: o rascunho não carregava o `contaId` do próprio cartão da fatura, caindo na conta padrão da última forma usada (que podia ser outro cartão/conta) — o lançamento salvava com `contaId` errado, nunca era achado pelo pool de conciliação daquele cartão, o item continuava aparecendo em "não lançado" e cada clique gerava outro lançamento.
 - **Ação**: já corrigido — o rascunho sempre carrega `contaId` explícito do cartão da fatura. Se reaparecer, checar se `itemFatura`/`montarLinhaFatura` (`conciliacao-fatura.js`) ainda propaga `contaId` corretamente no rascunho.
 
+### 11. Fatura importada de PLANILHA sobrescreveu a do mês anterior
+
+- **Causa**: até v20, o adaptador genérico (`generic-table.js`) não preenchia `vencimento` nem `periodoFim` no statement, e o id do documento (`idDeterministicoDoDocumento`) saía `contaId|fatura|undefined` — TODA planilha da mesma conta colidia no mesmo id. Importar junho substituía maio em silêncio, sem nem disparar o aviso de "já importado" (que compara justamente por esse id).
+- **Ação**: confirmar v21+. Na tela de importação, o campo "Vencimento da fatura" é obrigatório para planilha de fatura (a tela recusa analisar sem ele). Extrato deriva o período das datas das próprias linhas. Se o usuário perdeu uma fatura assim numa versão antiga, o dado do documento anterior não é recuperável — só reimportando o arquivo original.
+
+### 12. Compra parcelada importada de planilha não gera as parcelas futuras
+
+- **Causa**: até v20, `parseLinhasGenerico` cravava `parcela_atual`/`parcela_total` em `null` e nunca definia `tipo`. Como `autoConfirmParcelas` e `syncPredictions` filtram por `tipo === 'parcelamento'`, a informação de parcela era lida e descartada sem aviso.
+- **Ação**: confirmar v21+ e que a coluna "Parcela" foi preenchida no formato `3/10` (ou `3 de 10`). Célula vazia é compra à vista, não erro. Valores impossíveis (`7/5`, `0/5`) geram aviso na tela de análise e a linha entra como à vista. Se o usuário montou a planilha à mão, conferir se indicou o índice da coluna de parcela no mapeamento (ou usou "Usar ordem do modelo").
+
 ## Checklist rápido de investigação técnica
 
 1. Reproduzir com **dado real** do usuário sempre que possível (backup/export), não com dado sintético inventado.
 2. Checar `APP_VERSION` primeiro, antes de qualquer outra coisa.
-3. Rodar `node tools/run-tests.mjs` (424+ testes de lógica pura) para confirmar que a base está íntegra antes de investigar um sintoma específico.
+3. Rodar `node tools/run-tests.mjs` (482+ testes de lógica pura) para confirmar que a base está íntegra antes de investigar um sintoma específico.
 4. Identificar a função de domínio responsável (a maior parte da lógica financeira mora em `domain/`, é pura, testável isoladamente em Node sem abrir navegador).
 5. Testar a função isolada com o dado real, comparando entrada/saída esperada.
 6. Se o sintoma persistir após 2 hipóteses testadas e descartadas, considerar se não é uma decisão de produto disfarçada de bug (voltar ao Capítulo 1, Pergunta 2) antes de insistir numa 3ª hipótese técnica.

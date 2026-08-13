@@ -14,14 +14,18 @@
 // arquivo é só a tela do menu.
 
 import { el, toast, abrirModal } from './components.js';
+import { fmtBRL } from '../core/money.js';
 import { baixarBackup, montarInputImportarBackup } from './backup-comum.js';
 import { APP_VERSION } from '../version.js';
 import * as storage from '../core/storage.js';
 import { registrarEvento, TIPOS_EVENTO, listarEventos } from '../domain/audit-log.js';
-import { listTransactions } from '../domain/transactions.js';
+import { listTransactions, saveTransactions } from '../domain/transactions.js';
 import { listCategorias } from '../domain/categories.js';
 import { listAccounts } from '../domain/accounts.js';
+import { listFormas } from '../domain/payment-methods.js';
 import { buildFullReconciliationRows } from '../domain/reconcile-card.js';
+import { baixarModelo } from '../importers/modelos-planilha.js';
+import { parseLancamentosPlanilha, matrizDoArquivo } from '../importers/lancamentos-xlsx.js';
 
 // --- Ações que já existiam em outras telas, movidas para cá sem alteração ---
 
@@ -124,6 +128,63 @@ async function apagarTudo(aoMudar) {
   await aoMudar();
 }
 
+function baixar(tipo) {
+  try {
+    baixarModelo(tipo);
+    toast('Modelo baixado.', 'ok');
+  } catch (e) {
+    toast('Não consegui gerar o modelo: ' + e.message, 'erro');
+  }
+}
+
+// Importa a planilha de lançamentos direto para a aba Lançamentos (sem
+// conciliação). Mostra SEMPRE um resumo antes de gravar: diferente de
+// fatura/extrato, aqui não há tela de baldes onde revisar depois — uma vez
+// gravado, desfazer seria apagar linha por linha.
+async function importarPlanilhaLancamentos(arquivo, aoConcluir) {
+  const [categorias, formas, contas] = await Promise.all([listCategorias(), listFormas(), listAccounts()]);
+  const matriz = matrizDoArquivo(await arquivo.arrayBuffer(), arquivo.name);
+  const { transacoes, avisos, erros } = parseLancamentosPlanilha(matriz, { categorias, formas, contas });
+
+  if (erros.length) {
+    await abrirModal({
+      titulo: 'Planilha fora do modelo',
+      corpo: el('div', {}, erros.map((e) => el('p', { text: e }))),
+      acoes: [{ id: 'ok', rotulo: 'Fechar' }],
+    });
+    return;
+  }
+  if (!transacoes.length) {
+    await abrirModal({
+      titulo: 'Nada para importar',
+      corpo: el('div', {}, [
+        el('p', { text: 'Nenhuma linha da planilha pôde ser importada.' }),
+        ...avisos.map((a) => el('p', { class: 'ajuda', text: a })),
+      ]),
+      acoes: [{ id: 'ok', rotulo: 'Fechar' }],
+    });
+    return;
+  }
+
+  const total = transacoes.reduce((s, t) => s + (t.natureza === 'despesa' ? t.valor : 0), 0);
+  const escolha = await abrirModal({
+    titulo: 'Confirmar importação',
+    corpo: el('div', {}, [
+      el('p', { text: `${transacoes.length} lançamento(s) prontos para importar (${fmtBRL(total)} em gastos).` }),
+      avisos.length ? el('p', { class: 'aviso-erro', text: `${avisos.length} linha(s) serão puladas:` }) : null,
+      avisos.length ? el('ul', { class: 'lista-preview' }, avisos.map((a) => el('li', { text: a }))) : null,
+      el('p', { class: 'ajuda', text: 'Os lançamentos entram direto na aba Lançamentos, sem passar pela conciliação.' }),
+    ]),
+    acoes: [{ id: 'cancelar', rotulo: 'Cancelar' }, { id: 'importar', rotulo: 'Importar' }],
+  });
+  if (escolha !== 'importar') return;
+
+  await saveTransactions(transacoes);
+  await registrarEvento(TIPOS_EVENTO.LANCAMENTO_CRIADO, `Importou ${transacoes.length} lançamento(s) de planilha`);
+  toast(`${transacoes.length} lançamento(s) importados.`, 'ok');
+  await aoConcluir();
+}
+
 // --- O menu em si ---
 
 function grupo(titulo, ajuda, botoes, perigo) {
@@ -150,6 +211,21 @@ export function abrirFerramentas(aoMudar) {
   };
   const inputImportarBackup = montarInputImportarBackup(recarregar);
 
+  const inputLancamentos = el('input', { type: 'file', accept: '.xlsx,.xls,.csv', class: 'oculto' });
+  inputLancamentos.addEventListener('change', async (ev) => {
+    const arquivo = ev.target.files[0];
+    if (!arquivo) return;
+    try {
+      await importarPlanilhaLancamentos(arquivo, recarregar);
+    } catch (e) {
+      toast('Não consegui ler essa planilha: ' + e.message, 'erro');
+    } finally {
+      // Sempre limpa, inclusive no cancelamento: sem isso, reselecionar o
+      // MESMO arquivo não dispara `change` de novo e a tela fica muda.
+      ev.target.value = '';
+    }
+  });
+
   const corpo = el('div', { class: 'ferramentas' }, [
     grupo('Backup', 'O backup contém todos os seus dados, inclusive faturas e extratos importados. É a única forma de levar seus dados para outro aparelho.', [
       el('button', { class: 'btn', type: 'button', text: 'Exportar backup', onclick: baixarBackup }),
@@ -159,6 +235,13 @@ export function abrirFerramentas(aoMudar) {
     grupo('Exportar para planilha', 'Gera arquivos para conferir fora do app. Não alteram nada nos seus dados.', [
       el('button', { class: 'btn', type: 'button', text: 'Conciliação completa (.xlsx)', onclick: exportarConciliacaoCompleta }),
       el('button', { class: 'btn', type: 'button', text: 'Log de auditoria (.json)', onclick: exportarLog }),
+    ]),
+    grupo('Modelos de planilha', 'Baixe o modelo, preencha fora do app e importe. Fatura e extrato são importados na aba Conciliação; lançamentos entram direto, pelo botão abaixo.', [
+      el('button', { class: 'btn', type: 'button', text: 'Modelo de fatura (.xlsx)', onclick: () => baixar('fatura') }),
+      el('button', { class: 'btn', type: 'button', text: 'Modelo de extrato (.xlsx)', onclick: () => baixar('extrato') }),
+      el('button', { class: 'btn', type: 'button', text: 'Modelo de lançamentos (.xlsx)', onclick: () => baixar('lancamentos') }),
+      el('button', { class: 'btn', type: 'button', text: 'Importar planilha de lançamentos', onclick: () => inputLancamentos.click() }),
+      inputLancamentos,
     ]),
     grupo('Suporte', null, [
       el('button', { class: 'btn', type: 'button', text: 'Diagnóstico', onclick: diagnosticoStatements }),

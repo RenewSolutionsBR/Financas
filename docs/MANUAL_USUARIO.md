@@ -6,7 +6,7 @@ O Livro de Gastos é um app de controle de gastos pessoais que roda inteiramente
 
 ## Primeira execução
 
-Ao abrir o app pela primeira vez, ele oferece um assistente para cadastrar sua primeira conta corrente e seu primeiro cartão. Você também pode pular esse passo e cadastrar depois, na aba Cadastros. Se você já usava uma versão anterior do app, é possível importar um backup dela na seção Backup de Cadastros.
+Ao abrir o app pela primeira vez, ele oferece um assistente para cadastrar sua primeira conta corrente e seu primeiro cartão. Você também pode pular esse passo e cadastrar depois, na aba Cadastros. Se você já usava uma versão anterior do app, é possível importar um backup dela no botão Ferramentas, no alto da tela.
 
 ## Aba Lançamentos
 
@@ -44,7 +44,7 @@ Só lançamentos do tipo Despesa (e que não sejam uma previsão de parcela futu
 
 **Pagamento de fatura:** o débito do pagamento da fatura, visto no extrato da conta, e a linha de crédito correspondente na fatura seguinte do cartão são o mesmo evento financeiro. O app reconhece isso e cria apenas um único lançamento para o pagamento, não importa qual dos dois documentos você importar primeiro.
 
-**Exportar conciliação completa:** o botão gera uma planilha `.xlsx` com o status de conciliação de TODOS os lançamentos e documentos importados, faturas e extratos juntos — cada linha mostra se foi conciliada, se só aparece no documento, ou só no app, com a categoria já resolvida por nome. Útil para conferir tudo de uma vez fora do app.
+**Exportar conciliação completa:** disponível no botão Ferramentas (grupo "Exportar para planilha"), gera uma planilha `.xlsx` com o status de conciliação de TODOS os lançamentos e documentos importados, faturas e extratos juntos — cada linha mostra se foi conciliada, se só aparece no documento, ou só no app, com a categoria já resolvida por nome. Útil para conferir tudo de uma vez fora do app.
 
 ## Aba Parcelas
 
@@ -77,11 +77,28 @@ Reúne tudo que configura o app. Está dividida em seções:
 
 **Regras**: lista as regras aprendidas (ou criadas manualmente) pela memória de classificação. Você pode editar, desativar ou excluir cada uma.
 
-**Backup**: exporta todos os seus dados para um arquivo `.xlsx`, que serve tanto como cópia de segurança quanto como forma de levar seus dados para outro aparelho ou navegador (importando o mesmo arquivo lá). Também é aqui que se importa um backup vindo de uma versão anterior do app. A tela mostra a versão atual do app — se algo parecer não estar funcionando como o esperado logo após uma atualização, feche e reabra o app (ou force a atualização da página) e confira se a versão mudou.
+## Botão Ferramentas
+
+Fica no alto da tela, ao lado do nome do app, e está disponível de qualquer aba. Reúne tudo que não é do uso diário:
+
+**Backup**: exporta todos os seus dados para um arquivo `.xlsx`, que serve tanto como cópia de segurança quanto como forma de levar seus dados para outro aparelho ou navegador (importando o mesmo arquivo lá). Também é aqui que se importa um backup vindo de uma versão anterior do app.
+
+**Exportar para planilha**: gera a conciliação completa em `.xlsx` (todos os documentos de todas as contas) ou o log de auditoria em `.json`. Nenhum dos dois altera seus dados.
+
+**Modelos de planilha**: baixa planilhas prontas para você preencher fora do app — uma para fatura, uma para extrato e uma para lançamentos. Cada arquivo já vem com os títulos das colunas na ordem certa, duas linhas de exemplo (apague antes de importar) e uma aba "Instruções" explicando o formato de cada campo. Depois de preencher:
+
+- **Fatura e extrato**: importe pela aba Conciliação, escolhendo a conta/cartão e o arquivo. Use o botão "Usar ordem do modelo" para o app preencher sozinho de qual coluna vem cada dado. Para fatura, informe também a data de vencimento — é ela que distingue uma fatura da outra.
+- **Lançamentos**: importe pelo próprio botão "Importar planilha de lançamentos", aqui em Ferramentas. Eles entram direto na aba Lançamentos, sem passar pela conciliação. A categoria e a forma de pagamento precisam estar escritas como você as cadastrou no app (acento e maiúscula não importam); se alguma não existir, o app avisa e pula só aquela linha.
+
+**Suporte**: o botão Diagnóstico mostra informações técnicas dos documentos importados, útil se for preciso investigar algum problema.
+
+**Apagar dados**: apaga todas as transações, ou todos os dados do app. As duas ações não têm volta — exporte um backup antes.
+
+No rodapé do menu aparece a versão atual do app. Se algo parecer não estar funcionando como o esperado logo após uma atualização, feche e reabra o app (ou force a atualização da página) e confira se a versão mudou.
 
 ## Dúvidas frequentes
 
-**Meus dados estão seguros se eu limpar os dados do navegador?** Não — os dados ficam só no armazenamento local do navegador. Faça backups periódicos pela seção Backup de Cadastros.
+**Meus dados estão seguros se eu limpar os dados do navegador?** Não — os dados ficam só no armazenamento local do navegador. Faça backups periódicos pelo botão Ferramentas → Backup.
 
 **Por que um lançamento não aparece no total do Dashboard?** Só despesas efetivamente realizadas (não previsões de parcela futura) contam como gasto. Receitas, transferências entre suas contas e pagamentos de fatura aparecem na lista de lançamentos, mas nunca somam como gasto — isso evita contar o mesmo dinheiro duas vezes.
 

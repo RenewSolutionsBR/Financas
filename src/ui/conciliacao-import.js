@@ -16,6 +16,7 @@ import { detectarMelhorAdaptador, adaptadoresParaExtensao } from '../importers/r
 import '../importers/generic-table.js';
 import '../importers/santander-cartao-pdf.js';
 import '../importers/santander-extrato-xls.js';
+import { MAPEAMENTO_MODELO } from '../importers/modelos-planilha.js';
 import { autoConfirmParcelas, syncPredictions } from '../domain/parcelas.js';
 import { atribuirNatureza, confrontarFaturaDebito } from '../domain/reconcile-bank.js';
 import { processarPagamentoFatura } from '../domain/pagamento-fatura.js';
@@ -197,21 +198,53 @@ export async function renderImportacao(painel, contaId, escopoSugerido, aoImport
     const inpDescricao = el('input', { type: 'number', min: '0', value: '1' });
     const inpValor = el('input', { type: 'number', min: '0', value: '2' });
     const inpDocumento = el('input', { type: 'number', min: '0', placeholder: '(opcional)' });
+    const inpParcela = el('input', { type: 'number', min: '0', placeholder: '(opcional)' });
     const chkCabecalho = el('input', { type: 'checkbox', checked: 'checked' });
     const selEscopo = el('select', {}, ['fatura', 'extrato'].map((v) => el('option', { value: v, text: v, ...(v === escopoInicial ? { selected: 'selected' } : {}) })));
+    // Vencimento da fatura: a planilha traz só os lançamentos, e uma fatura
+    // pode conter compras de vários meses — deduzir o ciclo das datas das
+    // linhas seria chute. Sem este campo, o id do documento saía
+    // `contaId|fatura|undefined` e TODA fatura da mesma conta colidia no
+    // mesmo id, substituindo a anterior em silêncio (medido 2026-08-13).
+    const inpVencimento = el('input', { type: 'date' });
+    const campoVencimento = el('label', { class: 'campo' }, [el('span', { text: 'Vencimento da fatura' }), inpVencimento]);
+
+    // Botão de atalho: preenche o mapeamento com a ordem de colunas do
+    // modelo baixado em Ferramentas, para quem usou o modelo não precisar
+    // contar coluna nenhuma. Os campos continuam editáveis depois.
+    const aplicarModelo = () => {
+      const m = MAPEAMENTO_MODELO[selEscopo.value];
+      if (!m) return;
+      inpData.value = String(m.colData);
+      inpDescricao.value = String(m.colDescricao);
+      inpValor.value = String(m.colValor);
+      inpDocumento.value = m.colDocumento == null ? '' : String(m.colDocumento);
+      inpParcela.value = m.colParcela == null ? '' : String(m.colParcela);
+      chkCabecalho.checked = m.temCabecalho;
+      capturar();
+      toast('Colunas preenchidas com a ordem do modelo.', 'ok');
+    };
 
     const capturar = () => {
+      const escopo = selEscopo.value;
+      campoVencimento.classList.toggle('oculto', escopo !== 'fatura');
       estado.mapeamento = {
         colData: Number(inpData.value), colDescricao: Number(inpDescricao.value), colValor: Number(inpValor.value),
         colDocumento: inpDocumento.value === '' ? null : Number(inpDocumento.value),
-        temCabecalho: chkCabecalho.checked, escopo: selEscopo.value,
+        colParcela: inpParcela.value === '' ? null : Number(inpParcela.value),
+        temCabecalho: chkCabecalho.checked, escopo,
+        vencimento: escopo === 'fatura' ? (inpVencimento.value || null) : null,
       };
     };
-    [inpData, inpDescricao, inpValor, inpDocumento, chkCabecalho, selEscopo].forEach((c) => c.addEventListener('change', capturar));
+    [inpData, inpDescricao, inpValor, inpDocumento, inpParcela, chkCabecalho, selEscopo, inpVencimento]
+      .forEach((c) => c.addEventListener('change', capturar));
     capturar();
 
     return el('div', { class: 'mapeamento-manual' }, [
-      el('p', { class: 'ajuda', text: 'Planilha sem adaptador dedicado: informe em qual coluna (0 = primeira) está cada dado.' }),
+      el('p', { class: 'ajuda', text: 'Planilha sem adaptador dedicado: informe em qual coluna (0 = primeira) está cada dado. Se você usou um modelo baixado em Ferramentas, toque em "Usar ordem do modelo".' }),
+      el('div', { class: 'acoes' }, [
+        el('button', { class: 'btn btn-mini', type: 'button', text: 'Usar ordem do modelo', onclick: aplicarModelo }),
+      ]),
       el('div', { class: 'linha-form' }, [
         el('label', { class: 'campo' }, [el('span', { text: 'Coluna Data' }), inpData]),
         el('label', { class: 'campo' }, [el('span', { text: 'Coluna Descrição' }), inpDescricao]),
@@ -221,8 +254,12 @@ export async function renderImportacao(painel, contaId, escopoSugerido, aoImport
         el('label', { class: 'campo' }, [el('span', { text: 'Coluna Documento' }), inpDocumento]),
       ]),
       el('div', { class: 'linha-form' }, [
-        el('label', { class: 'campo-inline' }, [chkCabecalho, el('span', { text: 'Primeira linha é cabeçalho' })]),
+        el('label', { class: 'campo' }, [el('span', { text: 'Coluna Parcela (ex.: 3/10)' }), inpParcela]),
         el('label', { class: 'campo' }, [el('span', { text: 'Escopo' }), selEscopo]),
+      ]),
+      el('div', { class: 'linha-form' }, [
+        el('label', { class: 'campo-inline' }, [chkCabecalho, el('span', { text: 'Primeira linha é cabeçalho' })]),
+        campoVencimento,
       ]),
     ]);
   }
@@ -231,6 +268,14 @@ export async function renderImportacao(painel, contaId, escopoSugerido, aoImport
     if (!adaptadorEscolhido) return;
     if (adaptadorEscolhido.id === 'generic-table' && !estado.mapeamento) {
       toast('Preencha o mapeamento de colunas antes de analisar.', 'erro');
+      return;
+    }
+    // Sem vencimento, o id do documento fica `contaId|fatura|undefined` e a
+    // próxima fatura de planilha desta conta sobrescreveria esta em
+    // silêncio — inclusive sem disparar o aviso de "já importado", que
+    // compara justamente por esse id.
+    if (adaptadorEscolhido.id === 'generic-table' && estado.mapeamento.escopo === 'fatura' && !estado.mapeamento.vencimento) {
+      toast('Informe a data de vencimento da fatura antes de analisar.', 'erro');
       return;
     }
     try {

@@ -1,5 +1,5 @@
 import { describe, it, assert, assertEqual, assertDeepEqual } from './harness.js';
-import { parseLinhasGenerico } from '../src/importers/generic-table.js';
+import { parseLinhasGenerico, parseParcela, periodoDoStatement } from '../src/importers/generic-table.js';
 
 function mapeamentoPadrao() {
   return { colData: 0, colDescricao: 1, colValor: 2, colDocumento: 3, temCabecalho: true, escopo: 'extrato' };
@@ -47,5 +47,89 @@ describe('generic-table: parseLinhasGenerico', () => {
     const r1 = parseLinhasGenerico(linhas, mapeamentoPadrao(), 'acc_1', 'generico.csv');
     const r2 = parseLinhasGenerico(linhas, mapeamentoPadrao(), 'acc_1', 'generico.csv');
     assertDeepEqual(r1.rows.map((r) => r.id), r2.rows.map((r) => r.id));
+  });
+});
+
+// Coluna de parcela: antes de v21 o adaptador cravava parcela_atual/
+// parcela_total em null, entao uma compra parcelada vinda de planilha nunca
+// gerava as previsoes dos meses seguintes — o dado sumia em silencio.
+describe('generic-table: coluna de parcela (modelo de planilha)', () => {
+  it('parseParcela le "3/10" e "3 de 10"', () => {
+    assertDeepEqual(parseParcela('3/10'), { atual: 3, total: 10 });
+    assertDeepEqual(parseParcela('3 de 10'), { atual: 3, total: 10 });
+    assertDeepEqual(parseParcela(' 03/10 '), { atual: 3, total: 10 });
+  });
+
+  it('celula vazia nao e parcelamento nem erro (compra a vista)', () => {
+    assertDeepEqual(parseParcela(''), { atual: null, total: null });
+    assertDeepEqual(parseParcela(null), { atual: null, total: null });
+  });
+
+  it('parcela impossivel ("7/5", "0/5") e tratada como invalida, nao como parcelamento torto', () => {
+    assert(parseParcela('7/5').invalido === true);
+    assert(parseParcela('0/5').invalido === true);
+    assert(parseParcela('abc').invalido === true);
+  });
+
+  it('linha com parcela recebe tipo "parcelamento" — sem isso o commit ignora a parcela', () => {
+    // autoConfirmParcelas e syncPredictions (domain/parcelas.js) filtram por
+    // `tipo === 'parcelamento'`; ler a coluna sem marcar o tipo nao bastaria.
+    const comParcela = [
+      ['Data', 'Descricao', 'Valor', 'Parcela'],
+      ['01/07/2026', 'Geladeira', '-200,00', '3/10'],
+      ['02/07/2026', 'Cafe', '-9,00', ''],
+    ];
+    const mapa = { colData: 0, colDescricao: 1, colValor: 2, colParcela: 3, colDocumento: null, temCabecalho: true, escopo: 'fatura' };
+    const { rows } = parseLinhasGenerico(comParcela, mapa, 'acc_1', 'modelo.xlsx');
+    assertEqual(rows[0].parcela_atual, 3);
+    assertEqual(rows[0].parcela_total, 10);
+    assertEqual(rows[0].tipo, 'parcelamento');
+    assertEqual(rows[1].parcela_atual, null);
+    assertEqual(rows[1].tipo, null, 'compra a vista nao vira parcelamento');
+  });
+
+  it('parcela ilegivel gera aviso e a linha entra como compra a vista', () => {
+    const comLixo = [
+      ['Data', 'Descricao', 'Valor', 'Parcela'],
+      ['01/07/2026', 'Geladeira', '-200,00', 'tres de dez'],
+    ];
+    const mapa = { colData: 0, colDescricao: 1, colValor: 2, colParcela: 3, colDocumento: null, temCabecalho: true, escopo: 'fatura' };
+    const { rows, avisos } = parseLinhasGenerico(comLixo, mapa, 'acc_1', 'modelo.xlsx');
+    assertEqual(rows.length, 1, 'a linha nao e descartada');
+    assertEqual(rows[0].tipo, null);
+    assertEqual(avisos.length, 1);
+    assert(avisos[0].includes('Parcela ilegível'), avisos[0]);
+  });
+});
+
+// Colisao de id: idDeterministicoDoDocumento monta `contaId|tipo|vencimento
+// ||periodoFim`. O adaptador generico nao preenchia nenhum dos dois, entao
+// TODA planilha da mesma conta gerava `contaId|fatura|undefined` — importar
+// junho substituia maio em silencio.
+describe('generic-table: periodo do statement (evita colisao de id)', () => {
+  it('fatura usa o vencimento informado na tela de importacao', () => {
+    const p = periodoDoStatement({ escopo: 'fatura', vencimento: '2026-07-10' }, []);
+    assertEqual(p.vencimento, '2026-07-10');
+  });
+
+  it('extrato deriva o periodo do intervalo real coberto pelas linhas', () => {
+    const rows = [{ data: '2026-06-15' }, { data: '2026-06-01' }, { data: '2026-06-30' }];
+    const p = periodoDoStatement({ escopo: 'extrato' }, rows);
+    assertEqual(p.periodoInicio, '2026-06-01');
+    assertEqual(p.periodoFim, '2026-06-30');
+  });
+
+  it('duas faturas de meses diferentes deixam de colidir no mesmo id', () => {
+    const idDe = (s) => `acc_visa|fatura|${s.vencimento || s.periodoFim}`;
+    const maio = periodoDoStatement({ escopo: 'fatura', vencimento: '2026-05-10' }, []);
+    const junho = periodoDoStatement({ escopo: 'fatura', vencimento: '2026-06-10' }, []);
+    assert(idDe(maio) !== idDe(junho), 'ids precisam diferir, senao junho sobrescreve maio');
+  });
+
+  it('dois extratos de meses diferentes tambem deixam de colidir', () => {
+    const idDe = (s) => `acc_cc|extrato|${s.vencimento || s.periodoFim}`;
+    const maio = periodoDoStatement({ escopo: 'extrato' }, [{ data: '2026-05-01' }, { data: '2026-05-31' }]);
+    const junho = periodoDoStatement({ escopo: 'extrato' }, [{ data: '2026-06-01' }, { data: '2026-06-30' }]);
+    assert(idDe(maio) !== idDe(junho));
   });
 });

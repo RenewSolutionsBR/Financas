@@ -30,6 +30,8 @@ export const TEST_MODULES = [
   './santander-cartao-pdf-extrair.test.js',
   './santander-extrato-xls.test.js',
   './generic-table.test.js',
+  './lancamentos-xlsx.test.js',
+  './modelos-planilha.test.js',
   './conciliacao-import.test.js',
   './conciliacao-extrato-filtros.test.js',
   './conciliacao-fatura-lote.test.js',
