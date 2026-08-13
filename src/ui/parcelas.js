@@ -32,12 +32,24 @@ export async function renderParcelas() {
   todosGrupos.forEach((g) => g.months.forEach((m) => porMes.set(m.ym, (porMes.get(m.ym) || 0) + m.valor)));
   const meses = [...porMes.keys()].sort();
 
+  // Total geral = soma de TODOS os meses previstos, ou seja, quanto ainda
+  // falta pagar somando todos os parcelamentos em aberto. Não é o gasto de
+  // um mês nem entra em nenhum total da aba Lançamentos/Dashboard (que só
+  // contam gasto confirmado — previsto: true nunca conta, ver a regra de
+  // ouro em domain/transactions.js): é projeção de compromisso futuro.
+  const totalGeral = meses.reduce((soma, ym) => soma + porMes.get(ym), 0);
+
   const previsao = el('div', { class: 'secao-parcelas' }, [
     el('h3', { text: 'Previsão de parcelas por mês' }),
     el('div', { class: 'previsao-mensal' }, meses.map((ym) => el('div', { class: 'previsao-mensal-linha' }, [
       el('span', { class: 'previsao-mensal-mes', text: formatMesAno(ym) }),
       el('span', { class: 'previsao-mensal-valor', text: fmtBRL(porMes.get(ym)) }),
     ]))),
+    el('div', { class: 'previsao-mensal-linha previsao-mensal-total' }, [
+      el('span', { class: 'previsao-mensal-mes', text: `Total geral (${meses.length} ${meses.length === 1 ? 'mês' : 'meses'})` }),
+      el('span', { class: 'previsao-mensal-valor', text: fmtBRL(totalGeral) }),
+    ]),
+    el('p', { class: 'ajuda', text: 'Soma de tudo que ainda falta pagar nos parcelamentos em aberto. São valores previstos: não entram nos totais de Lançamentos nem do Dashboard, que só contam gastos já confirmados.' }),
   ]);
 
   const secoes = cartoes

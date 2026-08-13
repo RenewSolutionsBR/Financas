@@ -12,13 +12,25 @@ import { tipoContaParaForma } from './lancamentos-form-helpers.js';
 
 export async function secaoFormas(aoMudar) {
   const todas = await listFormas();
+  // Mesmo layout de "Regras de classificação" (.item-regra): nome em cima,
+  // meta embaixo, os 3 botões numa linha só à direita. A antiga
+  // `.item-cadastro` era flex com wrap, e com 3 botões eles quebravam pra
+  // linha seguinte em tela estreita.
+  //
+  // A `.chip-cor` (bolinha) saiu: `cor` só existe nas 7 formas semeadas e
+  // nunca é renderizada em nenhum outro lugar do app — `novaForma()` sequer
+  // define o campo, então toda forma criada pelo usuário mostrava uma
+  // bolinha vazia. (A bolinha de CATEGORIA continua: aquela cor alimenta a
+  // rosca e a legenda do Dashboard.)
   const lista = el('div', { class: 'lista-cadastro' },
-    todas.map((p) => el('div', { class: 'item-cadastro' }, [
-      el('span', { class: 'chip-cor', style: `background:${p.cor}` }),
-      el('span', { class: 'item-nome', text: `${p.nome} (${p.tipo})${p.ativo === false ? ' — desativada' : ''}` }),
-      el('button', { class: 'btn btn-mini', text: 'Editar', onclick: () => editarForma(p, todas, aoMudar) }),
-      el('button', { class: 'btn btn-mini', text: p.ativo === false ? 'Ativar' : 'Desativar', onclick: () => alternarForma(p, aoMudar) }),
-      el('button', { class: 'btn btn-mini btn-perigo', text: 'Excluir', onclick: () => excluirForma(p, aoMudar) }),
+    todas.map((p) => el('div', { class: `item-regra${p.ativo === false ? ' inativo' : ''}` }, [
+      el('span', { class: 'item-nome', text: p.nome }),
+      el('span', { class: 'item-meta', text: `${p.tipo}${p.ativo === false ? ' · desativada' : ''}` }),
+      el('div', { class: 'item-regra-acoes' }, [
+        el('button', { class: 'btn btn-mini', text: 'Editar', onclick: () => editarForma(p, todas, aoMudar) }),
+        el('button', { class: 'btn btn-mini', text: p.ativo === false ? 'Ativar' : 'Desativar', onclick: () => alternarForma(p, aoMudar) }),
+        el('button', { class: 'btn btn-mini btn-perigo', text: 'Excluir', onclick: () => excluirForma(p, aoMudar) }),
+      ]),
     ]))
   );
   return secao('Formas de pagamento', [

@@ -153,6 +153,12 @@ export async function renderDashboard() {
   painel.append(
     painelFiltros(ctx, transacoes),
     tileTotal(visiveisComMes),
+    // Todo número desta aba passa por sumDespesas/totaisPor*, que aplicam a
+    // regra de ouro (contaComoGasto): só natureza 'despesa' e não previsto.
+    // Sem dizer isso na tela, a diferença entre este total e o da aba
+    // Parcelas (que é projeção) ou o total impresso numa fatura parecia
+    // divergência de cálculo.
+    el('p', { class: 'ajuda', text: 'Estes valores são de gastos já lançados e confirmados. Não incluem parcelas futuras previstas, receitas, transferências nem pagamentos de fatura.' }),
     el('h3', { text: 'Gastos por categoria' }),
     roscaCategoria(visiveisComMes, categorias),
     el('h3', { text: 'Últimos meses' }),

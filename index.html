@@ -3,8 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#f4efe4" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#1c1a17" media="(prefers-color-scheme: dark)">
+  <!-- theme-color unico (sem variante escura): o app abandonou o tema
+       escuro automatico em 2026-08-13 — ver o comentario no topo de
+       styles.css. Com a variante dark aqui, a barra do navegador/PWA
+       continuava preta em aparelho no modo escuro, emoldurando de preto
+       uma tela que agora e sempre clara. -->
+  <meta name="theme-color" content="#f4efe4">
   <title>Livro de Gastos</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon-180.png">

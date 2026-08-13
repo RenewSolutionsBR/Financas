@@ -12,12 +12,19 @@ import { listTransactions } from '../domain/transactions.js';
 
 export async function secaoContas(aoMudar) {
   const todas = await listAccounts();
+  // Mesmo layout de "Regras de classificação" e "Formas de pagamento"
+  // (.item-regra): nome em cima, identificação embaixo, 3 botões numa linha
+  // à direita. `.item-cadastro` era flex com wrap e os 3 botões quebravam
+  // pra linha seguinte em tela estreita.
   const lista = el('div', { class: 'lista-cadastro' },
-    todas.map((a) => el('div', { class: 'item-cadastro' }, [
-      el('span', { class: 'item-nome', text: rotuloConta(a) }),
-      el('button', { class: 'btn btn-mini', text: 'Editar', onclick: () => editarConta(a, todas, aoMudar) }),
-      el('button', { class: 'btn btn-mini', text: a.ativo === false ? 'Ativar' : 'Desativar', onclick: () => alternarConta(a, aoMudar) }),
-      el('button', { class: 'btn btn-mini btn-perigo', text: 'Excluir', onclick: () => excluirConta(a, aoMudar) }),
+    todas.map((a) => el('div', { class: `item-regra${a.ativo === false ? ' inativo' : ''}` }, [
+      el('span', { class: 'item-nome', text: a.nome }),
+      el('span', { class: 'item-meta', text: metaConta(a) }),
+      el('div', { class: 'item-regra-acoes' }, [
+        el('button', { class: 'btn btn-mini', text: 'Editar', onclick: () => editarConta(a, todas, aoMudar) }),
+        el('button', { class: 'btn btn-mini', text: a.ativo === false ? 'Ativar' : 'Desativar', onclick: () => alternarConta(a, aoMudar) }),
+        el('button', { class: 'btn btn-mini btn-perigo', text: 'Excluir', onclick: () => excluirConta(a, aoMudar) }),
+      ]),
     ]))
   );
   if (!todas.length) lista.appendChild(el('p', { class: 'vazio', text: 'Nenhuma conta ou cartão cadastrado ainda.' }));
@@ -31,11 +38,15 @@ export async function secaoContas(aoMudar) {
   ]);
 }
 
-function rotuloConta(a) {
-  const desativada = a.ativo === false ? ' — desativada' : '';
-  if (a.tipo === TIPO_CONTA) return `${a.nome} — ag. ${a.agencia} c/c ${a.numero}${desativada}`;
+// Só a linha de IDENTIFICAÇÃO (agência/conta, ou bandeira/final) — o nome
+// vai separado, na sua própria linha do .item-regra. "desativada" continua
+// aqui como texto, além da opacidade da classe `.inativo`: opacidade
+// sozinha não é pista suficiente pra quem não conhece a convenção.
+function metaConta(a) {
+  const desativada = a.ativo === false ? ' · desativada' : '';
+  if (a.tipo === TIPO_CONTA) return `ag. ${a.agencia} c/c ${a.numero}${desativada}`;
   const marca = isAdicional(a) ? ' (adicional)' : '';
-  return `${a.nome} — ${String(a.bandeira || '').toUpperCase()} final ${a.final}${marca}${desativada}`;
+  return `${String(a.bandeira || '').toUpperCase()} final ${a.final}${marca}${desativada}`;
 }
 
 async function editarConta(acc, todas, aoMudar) {

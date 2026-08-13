@@ -1,6 +1,6 @@
 # Conteúdo do Projeto — Livro de Gastos
 
-Histórico do projeto, decisões de design importantes e pendências conhecidas. Atualizado até v18 (2026-08-13).
+Histórico do projeto, decisões de design importantes e pendências conhecidas. Atualizado até v19 (2026-08-13).
 
 ## Origem
 
@@ -287,6 +287,24 @@ O mesmo pagamento aparece no EXTRATO (débito saindo da conta) e na FATURA segui
 - **DevTools remoto via USB é frágil para depuração ao vivo em Android.** Quando precisar diagnosticar algo que só acontece no aparelho do usuário, preferir adicionar uma tela/botão de diagnóstico temporário no próprio app (visível sem cabo) a insistir em `chrome://inspect`.
 - **Erro engolido em silêncio (catch vazio) esconde a causa raiz.** Toda função que pode falhar de forma não prevista deveria expor o erro (toast + mensagem na tela), nunca falhar mudo.
 - **Decisão de produto pode parecer bug.** Antes de "corrigir" um comportamento estranho, confirmar com o usuário se é intencional — o fix certo pode ser um AVISO na UI, não mudar a regra.
+
+## Fase 7 — Navegabilidade e design (v18→v19, 2026-08-13)
+
+Rodada de melhorias de UI a partir dos testes do autor e do feedback de um segundo usuário. Nenhuma regra de negócio mudou: as 450 asserções da suíte passam sem alteração, porque todas as mudanças são de apresentação. Itens entregues nesta parte (a lista completa do pedido tem 8 itens; os itens 1 e 2 — menu de ferramentas e importação por planilha Excel — ficam para a rodada seguinte):
+
+**Fim do tema escuro automático.** O app seguia `prefers-color-scheme`, então aparecia claro no iPhone e preto no Android — o mesmo app com duas caras. Testado nos dois aparelhos por dois usuários, a paleta clara "livro contábil" (papel/tinta, a identidade do app desde o protótipo) venceu. O bloco `@media (prefers-color-scheme: dark)` foi REMOVIDO de `styles.css`, e com ele a variante escura do `theme-color` em `index.html` (senão a barra do navegador continuava preta emoldurando uma tela clara). `color-scheme: light` no `:root` completa a decisão: sem ele o iOS ainda renderiza os controles nativos (data, select, checkbox) em variante escura, deixando campos pretos dentro de um formulário claro.
+
+**Campo de data espremido contra o de valor no iPhone.** Não era sobreposição de layout, e sim `min-width: auto` — o padrão de todo item flex, que o faz se recusar a encolher abaixo da largura intrínseca do conteúdo. No iOS o `input[type=date]` se mede pelo texto por extenso que ele mesmo renderiza ("12 de ago. de 2026"), bem mais largo que a metade de linha que o flex oferece, então estourava a coluna e encostava no vizinho. Corrigido com `min-width: 0` em `.linha-form .campo` e nos controles dentro dela, mais `-webkit-appearance: none` no `input[type=date]` (o Safari o trata como controle de largura própria e centraliza o texto, ignorando o padding dos outros campos da mesma coluna).
+
+**Checkbox e "+ lançar" colados no balde "Na fatura, não no app".** Eram as colunas 1 e 2 do mesmo grid, encostados: em tela de celular o toque errava de alvo com frequência, e como cada "+ lançar" cria um lançamento, o erro tinha custo real. Agora ficam em pontas opostas da linha (colunas 1 e 3, descrição no meio), o checkbox cresceu para 20px de alvo, e o select de categoria do lote de fatura deixou de esticar por 100% da linha — um alvo enorme colado no botão — passando a `minmax(0, 260px)` alinhado à esquerda.
+
+**Campo "Valor" visível junto com "Compra parcelada".** Marcado o checkbox, `salvar()` desvia para o fluxo parcelado e nem lê `inpValor` — o usuário preenchia um campo que o app ignorava em silêncio. O campo agora é ocultado (`.oculto`) enquanto o checkbox está marcado, já que "Valor" e "Valor total" são mutuamente exclusivos.
+
+**Padronização das listas de cadastro.** "Formas de pagamento" e "Contas & cartões" adotaram o layout de `.item-regra` (nome em cima, meta embaixo, os 3 botões numa linha à direita), que "Regras de classificação" já usava — com 3 botões, o flex-wrap de `.item-cadastro` quebrava o terceiro para a linha seguinte em tela estreita. `.item-cadastro` continua servindo Categorias, que tem só 2 botões. A bolinha de cor saiu de Formas: `cor` só existe nas 7 formas semeadas e não é renderizada em lugar nenhum do app — `novaForma()` sequer define o campo, então toda forma criada pelo usuário exibia uma bolinha vazia. A bolinha de CATEGORIA permanece, porque aquela cor alimenta a rosca e a legenda do Dashboard.
+
+**Total geral na aba Parcelas** — soma de todos os meses previstos, ou seja, quanto ainda falta pagar somando os parcelamentos em aberto, com linha de fecho tipográfica (borda superior forte) e uma nota explicando que é projeção e não entra nos totais de Lançamentos/Dashboard.
+
+**Nota explicativa no Dashboard** — todo número da aba passa por `sumDespesas`/`totaisPor*`, que aplicam a regra de ouro (`contaComoGasto`: só `natureza === 'despesa'` e não previsto). Sem dizer isso na tela, a diferença entre este total, o da aba Parcelas (projeção) e o total impresso numa fatura parecia divergência de cálculo — a mesma confusão de primeira impressão que já tinha acontecido com o rótulo "Total da fatura" em v18.
 
 ## Pendências conhecidas, fora de escopo
 

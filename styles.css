@@ -2,6 +2,7 @@
    Todas as cores vivem em variáveis para que o bloco de tema escuro abaixo
    baste para reverter a paleta inteira. */
 :root {
+  color-scheme: light;
   --papel: #f4efe4;
   --tinta: #2b2622;
   --tinta-fraca: #6b6259;
@@ -18,17 +19,18 @@
   --font-mono: 'SF Mono', 'Cascadia Code', 'Roboto Mono', Consolas, monospace;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --papel: #1c1a17;
-    --tinta: #ebe4d8;
-    --tinta-fraca: #a09688;
-    --latao: #d3a850;
-    --linha: #3a352e;
-    --erro: #f2b8b5;
-    --ok: #7ddb9c;
-  }
-}
+/* O tema escuro automático foi REMOVIDO (2026-08-13), não desativado por
+   engano. O app seguia `prefers-color-scheme`, então o mesmo app aparecia
+   claro no iPhone (sistema em modo claro) e preto no Android (sistema em
+   modo escuro). Testado nos dois aparelhos por dois usuários, a versão
+   clara — a paleta "livro contábil" de papel/tinta abaixo, que é a
+   identidade do app — ficou melhor, e a preta perdia o sentido do nome
+   "Livro de Gastos". A paleta clara agora vale em todo aparelho.
+
+   `color-scheme: light` (no :root) faz parte da decisão: sem ele, o iOS
+   ainda renderiza os CONTROLES nativos (input de data, select, checkbox)
+   em variante escura quando o sistema está em modo escuro, deixando campos
+   pretos dentro de um formulário claro. */
 
 * { box-sizing: border-box; }
 
@@ -133,6 +135,18 @@ input, select, textarea {
   font-size: 0.95rem;
 }
 button { cursor: pointer; }
+
+/* Safari/iOS trata input[type=date] como um controle nativo de largura
+   propria e o centraliza dentro da caixa, ignorando o padding do seletor
+   generico acima — o texto ficava desalinhado dos outros campos da mesma
+   coluna. `-webkit-appearance: none` devolve o controle ao box model
+   normal; `width: 100%` faz ele respeitar a coluna do flex. */
+input[type=date] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  text-align: left;
+}
 
 /* Modal genérico usado por abrirModal/confirmar. */
 .overlay {
@@ -345,7 +359,16 @@ button { cursor: pointer; }
   display: flex;
   gap: 12px;
 }
-.linha-form .campo { flex: 1 1 0; }
+/* `min-width: 0` é o essencial aqui, não decoração: um item flex tem
+   `min-width: auto` por padrão, ou seja, se recusa a encolher abaixo da
+   largura INTRÍNSECA do conteúdo. No iOS, `input[type=date]` se mede pelo
+   texto por extenso que ele mesmo renderiza ("12 de ago. de 2026"), bem
+   mais largo que a metade da linha que o flex oferece — o campo estourava
+   a coluna e encostava no vizinho (Valor), que foi o que apareceu no
+   iPhone. Com min-width: 0 as duas colunas dividem a linha de verdade. */
+.linha-form .campo { flex: 1 1 0; min-width: 0; }
+.linha-form .campo input,
+.linha-form .campo select { min-width: 0; max-width: 100%; }
 
 .campo-inline {
   display: flex;
@@ -546,23 +569,32 @@ button { cursor: pointer; }
    select trunca se precisar). */
 .item-form-lote {
   display: grid;
-  grid-template-columns: auto auto 1fr;
-  column-gap: 10px;
+  grid-template-columns: auto 1fr auto;
+  column-gap: 12px;
   row-gap: 6px;
   align-items: start;
 }
+/* Checkbox e "+ lançar" ficam em PONTAS OPOSTAS da linha (coluna 1 e coluna
+   3), com a descrição entre eles — antes eram colunas 1 e 2, encostados um
+   no outro, e o toque errava de alvo o tempo todo em tela de celular. A
+   área de toque do checkbox também cresce (min 24px + padding do rótulo
+   invisível) pelo mesmo motivo. */
 .item-form-lote > input[type=checkbox] {
   grid-column: 1;
   grid-row: 1;
-  margin-top: 3px;
+  width: 20px;
+  height: 20px;
+  margin: 2px 0 0;
+  flex: 0 0 auto;
 }
-.item-form-lote > .btn-mini {
+.item-form-lote > .item-descricao {
   grid-column: 2;
   grid-row: 1;
 }
-.item-form-lote > .item-descricao {
+.item-form-lote > .btn-mini {
   grid-column: 3;
   grid-row: 1;
+  justify-self: end;
 }
 .item-form-lote > .item-meta {
   grid-column: 1 / -1;
@@ -576,10 +608,14 @@ button { cursor: pointer; }
   column-gap: 10px;
 }
 /* Fatura só tem categoria por linha (natureza/forma não são editáveis aqui,
-   diferente do extrato) — 1 coluna em vez das 3 fixas do lote de extrato,
-   senão o select de categoria sozinho ocupava só 1/3 da largura da linha. */
+   diferente do extrato). Antes esticava o select sozinho por 100% da linha
+   — um alvo enorme colado no "+ lançar", exatamente o que causava toque
+   acidental. Agora o select ocupa a largura que o texto pede (com teto),
+   alinhado à esquerda sob a descrição, e sobra espaço vazio à direita
+   separando-o do botão. */
 .item-form-lote-selects.uma-coluna {
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 240px);
+  justify-content: start;
 }
 .item-form-lote-selects > select {
   min-width: 0;
@@ -613,6 +649,16 @@ button { cursor: pointer; }
   border-bottom: 1px solid var(--linha);
 }
 .previsao-mensal-mes { text-transform: capitalize; color: var(--tinta); }
+/* Linha de fecho da lista: borda de cima mais forte e sem borda embaixo —
+   a convencao tipografica de "total" de uma coluna de numeros. */
+.previsao-mensal-total {
+  border-top: 2px solid var(--tinta);
+  border-bottom: none;
+  margin-top: 4px;
+  padding-top: 10px;
+  font-weight: 700;
+}
+.previsao-mensal-total .previsao-mensal-mes { text-transform: none; }
 .previsao-mensal-valor { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-weight: 600; }
 
 .grupo-parcela {
@@ -794,11 +840,13 @@ button { cursor: pointer; }
   align-self: center;
 }
 
-/* Lista de Regras de classificacao: classe propria (nao item-cadastro,
-   compartilhada com categorias/formas/contas) porque Regras tem 3 botoes
-   de acao contra 2 nas outras telas — precisa de layout proprio pra nao
-   afetar as outras 3. Mesma tecnica ja usada em .item-lancamento: grid
-   com colunas fixas, texto principal ocupando o espaco restante. */
+/* Linha de cadastro com 3 botoes de acao (Editar/Ativar/Excluir), usada por
+   Regras de classificacao, Formas de pagamento e Contas & cartoes — as tres
+   secoes ficam com o MESMO layout, que era o pedido. `.item-cadastro`
+   (flex com wrap) continua servindo Categorias, que tem so 2 botoes: com 3,
+   o terceiro quebrava pra linha seguinte em tela estreita. Mesma tecnica de
+   .item-lancamento: grid com colunas fixas, texto principal ocupando o
+   espaco restante. */
 .item-regra {
   display: grid;
   grid-template-columns: 1fr auto;

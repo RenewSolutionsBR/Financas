@@ -177,6 +177,15 @@ export async function montarFormularioLancamento(ctx, transacoes, editandoId, de
     onRemoverTransacoes: async (ids) => { for (const id of ids) await removeTransaction(id); },
   });
 
+  // "Valor" (despesa única) e "Valor total" (do painel de parcelamento) são
+  // campos MUTUAMENTE exclusivos: com "Compra parcelada" marcado, `salvar()`
+  // desvia pro fluxo parcelado e nem lê `inpValor`. Deixar os dois visíveis
+  // fazia o usuário preencher um valor que o app ignorava em silêncio.
+  const campoValor = campo('Valor', inpValor);
+  chkParcelado.addEventListener('change', () => {
+    campoValor.classList.toggle('oculto', chkParcelado.checked);
+  });
+
   // Guarda de reentrância: sem ela, dois disparos de submit antes do primeiro
   // `await saveTransaction` resolver criam dois registros distintos
   // (novaTransaction gera um id novo a cada chamada). A checagem em si é
@@ -381,7 +390,7 @@ export async function montarFormularioLancamento(ctx, transacoes, editandoId, de
 
   return el('form', { class: 'form-lancamento', onsubmit: (ev) => { ev.preventDefault(); salvar(); } }, [
     indicadorParcela,
-    el('div', { class: 'linha-form' }, [campo('Data', inpData), campo('Valor', inpValor)]),
+    el('div', { class: 'linha-form' }, [campo('Data', inpData), campoValor]),
     campo('Descrição', inpDescricao),
     el('div', { class: 'linha-form' }, [campo('Categoria', selCategoria), campo('Forma de pagamento', selForma)]),
     el('div', { class: 'linha-form' }, [campo('Conta / cartão', selConta), campo('Natureza', selNatureza)]),
