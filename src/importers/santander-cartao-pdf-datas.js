@@ -30,14 +30,31 @@ export function toISOExportado(d) {
 }
 
 const CUTOFF_RE = /realizados?\D*?at[éeè]\s+(\d{2})\/(\d{2})|^at[éeè]\s+(\d{2})\/(\d{2})/i;
+// Frase termina em "até" sem a data grudada (ex.: "...realizados até") —
+// caso de fatura com cartão adicional, medido 2026-08-13: o layout de 2
+// colunas intercala uma linha de OUTRA coluna ("Total a Pagar Vencimento...")
+// entre "até" e a data "03/08.", que a extração de texto por posição X/Y
+// não consegue evitar. Mesmo padrão de dataDoMeioDeLinhaComTresValores
+// abaixo: quando o rótulo não tem a data grudada na mesma linha, ela
+// aparece isolada numa das próximas linhas, não necessariamente adjacente.
+const CUTOFF_FRAGMENTADO_RE = /realizados?\D*?at[éeè]\s*$/i;
+const DATA_ISOLADA_RE = /^(\d{2})\/(\d{2})\.?\s*$/;
 
 export function extractCutoffDateDeLinhas(linhas, vencimentoDate) {
-  for (const linha of (linhas || []).slice(0, 20)) {
-    const m = CUTOFF_RE.exec(linha.trim());
+  const todas = (linhas || []).slice(0, 20);
+  for (let i = 0; i < todas.length; i++) {
+    const linha = todas[i].trim();
+    const m = CUTOFF_RE.exec(linha);
     if (m) {
       const dd = parseInt(m[1] || m[3], 10);
       const mm = parseInt(m[2] || m[4], 10);
       return resolveDate(dd, mm, vencimentoDate);
+    }
+    if (CUTOFF_FRAGMENTADO_RE.test(linha)) {
+      for (let j = i + 1; j < Math.min(i + 4, todas.length); j++) {
+        const dm = DATA_ISOLADA_RE.exec(todas[j].trim());
+        if (dm) return resolveDate(parseInt(dm[1], 10), parseInt(dm[2], 10), vencimentoDate);
+      }
     }
   }
   return null;

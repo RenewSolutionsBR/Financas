@@ -1,6 +1,6 @@
 # Conteúdo do Projeto — Livro de Gastos
 
-Histórico do projeto, decisões de design importantes e pendências conhecidas. Atualizado até v17 (2026-08-13).
+Histórico do projeto, decisões de design importantes e pendências conhecidas. Atualizado até v18 (2026-08-13).
 
 ## Origem
 
@@ -137,6 +137,16 @@ Usuário reportou 3 itens de despesa (SYMPLA, 2x UBERRIDES) que nunca saíam do 
 **Root cause**: nem `lancarEmLoteFatura` (`conciliacao-fatura.js`) nem `lancarSelecionadas`/`lancarUma` (`conciliacao-extrato.js`, mesma vulnerabilidade nunca antes reportada) desabilitavam o botão durante a execução. O modal "Aplicar retroativamente?" (que espera resposta do usuário) deixava a janela de risco especialmente longa: um clique extra no botão, enquanto o modal ainda estava aberto, reentrava na função inteira com o `linhasFormulario`/`selecionadas` do closure antigo — o DOM ainda não tinha sido re-renderizado pelo `aoConcluir`, então os checkboxes continuavam marcados e o botão continuava clicável. Cada duplicata extra nunca casa em `runReconciliation` (só a primeira cópia ocupa o único slot de casamento disponível por valor+data), deixando a linha real da fatura com aparência de "presa" no balde.
 
 **Fix**: os botões (`botaoLote`, e também `botaoLancarUma` no caso individual do extrato) ficam `disabled` por toda a duração da função de gravação, reabilitados só no `finally`. Não corrige dados já duplicados — usuário optou por apagar e reimportar a fatura de teste em vez de limpeza manual.
+
+### Data de corte nunca extraída na mesma fatura — janela de conciliação caindo na estimativa (v17→v18)
+
+Depois de corrigir o checksum e a reentrância (v17), usuário reimportou a fatura, marcou e lançou TODAS as compras em lote — mas as mesmas 3 (SYMPLA, 2x UBERRIDES, todas de 01–02/07) continuavam presas no balde "Na fatura, não no app", sem duplicar desta vez (confirmado no backup: 1 cópia de cada). Também reportou que a mensagem "Total da fatura: R$ 5.077,60" não batia com o valor real da fatura (R$ 3.982,36) — esse segundo ponto não era bug: `statement.totalImpresso` sempre foi só a soma de Despesas+Parcelamentos (o que o checksum confere), nunca o "Saldo Desta Fatura"/"Total a Pagar" do Resumo — a diferença entre os dois é o saldo rotativo herdado do mês anterior. Corrigido só o RÓTULO ("Total das despesas desta fatura", não "Total da fatura") para não sugerir que os dois deveriam bater.
+
+**Root cause do balde preso**: o backup mostrou `dataCorte: null` e `periodoCompras: null` salvos no statement — a fatura foi importada sem NENHUM dos dois, então `getReconciliationWindow` caiu direto no **nível 3 (estimativa de 35 dias antes do vencimento)**, que é *menos* generosa que o período real impresso no PDF (`04/07 a 03/08`) e excluía compras do início de julho da janela de conciliação — mesmo com a folga de `POOL_SLACK_DAYS`.
+
+Rastreado até `extractCutoffDateDeLinhas` (`santander-cartao-pdf-datas.js`): o texto real do PDF (confirmado extraindo com o parser de verdade, fora do navegador) mostra a frase "...pagamentos realizados até" terminando uma linha, com a data "03/08." isolada **duas linhas depois** — uma linha de outra coluna do layout ("Total a Pagar Vencimento Seu limte é") fica intercalada no meio, efeito do mesmo layout de 2 colunas que já tinha causado o bug do checksum nesta mesma fatura (cartão adicional). O regex antigo (`CUTOFF_RE`) exigia rótulo e data na MESMA linha — nunca casava nesse formato, `extractCutoffDateDeLinhas` devolvia `null`, e `extrairPeriodoCompras` (que depende da `dataCorte` já resolvida) também nunca rodava.
+
+**Fix**: mesmo padrão já usado em `vencimentoFromText` para o layout Visa de 3 colunas — quando a linha termina em "realizados... até" sem data grudada, procura nas próximas até 3 linhas por uma linha que seja SÓ uma data `DD/MM` isolada (pulando a linha de ruído no meio). 4 testes novos, incluindo o caso negativo (nenhuma data isolada nas linhas seguintes → `null`, sem inventar data) e a fatura real completa confirmando que `extrairPeriodoCompras` volta a funcionar em cadeia depois do fix. 450/450 testes passando.
 
 ## Lógica detalhada — Conciliação de fatura (datas e períodos)
 

@@ -257,7 +257,14 @@ export async function renderImportacao(painel, contaId, escopoSugerido, aoImport
     areaResultado.append(
       el('div', { class: 'preview-resultado' }, [
         el('p', { text: `${rows.length} linha(s) lidas.` }),
-        statement.totalImpresso != null ? el('p', { text: `Total da fatura: ${fmtBRL(statement.totalImpresso)}` }) : null,
+        // "Total das despesas desta fatura", não "total a pagar": statement.totalImpresso
+        // soma só Despesas+Parcelamentos (o que o checksum confere) — nunca inclui
+        // Saldo Anterior nem os créditos/pagamentos. Pode divergir bastante do "Saldo
+        // Desta Fatura"/"Total a Pagar" impresso no PDF (a diferença é exatamente o
+        // saldo rotativo herdado do mês anterior), e chamar isso de "total da fatura"
+        // sem qualificar já causou confusão real: usuário reportou como se os dois
+        // números devessem bater.
+        statement.totalImpresso != null ? el('p', { text: `Total das despesas desta fatura: ${fmtBRL(statement.totalImpresso)}` }) : null,
         duplicata ? el('p', { class: 'aviso-erro', text: `Este documento (vencimento ${formatDateBR(statement.vencimento) || statement.vencimento || statement.periodoFim}) já foi importado${duplicata.importadoEm ? ' em ' + new Date(duplicata.importadoEm).toLocaleDateString('pt-BR') : ''}. Confirmar agora vai substituir os dados anteriores por este novo arquivo.` }) : null,
         el('p', { class: checksum.ok === false ? 'aviso-erro' : 'aviso-ok', text: checksum.ok === false ? 'Checksum NÃO confere.' : 'Checksum confere.' }),
         linhasChecksum.length ? el('ul', {}, linhasChecksum) : null,

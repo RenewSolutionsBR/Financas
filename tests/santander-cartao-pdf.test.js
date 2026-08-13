@@ -1,5 +1,5 @@
 import { describe, it, assert, assertEqual, assertDeepEqual } from './harness.js';
-import { parseFaturaTexto, resolveDate, extrairPeriodoCompras, vencimentoFromText, totalImpressoDeSections } from '../src/importers/santander-cartao-pdf.js';
+import { parseFaturaTexto, resolveDate, extrairPeriodoCompras, vencimentoFromText, totalImpressoDeSections, extractCutoffDateDeLinhas } from '../src/importers/santander-cartao-pdf.js';
 import { LINHAS_FATURA_SINTETICA } from './fixtures/fatura-texto-sintetica.js';
 
 const VENCIMENTO = new Date(2026, 4, 1); // 01/05/2026
@@ -330,6 +330,72 @@ describe('santander-cartao-pdf: extrairPeriodoCompras', () => {
 
   it('sem dataCorte conhecida, devolve null direto (nao ha o que comparar)', () => {
     assertEqual(extrairPeriodoCompras(['26/02/26 a 25/03/26'], null), null);
+  });
+});
+
+// Reproduz o caso real medido 2026-08-13 (mesma fatura com cartão adicional
+// do teste de checksum acima): o layout de 2 colunas intercala uma linha de
+// OUTRA coluna ("Total a Pagar Vencimento...") entre "realizados até" e a
+// data "03/08." que deveria vir logo depois — sem esse tratamento,
+// extractCutoffDateDeLinhas devolvia null, o que por sua vez fazia
+// extrairPeriodoCompras (que depende da dataCorte) também nunca achar o
+// período impresso. Sem os dois, getReconciliationWindow caía direto na
+// estimativa de 35 dias (nível 3), que é MENOS generosa que o período real
+// impresso e excluía compras do início do período — 3 compras reais da
+// fatura nunca saíam do balde "Na fatura, não no app" mesmo depois de
+// lançadas, porque ficavam fora da janela de conciliação.
+describe('santander-cartao-pdf: extractCutoffDateDeLinhas — frase quebrada por layout de 2 colunas', () => {
+  it('junta "realizados até" (fim de linha, sem data) com a data isolada 2 linhas depois, pulando a linha de ruído no meio', () => {
+    const linhas = [
+      'LUZIA CARMEM DE OLIVEIRA - 4108 XXXX XXXX 9352',
+      'Olá, Luzia! Esta é a fatura do seu cartão SANTANDER SX',
+      'VISA contendo compras e pagamentos realizados até',
+      'Total a Pagar Vencimento Seu limte é',
+      '03/08.',
+    ];
+    const vencimento = new Date(2026, 7, 10); // 10/08/2026
+    const d = extractCutoffDateDeLinhas(linhas, vencimento);
+    assert(d, 'precisa ter extraído uma data, não null');
+    assertEqual(d.getMonth(), 7, 'agosto (0-indexado)');
+    assertEqual(d.getDate(), 3);
+  });
+
+  it('continua funcionando no caso normal (data grudada na mesma linha, sem quebra)', () => {
+    const linhas = ['Esta é a fatura do seu cartão contendo compras e pagamentos realizados até 23/01.'];
+    const vencimento = new Date(2026, 0, 30);
+    const d = extractCutoffDateDeLinhas(linhas, vencimento);
+    assert(d);
+    assertEqual(d.getMonth(), 0);
+    assertEqual(d.getDate(), 23);
+  });
+
+  it('linha "realizados até" sem NENHUMA data isolada nas linhas seguintes devolve null, não quebra', () => {
+    const linhas = [
+      'contendo compras e pagamentos realizados até',
+      'Total a Pagar Vencimento Seu limte é',
+      'R$ 3.982,36 10/08/2026 R$12.238,00',
+    ];
+    const vencimento = new Date(2026, 7, 10);
+    assertEqual(extractCutoffDateDeLinhas(linhas, vencimento), null, 'nenhuma linha seguinte é SÓ uma data DD/MM isolada — não deveria inventar uma data a partir da linha de 3 valores');
+  });
+
+  it('período impresso passa a ser encontrado corretamente uma vez que a dataCorte foi resolvida pelo caso fragmentado', () => {
+    const linhas = [
+      'VISA contendo compras e pagamentos realizados até',
+      'Total a Pagar Vencimento Seu limte é',
+      '03/08.',
+      'Histórico de Faturas Pagamento Período das compras',
+      'JUN.  05/05/26 a 02/06/26',
+      'JUL.  03/06/26 a 03/07/26',
+      'AGO.  04/07/26 a 03/08/26',
+      'SET.  04/08/26 a 02/09/26',
+    ];
+    const vencimento = new Date(2026, 7, 10);
+    const dataCorte = extractCutoffDateDeLinhas(linhas, vencimento);
+    const dataCorteISO = `${dataCorte.getFullYear()}-${String(dataCorte.getMonth() + 1).padStart(2, '0')}-${String(dataCorte.getDate()).padStart(2, '0')}`;
+    assertEqual(dataCorteISO, '2026-08-03');
+    const periodo = extrairPeriodoCompras(linhas, dataCorteISO);
+    assertDeepEqual(periodo, { inicio: '2026-07-04', fim: '2026-08-03' });
   });
 });
 
