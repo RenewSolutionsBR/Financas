@@ -1,6 +1,6 @@
 # Conteúdo do Projeto — Livro de Gastos
 
-Histórico do projeto, decisões de design importantes e pendências conhecidas. Atualizado até v25 (2026-08-13).
+Histórico do projeto, decisões de design importantes e pendências conhecidas. Atualizado até v26 (2026-08-14).
 
 ## Origem
 
@@ -395,6 +395,20 @@ Relatado pelo usuário na primeira tentativa real de importar o modelo de fatura
 **Consequência para quem já baixou:** modelos baixados antes da v25 não têm o marcador e continuam caindo no adaptador errado. O texto do grupo "Modelos de planilha" avisa para baixar de novo.
 
 **Detalhes de implementação.** O marcador empurrou o cabeçalho para a linha 2, então `MAPEAMENTO_MODELO` ganhou `linhasDeCabecalho: 2` (o `temCabecalho` booleano continua servindo ao mapeamento manual, que só sabe pular uma linha) e `parseLancamentosPlanilha` passou a localizar o cabeçalho dinamicamente — inclusive os números de linha dos avisos, que precisam continuar batendo com o que o usuário vê no Excel. `tipoDoMarcador` compara sem caixa e com trim, porque o Excel pode devolver a célula com espaço.
+
+### Botão Cancelar na tela de importação + bug real de previsões apagadas (v25→v26, 2026-08-14)
+
+Duas correções pedidas pelo usuário no mesmo teste: ele importou uma fatura em PDF e depois tentou importar a mesma fatura convertida para `.xls` (comparação manual), viu o aviso de "documento já importado" e reparou que só existia o botão "Confirmar importação" — sem `Cancelar`. Perguntou também se confirmar apagaria os lançamentos já vindos do PDF.
+
+**Botão Cancelar.** Adicionado ao lado de "Confirmar importação" em `renderPreview` (`conciliacao-import.js`). Limpa `estado`, os painéis de preview/resultado e o campo de arquivo — a única saída antes disso era seguir em frente com a substituição.
+
+**A pergunta sobre apagar revelou um bug real.** A resposta inicial (testada só com compra à vista) foi "não apaga nada, só o próprio documento". Testando de novo com uma parcela real (2/6, que confirma automaticamente), o resultado foi diferente: a transação confirmada sobrevive, mas suas previsões futuras são recalculadas — e a causa raiz era mais grave do que "as previsões desta compra somem": **previsões de QUALQUER OUTRA compra parcelada da mesma conta, mesmo sem nenhuma relação com o documento reimportado, eram apagadas também.**
+
+`syncPredictions` (`domain/parcelas.js`) documentava a intenção de "recriar do zero todas as previsões a partir do histórico mais atual" — mas o único chamador real (`commitImportacao`, na importação) sempre passa só as linhas do DOCUMENTO que acabou de ser analisado, nunca o histórico completo da conta. A função filtrava `toRemoveIds` por `t.previsto && !t.origemManual`, sem checar se a previsão pertencia a alguma `parcelaKey` sequer mencionada nas linhas recebidas — apagando indiscriminadamente. Medido: reimportar um documento com uma única compra à vista, substituindo uma fatura que tinha uma compra parcelada 2/6, apagava as 4 previsões futuras dessa parcela, que não tinha nenhuma relação com a nova linha.
+
+Corrigido restringindo `toRemoveIds` às `parcelaKey` presentes em `groups` (i.e., mencionadas em `allFaturaRows` desta chamada). Verificado que os dois fluxos continuam corretos: (1) o cenário quebrado — reimportar substituindo um documento sem repetir a linha de parcela — agora preserva as previsões alheias; (2) o fluxo normal mês a mês (fatura de fevereiro trazendo a parcela 3/6 de uma compra iniciada em janeiro) continua reancorando e regenerando as previsões daquela MESMA compra exatamente como antes.
+
+501/501 testes (eram 500) — um teste antigo que dependia do comportamento de wipe global foi ajustado para incluir `parcelaKey` (o fixture não tinha, o que mascarava a falta do filtro), e um teste novo cobre explicitamente o caso de compra alheia.
 
 ## Pendências conhecidas, fora de escopo
 

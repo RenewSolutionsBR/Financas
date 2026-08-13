@@ -80,22 +80,33 @@ export function computeParcelaGroups(allFaturaRows, { primeiraNoMesmoMes = true 
   return groups;
 }
 
-// Recria do zero todas as previsões (previsto:true) a partir do histórico
-// mais atual, em vez de só acumular por cima das antigas: se a fatura mudou
-// o ritmo de cobrança, a previsão antiga fica errada e precisa SUMIR, não só
-// ganhar uma nova ao lado. Confirmados nunca são tocados. Previsões de
-// parcelamento MANUAL (origemManual:true) ficam de fora da limpeza —
-// computeParcelaGroups só enxerga linha de fatura, então nunca as
+// Recria do zero as previsões (previsto:true) das compras MENCIONADAS em
+// `allFaturaRows`, a partir do histórico mais atual — se a fatura mudou o
+// ritmo de cobrança, a previsão antiga daquela compra fica errada e precisa
+// SUMIR, não só ganhar uma nova ao lado. Confirmados nunca são tocados.
+// Previsões de parcelamento MANUAL (origemManual:true) ficam de fora da
+// limpeza — computeParcelaGroups só enxerga linha de fatura, então nunca as
 // regeneraria de qualquer forma.
+//
+// A limpeza é restrita às parcelaKeys presentes em `allFaturaRows` (bug real,
+// medido 2026-08-14): o único chamador real (commitImportacao, na
+// importação) sempre passa só as linhas do DOCUMENTO que acabou de ser
+// analisado, nunca o histórico completo de parcelamentos da conta — apesar
+// do nome do parâmetro sugerir isso. Sem essa restrição, reimportar um
+// documento que substitui outro (mesmo vencimento, ex.: fatura em PDF depois
+// trocada por uma planilha equivalente) apagava as previsões de QUALQUER
+// outra compra parcelada da mesma conta que não estivesse mencionada no
+// arquivo novo — mesmo compras completamente alheias àquele documento.
 export function syncPredictions(allFaturaRows, existingTransactions, contaId, formaPagamentoId) {
   const groups = computeParcelaGroups(allFaturaRows);
+  const keysMencionadas = new Set(groups.map((g) => g.key));
   const categoriaPorKey = new Map();
   (existingTransactions || []).forEach((t) => {
     if (!t.previsto && t.parcelaKey && t.categoria) categoriaPorKey.set(t.parcelaKey, t.categoria);
   });
 
   const toRemoveIds = (existingTransactions || [])
-    .filter((t) => t.previsto && !t.origemManual)
+    .filter((t) => t.previsto && !t.origemManual && keysMencionadas.has(t.parcelaKey))
     .map((t) => t.id);
 
   const toAdd = [];

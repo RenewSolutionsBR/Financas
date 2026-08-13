@@ -124,10 +124,17 @@ describe('parcelas: computeParcelaGroups + syncPredictions', () => {
     assert([...porMes.values()].some((n) => n > 1), 'o cenario precisa ter pelo menos um mes com previsao de AMBAS as compras, senao o teste nao cobre a colisao');
   });
 
-  it('marca pra remover previsoes ANTIGAS (previsto true, sem origemManual) — wipe-and-regenerate', () => {
-    const antiga = { id: 'seed_velho', previsto: true, origemManual: false };
+  it('marca pra remover previsoes ANTIGAS da MESMA compra (previsto true, sem origemManual) — wipe-and-regenerate', () => {
+    const key = computeParcelaKey('LOJA EXEMPLO', '2026-04-10', 3);
+    const antiga = { id: 'seed_velho', previsto: true, origemManual: false, parcelaKey: key };
     const { toRemoveIds } = syncPredictions([rowParcelamento()], [antiga], CONTA, FORMA);
     assertDeepEqual(toRemoveIds, ['seed_velho']);
+  });
+
+  it('NAO remove previsao de compra alheia — bug real (2026-08-14): reimportar um documento que substitui outro apagava previsoes de OUTRA compra parcelada da mesma conta, so por nao estar mencionada no arquivo novo', () => {
+    const outraCompra = { id: 'seed_outra', previsto: true, origemManual: false, parcelaKey: computeParcelaKey('OUTRA LOJA', '2026-01-01', 6) };
+    const { toRemoveIds } = syncPredictions([rowParcelamento()], [outraCompra], CONTA, FORMA);
+    assertDeepEqual(toRemoveIds, [], 'a previsao de uma compra nao mencionada nas linhas desta importacao tem que sobreviver');
   });
 
   it('previsao de parcelamento MANUAL (origemManual true) NUNCA entra na lista de remocao', () => {

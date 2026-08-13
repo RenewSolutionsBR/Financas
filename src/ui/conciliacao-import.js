@@ -343,6 +343,19 @@ export async function renderImportacao(painel, contaId, escopoSugerido, aoImport
     const botaoConfirmar = el('button', { class: 'btn btn-primario', text: 'Confirmar importação' });
     botaoConfirmar.addEventListener('click', () => confirmarImportacao(statement, rows, checksum));
 
+    // Cancelar existe principalmente para o caso de duplicata: sem ele, a
+    // única saída de uma tela avisando "isso vai substituir o documento
+    // anterior" era seguir em frente e confirmar — não havia como recuar.
+    // Também limpa o input de arquivo, para o usuário poder escolher outro
+    // sem a mensagem antiga (avisos/checksum) continuar na tela.
+    const botaoCancelar = el('button', { class: 'btn', type: 'button', text: 'Cancelar' });
+    botaoCancelar.addEventListener('click', () => {
+      inputArquivo.value = '';
+      estado = null;
+      areaPreview.innerHTML = '';
+      areaResultado.innerHTML = '';
+    });
+
     areaResultado.innerHTML = '';
     areaResultado.append(
       el('div', { class: 'preview-resultado' }, [
@@ -355,11 +368,11 @@ export async function renderImportacao(painel, contaId, escopoSugerido, aoImport
         // sem qualificar já causou confusão real: usuário reportou como se os dois
         // números devessem bater.
         statement.totalImpresso != null ? el('p', { text: `Total das despesas desta fatura: ${fmtBRL(statement.totalImpresso)}` }) : null,
-        duplicata ? el('p', { class: 'aviso-erro', text: `Este documento (vencimento ${formatDateBR(statement.vencimento) || statement.vencimento || statement.periodoFim}) já foi importado${duplicata.importadoEm ? ' em ' + new Date(duplicata.importadoEm).toLocaleDateString('pt-BR') : ''}. Confirmar agora vai substituir os dados anteriores por este novo arquivo.` }) : null,
+        duplicata ? el('p', { class: 'aviso-erro', text: `Este documento (vencimento ${formatDateBR(statement.vencimento) || statement.vencimento || statement.periodoFim}) já foi importado${duplicata.importadoEm ? ' em ' + new Date(duplicata.importadoEm).toLocaleDateString('pt-BR') : ''}. Confirmar agora vai substituir o registro do documento anterior por este novo arquivo. Lançamentos já confirmados a partir do documento anterior NÃO são apagados nem duplicados por esta troca — só compras com parcela marcada (ex.: "3/10") são reconciliadas automaticamente; o resto (à vista) precisa de "+ lançar" como numa importação normal.` }) : null,
         el('p', { class: checksum.ok === false ? 'aviso-erro' : 'aviso-ok', text: checksum.ok === false ? 'Checksum NÃO confere.' : 'Checksum confere.' }),
         linhasChecksum.length ? el('ul', {}, linhasChecksum) : null,
         avisos.length ? el('ul', { class: 'lista-avisos' }, avisos.map((a) => el('li', { text: a }))) : null,
-        el('div', { class: 'acoes' }, [botaoConfirmar]),
+        el('div', { class: 'acoes' }, [botaoCancelar, botaoConfirmar]),
       ])
     );
   }

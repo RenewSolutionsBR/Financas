@@ -266,11 +266,17 @@ Cada linha resume um problema real já investigado (ver `CONTEUDO_PROJETO.md` pa
 - **Causa (até v24)**: os dois adaptadores aceitam `.xlsx` e quem decide é a pontuação de `detectar`. O detector do Santander dá 0.3 para qualquer planilha com "Data" na coluna 0 e "Descri..." na coluna 1 — o cabeçalho dos próprios modelos — contra 0.05 do adaptador genérico.
 - **Ação**: confirmar v25+ **e** que o modelo foi baixado na v25 ou depois. Modelos antigos não têm a linha de marcador (`LIVRO DE GASTOS — MODELO ...` na primeira célula) e continuam caindo no adaptador errado: basta rebaixar o modelo em Ferramentas → Modelos de planilha. Como contorno imediato em arquivo antigo, dá para trocar o adaptador à mão para "Planilha genérica" e preencher o mapeamento de colunas.
 
+### 17. Previsões de parcela sumiram da aba Parcelas depois de reimportar uma fatura
+
+- **Sintoma**: uma compra parcelada que tinha previsões futuras na aba Parcelas perdeu essas previsões (a compra em si, se já confirmada, continua lá — só as previsões futuras somem), sem o usuário ter mexido diretamente naquela compra.
+- **Causa (até v25)**: `syncPredictions` apagava previsões de QUALQUER compra parcelada da mesma conta sempre que uma fatura era (re)importada, mesmo que a fatura nova não tivesse nenhuma linha relacionada àquela compra. Disparava ao reimportar um documento que substitui outro (mesmo vencimento, ex.: PDF trocado por planilha equivalente) quando o arquivo novo não repete a mesma linha de parcelamento.
+- **Ação**: confirmar v26+. Se a perda já aconteceu numa versão anterior, não há como recuperar as previsões automaticamente — o usuário precisa reimportar a fatura correta daquela compra (ou lançar a parcela manualmente) para o app recalcular.
+
 ## Checklist rápido de investigação técnica
 
 1. Reproduzir com **dado real** do usuário sempre que possível (backup/export), não com dado sintético inventado.
 2. Checar `APP_VERSION` primeiro, antes de qualquer outra coisa.
-3. Rodar `node tools/run-tests.mjs` (500+ testes de lógica pura) para confirmar que a base está íntegra antes de investigar um sintoma específico.
+3. Rodar `node tools/run-tests.mjs` (501+ testes de lógica pura) para confirmar que a base está íntegra antes de investigar um sintoma específico.
 4. Identificar a função de domínio responsável (a maior parte da lógica financeira mora em `domain/`, é pura, testável isoladamente em Node sem abrir navegador).
 5. Testar a função isolada com o dado real, comparando entrada/saída esperada.
 6. Se o sintoma persistir após 2 hipóteses testadas e descartadas, considerar se não é uma decisão de produto disfarçada de bug (voltar ao Capítulo 1, Pergunta 2) antes de insistir numa 3ª hipótese técnica.
