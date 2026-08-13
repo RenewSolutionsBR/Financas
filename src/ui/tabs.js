@@ -10,6 +10,14 @@ export function initTabs(onTrocar) {
   });
 }
 
+// Nome da aba visível agora. O menu Ferramentas usa isto para re-renderizar
+// a tela de fundo depois de uma ação que muda dados (importar backup,
+// apagar tudo) — o menu é global, então ele não sabe de qual aba foi aberto.
+export function abaAtiva() {
+  const botao = document.querySelector('.tab-btn.active');
+  return botao ? botao.dataset.tab : null;
+}
+
 export function irParaAba(nome) {
   document.querySelectorAll('.tab-btn').forEach((b) => {
     const ativo = b.dataset.tab === nome;

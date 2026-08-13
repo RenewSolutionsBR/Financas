@@ -76,6 +76,70 @@ body {
   min-height: 1em;
 }
 
+/* Botao "Ferramentas" no cabecalho: discreto de proposito (contorno, nao
+   preenchido) — nao e acao de uso diario, so precisa estar sempre
+   alcancavel. `margin-left: auto` empurra ele e o status para a direita,
+   deixando o titulo sozinho a esquerda. */
+.btn-ferramentas {
+  margin-left: auto;
+  flex: 0 0 auto;
+  padding: 7px 12px;
+  border-radius: 4px;
+  border: 1px solid var(--linha);
+  background: var(--papel);
+  color: var(--tinta-fraca);
+  font-family: var(--font-body);
+  font-size: 0.74rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.btn-ferramentas:hover { color: var(--tinta); border-color: var(--tinta-fraca); }
+
+/* --- Menu Ferramentas (modal) --- */
+
+.ferramentas {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.ferramentas-grupo {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ferramentas-grupo-titulo {
+  margin: 0;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--tinta-fraca);
+}
+.ferramentas-grupo .ajuda { margin: 0; }
+/* Um botao por linha, largura cheia: sao acoes de peso (exportar tudo,
+   apagar tudo) e varias tem rotulo longo — lado a lado, os rotulos
+   truncavam e os alvos ficavam colados, o mesmo problema de toque
+   acidental que motivou o item 3 desta rodada. */
+.ferramentas-botoes {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ferramentas-botoes .btn { flex: 0 0 auto; width: 100%; }
+/* Separa visualmente o bloco destrutivo do resto do menu. Classe explicita
+   em vez de `:has(.btn-perigo)`: `:has` so existe no Safari 15.4+, e o app
+   roda em iPhone — num aparelho mais antigo a regra inteira seria ignorada
+   e o bloco de apagar perderia a separacao, justo onde ela mais importa. */
+.ferramentas-grupo-perigo {
+  border-top: 1px dashed var(--linha);
+  padding-top: 16px;
+}
+.ferramentas-versao {
+  margin: 0;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+}
+
 /* São cinco abas: em telas estreitas elas não cabem lado a lado, então a
    barra rola horizontalmente em vez de espremer o texto. */
 .tabbar {
@@ -813,32 +877,10 @@ input[type=date] {
 }
 .item-lancamento-acoes .btn { flex: 0 0 auto; }
 
-/* Rodapé de Lançamentos: atalhos de backup/importar/apagar tudo direto na
-   aba de uso diário, sem precisar ir até Cadastros. */
-.rodape-lancamentos {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 24px;
-  padding-top: 16px;
-  border-top: 1px dashed var(--linha);
-}
-.links-perigo {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-}
-.link-perigo {
-  background: none;
-  border: none;
-  color: var(--erro);
-  font-size: 0.72rem;
-  text-decoration: underline;
-  cursor: pointer;
-  padding: 6px 0 0;
-  align-self: center;
-}
+/* O rodapé de Lançamentos (.rodape-lancamentos/.links-perigo/.link-perigo)
+   foi removido em v20 junto com os atalhos que ele continha: backup,
+   importar, exportar log e apagar tudo vivem agora no menu "Ferramentas"
+   do cabeçalho (ver .btn-ferramentas e .ferramentas acima). */
 
 /* Linha de cadastro com 3 botoes de acao (Editar/Ativar/Excluir), usada por
    Regras de classificacao, Formas de pagamento e Contas & cartoes — as tres

@@ -17,6 +17,10 @@
 <body>
   <header class="cabecalho">
     <h1>Livro de Gastos</h1>
+    <!-- Ferramentas fica no cabecalho (nao numa aba) porque e acessivel de
+         qualquer tela e nao faz parte do uso diario: backup, exportacoes,
+         diagnostico e as acoes de apagar. Ver src/ui/ferramentas.js. -->
+    <button type="button" id="btnFerramentas" class="btn-ferramentas" aria-haspopup="dialog">Ferramentas</button>
     <div id="statusApp" class="status" role="status" aria-live="polite"></div>
   </header>
 

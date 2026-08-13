@@ -8,7 +8,6 @@ import { listTransactions } from '../domain/transactions.js';
 import { listCategorias } from '../domain/categories.js';
 import { listFormas } from '../domain/payment-methods.js';
 import { listRegras } from '../domain/classification.js';
-import { buildFullReconciliationRows } from '../domain/reconcile-card.js';
 import * as storage from '../core/storage.js';
 import { renderImportacao } from './conciliacao-import.js';
 import { renderBaldesFatura } from './conciliacao-fatura.js';
@@ -17,16 +16,11 @@ import { renderBaldesExtrato, limparFiltrosExtrato } from './conciliacao-extrato
 let contaSelecionadaId = null;
 let documentoSelecionadoId = null;
 
-async function exportarConciliacaoCompleta(faturasList, extratosList, transactions, accounts, apelidosTitular, categorias) {
-  try {
-    const rows = buildFullReconciliationRows(faturasList, extratosList, transactions, accounts, apelidosTitular, categorias);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'Conciliacao');
-    XLSX.writeFile(wb, `conciliacao-completa-${new Date().toISOString().slice(0, 10)}.xlsx`);
-  } catch (e) {
-    toast('Não consegui exportar a conciliação: ' + e.message, 'erro');
-  }
-}
+// "Exportar conciliação completa" saiu daqui em v20 e vive no menu
+// "Ferramentas" do cabeçalho (src/ui/ferramentas.js), junto das outras
+// exportações — ela sempre exportou TODOS os documentos de TODAS as contas,
+// nunca só o documento selecionado nesta tela, então o botão dava a
+// impressão errada de estar preso ao contexto da conta escolhida aqui.
 
 export async function renderConciliacao() {
   const painel = document.getElementById('tabConciliacao');
@@ -34,27 +28,9 @@ export async function renderConciliacao() {
   const documentos = contaSelecionadaId ? await storage.getByIndex('statements', 'by_contaId', contaSelecionadaId) : [];
 
   painel.innerHTML = '';
-  const painelAcoes = contas.length
-    ? el('div', { class: 'acoes' }, [
-        el('button', {
-          class: 'btn', text: 'Exportar conciliação completa',
-          onclick: async () => {
-            const [transactions, todasFaturas, todosExtratos, apelidosTitular, categorias] = await Promise.all([
-              listTransactions(),
-              storage.getAll('statements').then((lista) => lista.filter((s) => s.tipo === 'fatura')),
-              storage.getAll('statements').then((lista) => lista.filter((s) => s.tipo === 'extrato')),
-              storage.getMeta('apelidosTitular', []),
-              listCategorias(),
-            ]);
-            await exportarConciliacaoCompleta(todasFaturas, todosExtratos, transactions, contas, apelidosTitular, categorias);
-          },
-        }),
-      ])
-    : null;
   painel.append(
     montarSeletorContaCartao(contas),
     montarSeletorDocumento(documentos),
-    ...(painelAcoes ? [painelAcoes] : []),
     el('div', { id: 'painelImportacao' }),
     el('div', { id: 'painelBaldes' })
   );

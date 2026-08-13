@@ -1,6 +1,6 @@
 # Conteúdo do Projeto — Livro de Gastos
 
-Histórico do projeto, decisões de design importantes e pendências conhecidas. Atualizado até v19 (2026-08-13).
+Histórico do projeto, decisões de design importantes e pendências conhecidas. Atualizado até v20 (2026-08-13).
 
 ## Origem
 
@@ -306,6 +306,20 @@ Rodada de melhorias de UI a partir dos testes do autor e do feedback de um segun
 
 **Nota explicativa no Dashboard** — todo número da aba passa por `sumDespesas`/`totaisPor*`, que aplicam a regra de ouro (`contaComoGasto`: só `natureza === 'despesa'` e não previsto). Sem dizer isso na tela, a diferença entre este total, o da aba Parcelas (projeção) e o total impresso numa fatura parecia divergência de cálculo — a mesma confusão de primeira impressão que já tinha acontecido com o rótulo "Total da fatura" em v18.
 
+### Menu "Ferramentas" (v19→v20, 2026-08-13)
+
+Segunda parte da rodada de navegabilidade: as funções que não são de uso diário foram agrupadas num menu único no cabeçalho (`src/ui/ferramentas.js`), acessível de qualquer aba.
+
+**O problema.** Conforme o app crescia, essas funções nasceram onde deu, espalhadas por três abas — e duas delas estavam DUPLICADAS com rótulos diferentes para a mesma ação: "Backup completo" (rodapé de Lançamentos) e "Exportar backup" (seção Backup de Cadastros) chamavam a mesma `baixarBackup`. Além do risco de os rótulos divergirem com o tempo, quem procurava backup tinha dois lugares plausíveis para olhar.
+
+**O menu.** Quatro grupos, nesta ordem: Backup (exportar/importar), Exportar para planilha (conciliação completa `.xlsx`, log de auditoria `.json`), Suporte (diagnóstico) e Apagar dados. O bloco destrutivo fica por último, com separador próprio (`.ferramentas-grupo-perigo`) — é o único do menu sem volta, e ficar no fim reduz o toque acidental de quem entrou só para exportar um backup. Um botão por linha, largura cheia: são ações de peso com rótulos longos, e lado a lado os alvos ficariam colados (o mesmo problema de toque que motivou o item 3 desta rodada). A versão do app continua visível no rodapé do menu, onde estava na seção Backup.
+
+**Removido das abas.** O rodapé inteiro de Lançamentos (`rodape`, `exportarLog`, `apagarTransacoes`, `apagarTudo` e as classes `.rodape-lancamentos`/`.links-perigo`/`.link-perigo`), a seção Backup de Cadastros (o arquivo `cadastros-backup.js` foi apagado, e Cadastros voltou a ter só as quatro seções que o nome promete) e o botão "Exportar conciliação completa" da aba Conciliação. Esse último merece nota: ele sempre exportou TODOS os documentos de TODAS as contas, nunca só o documento selecionado na tela, então morar naquela aba dava a impressão errada de estar preso ao contexto da conta escolhida ali.
+
+**Detalhes de implementação que valem registro.** `abaAtiva()` foi adicionada em `ui/tabs.js` porque o menu é global e não sabe de qual aba foi aberto — depois de importar um backup ou apagar tudo, ele re-renderiza a aba que estiver por baixo (senão a tela de fundo continuaria mostrando lançamentos recém-apagados). O separador do bloco destrutivo usa classe explícita em vez de `:has(.btn-perigo)`: `:has` só existe no Safari 15.4+, e num iPhone mais antigo a regra inteira seria ignorada justo onde a separação mais importa. O precache do service worker foi atualizado junto (`ferramentas.js`/`backup-comum.js` entram, `cadastros-backup.js` sai) — `cache.addAll` falha de forma atômica, então uma entrada apontando para arquivo apagado quebraria o precache inteiro.
+
+**Armadilha de teste encontrada no caminho.** Durante a verificação em navegador, o botão parecia não funcionar: o clique não abria nada e o console não acusava erro nenhum. A causa era o cache HTTP de módulos ES do próprio navegador servindo o `app.js` e o `lancamentos.js` ANTERIORES — o sinal que desmascarou isso foi o rodapé antigo de Lançamentos ainda estar na tela, num código que já não o renderiza. Servir os arquivos com `Cache-Control: no-store` resolveu, e a função sempre esteve correta. Vale lembrar em investigações futuras: limpar `caches` e desregistrar o service worker NÃO basta, porque o cache HTTP de módulos é uma camada separada.
+
 ## Pendências conhecidas, fora de escopo
 
 Registradas aqui com o motivo de terem ficado de fora, para não serem confundidas com esquecimento:
@@ -314,7 +328,7 @@ Registradas aqui com o motivo de terem ficado de fora, para não serem confundid
 - **Sincronização entre aparelhos** — decisão de design da spec original: o app é deliberadamente local-only, sem servidor. A única ponte entre instalações é o backup `.xlsx` manual.
 - **Identidade de parcela por texto exato (`parcelaKey`)** — herdada do app anterior; é uma solução heurística (descrição normalizada + data + total de parcelas), não uma chave garantidamente única. Mudar esse mecanismo quebraria a identidade de parcelas já gravadas em produção.
 - **Confirmação da grafia da coluna de parcela em faturas Mastercard** — o parser foi medido apenas contra documentos reais sem compra parcelada em várias vezes na diagramação Mastercard (só a Visa foi confirmada). Não bloqueia uso normal.
-- **Botão "Diagnóstico" temporário em `cadastros-formas.js`/`cadastros-backup.js`** (`diagnosticoStatements`) — adicionado 2026-08-08 para investigar o bug de extrato truncado no celular, marcado `TEMPORARIO` no comentário, ainda não removido.
+- **Botão "Diagnóstico" temporário** (`diagnosticoStatements`) — adicionado 2026-08-08 para investigar o bug de extrato truncado no celular, marcado `TEMPORARIO` no comentário, ainda não removido. Migrou para `src/ui/ferramentas.js` (grupo "Suporte") em v20, quando `cadastros-backup.js` foi apagado.
 - **Desempate de casamento em `buildFullReconciliationRows` (loop de extrato)** não usa similaridade de descrição como `runReconciliationBank` usa — pode escolher um par diferente do que a tela mostraria em caso de ambiguidade. Marcado Minor/opcional na última revisão, não implementado.
 - **`buildFullReconciliationRows` recebe `accounts`/`apelidosTitular` sem usar** dentro do corpo, após remoção de um loop morto — parâmetros mortos, cosmético, sem risco funcional.
 - **Sem teste automatizado de UI para arquivos `cadastros-*.js`** — validação hoje é só manual/visual via Playwright ad-hoc quando investigado.

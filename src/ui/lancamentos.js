@@ -21,12 +21,10 @@ import {
 } from '../domain/transactions.js';
 import { listCategorias } from '../domain/categories.js';
 import { listFormas } from '../domain/payment-methods.js';
-import { registrarEvento, TIPOS_EVENTO, listarEventos } from '../domain/audit-log.js';
+import { registrarEvento, TIPOS_EVENTO } from '../domain/audit-log.js';
 import { listAccounts } from '../domain/accounts.js';
 import { fmtBRL } from '../core/money.js';
 import { formatDateBR, todayISO, monthKey } from '../core/dates.js';
-import * as storage from '../core/storage.js';
-import { baixarBackup, montarInputImportarBackup } from './backup-comum.js';
 
 let viewDate = mesParaViewDate(monthKey(todayISO()));
 let filtros = {};
@@ -90,82 +88,16 @@ export async function renderLancamentos() {
     await montarFormularioLancamento(ctx, transacoes, editandoId, (novoId) => { editandoId = novoId; }, renderLancamentos, rascunho),
     montarBarraFiltros(ctx, filtros, renderLancamentos),
     el('div', { class: 'total-periodo', text: `Total de gastos no período: ${fmtBRL(sumDespesas(visiveis))}` }),
-    listagem(visiveis, ctx),
-    rodape(renderLancamentos)
+    listagem(visiveis, ctx)
   );
 }
 
-// Atalhos de backup/importar/apagar tudo, disponíveis direto na aba de uso
-// diário — sem precisar ir até Cadastros. Reusa a mesma lógica de
-// exportar/importar de backup-comum.js (ver seção "Backup" de Cadastros),
-// pra não duplicar tratamento de erro de leitura de arquivo.
-async function exportarLog() {
-  const eventos = await listarEventos();
-  // dataHora (string legivel) e adicionada so na EXPORTACAO, ao lado do
-  // timestamp numerico ja existente (mantido, util pra reprocessamento
-  // automatizado) — sem essa conversao, abrir o .json exportado mostrava
-  // so o numero epoch, ilegivel sem converter manualmente.
-  const eventosComData = eventos.map((e) => ({ ...e, dataHora: new Date(e.timestamp).toLocaleString('pt-BR') }));
-  const blob = new Blob([JSON.stringify(eventosComData, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const link = el('a', { href: url, download: `log-financas-${new Date().toISOString().slice(0, 10)}.json` });
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
-  toast('Log exportado.', 'ok');
-}
-
-function rodape(aoMudar) {
-  const inputImportar = montarInputImportarBackup(aoMudar);
-  inputImportar.id = 'inputImportarBackupLancamentos';
-  return el('div', { class: 'rodape-lancamentos' }, [
-    el('div', { class: 'acoes' }, [
-      el('button', { class: 'btn', type: 'button', text: 'Backup completo', onclick: baixarBackup }),
-      el('label', { class: 'btn', for: 'inputImportarBackupLancamentos', style: 'text-align:center; cursor:pointer;' }, ['Importar backup']),
-      el('button', { class: 'btn', type: 'button', text: 'Exportar log', onclick: exportarLog }),
-    ]),
-    inputImportar,
-    el('div', { class: 'links-perigo' }, [
-      el('button', {
-        class: 'link-perigo', type: 'button', text: 'Apagar todas as transações',
-        onclick: () => apagarTransacoes(aoMudar),
-      }),
-      el('button', {
-        class: 'link-perigo', type: 'button', text: 'Apagar todos os dados do app',
-        onclick: () => apagarTudo(aoMudar),
-      }),
-    ]),
-  ]);
-}
-
-// window.confirm (não o confirmar() genérico de components.js) porque o
-// aviso precisa do texto específico de "sem volta" e "já fez backup?" — um
-// diálogo de uma linha não é suficiente pra uma ação destrutiva.
-async function apagarTransacoes(aoMudar) {
-  const ok = window.confirm(
-    'Isso apaga TODOS os lançamentos e documentos importados (faturas/extratos) deste ' +
-    'aparelho, sem volta. Contas, formas de pagamento, categorias e regras cadastradas ' +
-    'são preservadas. Já fez backup? Toque OK só se tiver certeza.'
-  );
-  if (!ok) return;
-  await storage.resetTransacoes();
-  await registrarEvento(TIPOS_EVENTO.APAGAR_TRANSACOES, 'Apagou todas as transações e documentos importados');
-  toast('Lançamentos e documentos importados foram apagados.', 'ok');
-  await aoMudar();
-}
-
-async function apagarTudo(aoMudar) {
-  const ok = window.confirm(
-    'Isso apaga TODOS os lançamentos, categorias, contas, formas de pagamento e faturas ' +
-    'importadas deste aparelho, sem volta. Já fez backup? Toque OK só se tiver certeza.'
-  );
-  if (!ok) return;
-  await storage.resetAllData();
-  await registrarEvento(TIPOS_EVENTO.APAGAR_TUDO, 'Apagou todos os dados do app');
-  toast('Todos os dados foram apagados.', 'ok');
-  await aoMudar();
-}
+// O rodapé de atalhos (backup, importar, exportar log, apagar tudo) saiu
+// daqui em v20: essas ações vivem agora no menu "Ferramentas" do cabeçalho
+// (src/ui/ferramentas.js), acessível de qualquer aba. Elas estavam
+// espalhadas por três abas e duas delas eram DUPLICADAS com rótulos
+// diferentes para a mesma função ("Backup completo" aqui e "Exportar
+// backup" em Cadastros chamavam a mesma `baixarBackup`).
 
 function listagem(visiveis, ctx) {
   if (!visiveis.length) return el('p', { class: 'vazio', text: 'Nenhum lançamento neste filtro.' });

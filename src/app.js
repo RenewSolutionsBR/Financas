@@ -1,7 +1,8 @@
 // Boot e roteamento. Nenhuma regra de negócio e nenhuma manipulação de dados
 // mora aqui: este arquivo só decide o que renderizar.
 
-import { initTabs } from './ui/tabs.js';
+import { initTabs, abaAtiva } from './ui/tabs.js';
+import { abrirFerramentas } from './ui/ferramentas.js';
 import { toast } from './ui/components.js';
 import { seedCategoriasIfEmpty } from './domain/categories.js';
 import { seedFormasIfEmpty } from './domain/payment-methods.js';
@@ -37,6 +38,11 @@ async function boot() {
     await seedCategoriasIfEmpty();
     await seedFormasIfEmpty();
     initTabs(renderizar);
+    // O menu re-renderiza a aba que estiver por baixo quando uma ferramenta
+    // muda dados (importar backup, apagar tudo) — senão a tela de fundo
+    // continuaria mostrando lançamentos que acabaram de ser apagados.
+    document.getElementById('btnFerramentas')
+      .addEventListener('click', () => abrirFerramentas(() => renderizar(abaAtiva())));
     await renderizar('Lancamentos');
     // Dispara antes do onboarding de propósito: talvezOferecerOnboarding()
     // pode ficar minutos esperando o usuário preencher conta e cartão no
