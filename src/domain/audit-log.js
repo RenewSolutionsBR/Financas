@@ -17,6 +17,7 @@ export const TIPOS_EVENTO = {
   LANCAR_DA_CONCILIACAO: 'lancar_da_conciliacao',
   CADASTRO_ATUALIZADO: 'cadastro_atualizado',
   APAGAR_TRANSACOES: 'apagar_transacoes',
+  DOCUMENTO_EXCLUIDO: 'documento_excluido',
   APAGAR_TUDO: 'apagar_tudo',
   BACKUP_IMPORTADO: 'backup_importado',
 };

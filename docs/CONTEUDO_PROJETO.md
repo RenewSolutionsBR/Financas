@@ -1,6 +1,6 @@
 # Conteúdo do Projeto — Livro de Gastos
 
-Histórico do projeto, decisões de design importantes e pendências conhecidas. Atualizado até v26 (2026-08-14).
+Histórico do projeto, decisões de design importantes e pendências conhecidas. Atualizado até v27 (2026-08-14).
 
 ## Origem
 
@@ -423,6 +423,16 @@ Duas correções pedidas pelo usuário no mesmo teste: ele importou uma fatura e
 Corrigido restringindo `toRemoveIds` às `parcelaKey` presentes em `groups` (i.e., mencionadas em `allFaturaRows` desta chamada). Verificado que os dois fluxos continuam corretos: (1) o cenário quebrado — reimportar substituindo um documento sem repetir a linha de parcela — agora preserva as previsões alheias; (2) o fluxo normal mês a mês (fatura de fevereiro trazendo a parcela 3/6 de uma compra iniciada em janeiro) continua reancorando e regenerando as previsões daquela MESMA compra exatamente como antes.
 
 501/501 testes (eram 500) — um teste antigo que dependia do comportamento de wipe global foi ajustado para incluir `parcelaKey` (o fixture não tinha, o que mascarava a falta do filtro), e um teste novo cobre explicitamente o caso de compra alheia.
+
+### Excluir documento importado (v26→v27, 2026-08-14)
+
+Pedido do usuário logo depois de entender o caso do vencimento errado (seção acima): não havia como remover um documento específico (statement) sem apagar TODOS os dados do app em Ferramentas. Adicionado botão "Excluir este documento" na aba Conciliação, visível quando um documento está selecionado no seletor.
+
+**O que apaga.** `transacoesDoDocumento` (`domain/remover-documento.js`, pura) separa as transações ligadas ao documento em dois grupos: as comuns (despesa/receita/transferência), que entram na exclusão, e os pagamentos de fatura (`natureza === 'pagamento_fatura'`), que NUNCA são excluídos automaticamente — um pagamento pode ter nascido do lado do EXTRATO primeiro (evento único visto por dois lados, ver "Pagamento de fatura" acima), e apagar cego apagaria um registro com raiz em outro documento. O modal avisa quantos pagamentos ficaram de fora, para revisão manual em Lançamentos.
+
+**Como identifica "pertence a este documento".** Fatura usa `t.contaId === doc.contaId && t.faturaVencimento === doc.vencimento` — não `origemRef`, porque `autoConfirmParcelas` grava `faturaVencimento` em toda parcela confirmada automaticamente (nunca passa por "+lançar", então não teria `origemRef` de qualquer forma) e o "+lançar"/lote manual grava os dois campos. Usar só `origemRef` deixaria de fora as parcelas confirmadas automaticamente. Extrato usa `origemRef.statementId`, que é a única ligação disponível ali. Previsões (`previsto: true`) nunca entram — não têm nenhum dos dois campos e somem sozinhas no próximo recálculo de qualquer fatura da mesma compra.
+
+Verificado com o cenário real do usuário: fatura 30/01 com 73 lançamentos + fatura 26/01 (vencimento errado) com as mesmas 73 duplicadas → excluir o documento de 26/01 deixa exatamente os 73 lançamentos do documento correto, sem tocar em nada mais.
 
 ## Pendências conhecidas, fora de escopo
 

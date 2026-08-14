@@ -32,6 +32,7 @@ export const TEST_MODULES = [
   './generic-table.test.js',
   './lancamentos-xlsx.test.js',
   './modelos-planilha.test.js',
+  './remover-documento.test.js',
   './conciliacao-import.test.js',
   './conciliacao-extrato-filtros.test.js',
   './conciliacao-fatura-lote.test.js',

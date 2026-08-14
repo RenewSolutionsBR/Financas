@@ -2,12 +2,15 @@
 // outros tres modulos (import/fatura/extrato). Nenhuma regra de negocio
 // mora aqui.
 
-import { el, toast } from './components.js';
+import { el, toast, abrirModal } from './components.js';
+import { formatDateBR } from '../core/dates.js';
 import { listAccounts, TIPO_CARTAO, TIPO_CONTA } from '../domain/accounts.js';
-import { listTransactions } from '../domain/transactions.js';
+import { listTransactions, removeTransaction } from '../domain/transactions.js';
 import { listCategorias } from '../domain/categories.js';
 import { listFormas } from '../domain/payment-methods.js';
 import { listRegras } from '../domain/classification.js';
+import { transacoesDoDocumento } from '../domain/remover-documento.js';
+import { registrarEvento, TIPOS_EVENTO } from '../domain/audit-log.js';
 import * as storage from '../core/storage.js';
 import { renderImportacao } from './conciliacao-import.js';
 import { renderBaldesFatura } from './conciliacao-fatura.js';
@@ -22,15 +25,62 @@ let documentoSelecionadoId = null;
 // nunca só o documento selecionado nesta tela, então o botão dava a
 // impressão errada de estar preso ao contexto da conta escolhida aqui.
 
+// Exclui um documento importado (statement) junto dos lançamentos que ele
+// originou. Pedido pelo usuário (2026-08-14) depois de reimportar uma fatura
+// com o vencimento digitado errado: o app tratou como documento NOVO (sem
+// aviso de duplicata, porque idDeterministicoDoDocumento inclui o
+// vencimento na chave), duplicando os lançamentos — e não havia como remover
+// o documento errado sem apagar TUDO em Ferramentas.
+async function excluirDocumento(doc, aoConcluir) {
+  const transactions = await listTransactions();
+  const { paraExcluir, pagamentosParaRevisar } = transacoesDoDocumento(doc, transactions);
+
+  const rotuloDoc = `${doc.tipo === 'fatura' ? 'Fatura' : 'Extrato'} — ${formatDateBR(doc.vencimento) || doc.vencimento || doc.periodoFim || doc.arquivo}`;
+  const escolha = await abrirModal({
+    titulo: 'Excluir documento',
+    corpo: el('div', {}, [
+      el('p', { text: `Isso exclui o documento "${rotuloDoc}" e ${paraExcluir.length} lançamento(s) que vieram dele. Sem volta.` }),
+      pagamentosParaRevisar.length
+        ? el('p', {
+            class: 'ajuda',
+            text: `${pagamentosParaRevisar.length} pagamento(s) de fatura ligado(s) a este documento NÃO serão excluídos automaticamente — um pagamento pode ter nascido do lado do extrato. Revise-os em Lançamentos se precisar.`,
+          })
+        : null,
+      el('p', { class: 'ajuda', text: 'Lançamentos de OUTROS documentos (inclusive de meses diferentes) não são afetados.' }),
+    ]),
+    acoes: [{ id: 'cancelar', rotulo: 'Cancelar' }, { id: 'excluir', rotulo: 'Excluir', classe: 'btn-perigo' }],
+  });
+  if (escolha !== 'excluir') return;
+
+  for (const t of paraExcluir) await removeTransaction(t.id);
+  await storage.remove('statements', doc.id);
+  await registrarEvento(
+    TIPOS_EVENTO.DOCUMENTO_EXCLUIDO,
+    `Excluiu documento "${rotuloDoc}" e ${paraExcluir.length} lançamento(s)`
+  );
+  toast(`Documento e ${paraExcluir.length} lançamento(s) excluídos.`, 'ok');
+  documentoSelecionadoId = null;
+  await aoConcluir();
+}
+
 export async function renderConciliacao() {
   const painel = document.getElementById('tabConciliacao');
   const contas = await listAccounts();
   const documentos = contaSelecionadaId ? await storage.getByIndex('statements', 'by_contaId', contaSelecionadaId) : [];
+  const docSelecionado = documentos.find((d) => d.id === documentoSelecionadoId);
 
   painel.innerHTML = '';
   painel.append(
     montarSeletorContaCartao(contas),
     montarSeletorDocumento(documentos),
+    docSelecionado
+      ? el('div', { class: 'acoes' }, [
+          el('button', {
+            class: 'btn btn-mini btn-perigo', type: 'button', text: 'Excluir este documento',
+            onclick: () => excluirDocumento(docSelecionado, renderConciliacao),
+          }),
+        ])
+      : null,
     el('div', { id: 'painelImportacao' }),
     el('div', { id: 'painelBaldes' })
   );

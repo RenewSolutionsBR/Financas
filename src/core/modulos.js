@@ -29,6 +29,7 @@ export const MODULOS = [
   './src/domain/payment-methods.js',
   './src/domain/reconcile-bank.js',
   './src/domain/reconcile-card.js',
+  './src/domain/remover-documento.js',
   './src/domain/transactions.js',
   './src/importers/backup-xlsx.js',
   './src/importers/generic-table.js',

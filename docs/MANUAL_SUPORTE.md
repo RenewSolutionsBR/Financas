@@ -285,13 +285,20 @@ Pergunta recorrente de usuário testando duas fontes do mesmo documento (ex.: fa
 
 - **Causa mais provável**: o vencimento digitado (ou extraído) na segunda importação está DIFERENTE do vencimento da primeira, mesmo que só por um ou dois dias. `idDeterministicoDoDocumento` usa `contaId|tipo|vencimento` como chave — vencimentos diferentes viram DOIS documentos completamente distintos aos olhos do app, não uma reimportação da mesma fatura. Sem o aviso de "já foi importado" (que compara por esse mesmo id), toda linha vira lançamento novo, sem nenhuma relação com os já confirmados.
 - **Não é bug**: caso real confirmado com o usuário (2026-08-14) — fatura Visa importada em PDF com vencimento 30/01/2026, depois reimportada por planilha com vencimento digitado 26/01/2026 (erro de digitação). Resultado esperado e correto dado o desenho do sistema: duplicação total, porque para o app são duas faturas diferentes.
-- **Ação**: perguntar a data de vencimento usada nas duas importações e comparar dígito a dígito — é comum o erro ser sutil (dia trocado, mês/dia invertido). Não há validação cruzada hoje impedindo isso (o campo de vencimento na importação por planilha é um `<input type="date">` livre). Correção: apagar manualmente os lançamentos duplicados da importação com vencimento errado (aba Lançamentos) e, se necessário, apagar o `statement` incorreto antes de reimportar com a data certa.
+- **Ação**: perguntar a data de vencimento usada nas duas importações e comparar dígito a dígito — é comum o erro ser sutil (dia trocado, mês/dia invertido). Não há validação cruzada hoje impedindo isso (o campo de vencimento na importação por planilha é um `<input type="date">` livre). Correção (v27+): usar o botão "Excluir este documento" na aba Conciliação, com o documento de vencimento errado selecionado — apaga o documento E os lançamentos que vieram dele numa ação só (ver item 20 abaixo). Em versão anterior a v27, era preciso apagar os lançamentos um a um em Lançamentos; o documento órfão ficava no seletor sem jeito de remover.
+
+### 20. Como excluir um documento importado específico (sem apagar tudo)
+
+- **Onde**: aba Conciliação → selecione a conta/cartão e o documento → botão "Excluir este documento" aparece abaixo do seletor.
+- **O que apaga**: o documento (statement) e os lançamentos comuns que vieram dele (identificados por `faturaVencimento`+`contaId` na fatura, `origemRef.statementId` no extrato — nunca por parcelaKey ou texto, então não corre risco de pegar lançamento de outra compra parecida).
+- **O que NÃO apaga automaticamente**: pagamentos de fatura (`natureza: pagamento_fatura`) ligados ao documento — o modal avisa quantos existem e pede revisão manual, porque um pagamento pode ter nascido do lado do extrato. Previsões de parcela também não são tocadas (somem sozinhas no próximo recálculo).
+- **Não existe** (até esta versão): exclusão em lote de vários documentos de uma vez, ou desfazer depois de confirmado.
 
 ## Checklist rápido de investigação técnica
 
 1. Reproduzir com **dado real** do usuário sempre que possível (backup/export), não com dado sintético inventado.
 2. Checar `APP_VERSION` primeiro, antes de qualquer outra coisa.
-3. Rodar `node tools/run-tests.mjs` (501+ testes de lógica pura) para confirmar que a base está íntegra antes de investigar um sintoma específico.
+3. Rodar `node tools/run-tests.mjs` (511+ testes de lógica pura) para confirmar que a base está íntegra antes de investigar um sintoma específico.
 4. Identificar a função de domínio responsável (a maior parte da lógica financeira mora em `domain/`, é pura, testável isoladamente em Node sem abrir navegador).
 5. Testar a função isolada com o dado real, comparando entrada/saída esperada.
 6. Se o sintoma persistir após 2 hipóteses testadas e descartadas, considerar se não é uma decisão de produto disfarçada de bug (voltar ao Capítulo 1, Pergunta 2) antes de insistir numa 3ª hipótese técnica.
