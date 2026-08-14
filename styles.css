@@ -471,6 +471,50 @@ input[type=date] {
 }
 .filtros .campo { flex: 1 1 140px; }
 
+.combo-multi { position: relative; }
+.combo-multi summary {
+  background: var(--papel);
+  border: 1px solid var(--linha);
+  border-radius: 4px;
+  padding: 9px 10px;
+  font-size: 0.95rem;
+  color: var(--tinta);
+  cursor: pointer;
+  list-style: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.combo-multi summary::-webkit-details-marker { display: none; }
+.combo-multi[open] summary { border-radius: 4px 4px 0 0; }
+.combo-multi-lista {
+  position: absolute;
+  z-index: 5;
+  top: 100%;
+  left: 0;
+  min-width: 100%;
+  max-height: 220px;
+  overflow-y: auto;
+  background: var(--papel);
+  border: 1px solid var(--linha);
+  border-top: none;
+  border-radius: 0 0 4px 4px;
+  padding: 4px 0;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.12);
+}
+.combo-multi-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  font-size: 0.88rem;
+  color: var(--tinta);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.combo-multi-item:hover { background: var(--linha); }
+.combo-multi-item input { margin: 0; }
+
 .lista-lancamentos {
   display: flex;
   flex-direction: column;

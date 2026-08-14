@@ -130,7 +130,39 @@ function painelFiltros(ctx, transacoes) {
     campo('Mês', inpMes),
     campo('Forma', selForma),
     campo('Conta/cartão', selConta),
+    campo('Categoria', seletorCategorias(ctx.categorias)),
   ]);
+}
+
+// `<select multiple>` nativo é ruim em touch (exige Ctrl/Cmd+clique ou
+// gestos não óbvios no celular) — por isso um dropdown de checkboxes sobre
+// <details>/<summary>, que abre/fecha sem JS de posicionamento e funciona
+// igual em mouse e touch.
+function seletorCategorias(categorias) {
+  const selecionadas = filtros.categorias || [];
+  const rotulo = !selecionadas.length
+    ? 'Todas as categorias'
+    : selecionadas.length === 1
+      ? (categorias.find((c) => c.id === selecionadas[0]) || {}).nome || selecionadas[0]
+      : `${selecionadas.length} categorias`;
+
+  const detalhes = el('details', { class: 'combo-multi' }, [
+    el('summary', { text: rotulo }),
+    el('div', { class: 'combo-multi-lista' }, categorias.map((c) => {
+      const chk = el('input', {
+        type: 'checkbox', value: c.id,
+        ...(selecionadas.includes(c.id) ? { checked: 'checked' } : {}),
+      });
+      chk.addEventListener('change', async () => {
+        const atuais = new Set(filtros.categorias || []);
+        chk.checked ? atuais.add(c.id) : atuais.delete(c.id);
+        filtros.categorias = [...atuais];
+        await renderDashboard();
+      });
+      return el('label', { class: 'combo-multi-item' }, [chk, el('span', { text: c.nome })]);
+    })),
+  ]);
+  return detalhes;
 }
 
 export async function renderDashboard() {
@@ -144,8 +176,8 @@ export async function renderDashboard() {
   // mesmos filtros de forma/conta/ano mas ignoram o filtro de mês — senão a
   // série colapsaria numa barra só (mesma razão de totaisPorMes não filtrar
   // mês internamente).
-  const filtrosComMes = { ano: filtros.ano, mes: filtros.mes, formas: filtros.formas, contas: filtros.contas };
-  const filtrosSemMes = { ano: filtros.ano, formas: filtros.formas, contas: filtros.contas };
+  const filtrosComMes = { ano: filtros.ano, mes: filtros.mes, formas: filtros.formas, contas: filtros.contas, categorias: filtros.categorias };
+  const filtrosSemMes = { ano: filtros.ano, formas: filtros.formas, contas: filtros.contas, categorias: filtros.categorias };
   const visiveisComMes = filterTransactions(transacoes, filtrosComMes);
   const visiveisSemMes = filterTransactions(transacoes, filtrosSemMes);
 

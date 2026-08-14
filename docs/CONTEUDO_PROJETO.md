@@ -1,6 +1,6 @@
 # Conteúdo do Projeto — Livro de Gastos
 
-Histórico do projeto, decisões de design importantes e pendências conhecidas. Atualizado até v27 (2026-08-14).
+Histórico do projeto, decisões de design importantes e pendências conhecidas. Atualizado até v28 (2026-08-14).
 
 ## Origem
 
@@ -433,6 +433,12 @@ Pedido do usuário logo depois de entender o caso do vencimento errado (seção 
 **Como identifica "pertence a este documento".** Fatura usa `t.contaId === doc.contaId && t.faturaVencimento === doc.vencimento` — não `origemRef`, porque `autoConfirmParcelas` grava `faturaVencimento` em toda parcela confirmada automaticamente (nunca passa por "+lançar", então não teria `origemRef` de qualquer forma) e o "+lançar"/lote manual grava os dois campos. Usar só `origemRef` deixaria de fora as parcelas confirmadas automaticamente. Extrato usa `origemRef.statementId`, que é a única ligação disponível ali. Previsões (`previsto: true`) nunca entram — não têm nenhum dos dois campos e somem sozinhas no próximo recálculo de qualquer fatura da mesma compra.
 
 Verificado com o cenário real do usuário: fatura 30/01 com 73 lançamentos + fatura 26/01 (vencimento errado) com as mesmas 73 duplicadas → excluir o documento de 26/01 deixa exatamente os 73 lançamentos do documento correto, sem tocar em nada mais.
+
+### Filtro múltiplo de categoria no Dashboard (v27→v28, 2026-08-14)
+
+Pedido do usuário: o filtro de categoria da aba Dashboard só aceitava uma categoria por vez (mesmo padrão de Forma/Conta). Trocado por um combo de múltipla escolha (`seletorCategorias` em `ui/dashboard.js`) usando `<details>/<summary>` com checkboxes — não `<select multiple>` nativo, que exige Ctrl/Cmd+clique e é ruim em touch. O rótulo do `<summary>` mostra "Todas as categorias", o nome único quando só uma está marcada, ou "N categorias" quando há mais de uma.
+
+Nenhuma mudança em `domain/transactions.js`: `filterTransactions` já aceitava `filtros.categorias` como array (mesmo padrão de `formas`/`contas`), só não havia UI que gravasse mais de um valor ali. `filtros.categorias` agora é passado tanto para `filtrosComMes` (tile + rosca) quanto `filtrosSemMes` (barras mensais), igual aos outros filtros da tela.
 
 ## Pendências conhecidas, fora de escopo
 
