@@ -1,6 +1,6 @@
 # Conteúdo do Projeto — Livro de Gastos
 
-Histórico do projeto, decisões de design importantes e pendências conhecidas. Atualizado até v29 (2026-08-14).
+Histórico do projeto, decisões de design importantes e pendências conhecidas. Atualizado até v30 (2026-08-14).
 
 ## Origem
 
@@ -434,7 +434,7 @@ Pedido do usuário logo depois de entender o caso do vencimento errado (seção 
 
 Verificado com o cenário real do usuário: fatura 30/01 com 73 lançamentos + fatura 26/01 (vencimento errado) com as mesmas 73 duplicadas → excluir o documento de 26/01 deixa exatamente os 73 lançamentos do documento correto, sem tocar em nada mais.
 
-### Filtro múltiplo de categoria no Dashboard (v27→v28→v29, 2026-08-14)
+### Filtro múltiplo de categoria no Dashboard (v27→v28→v29→v30, 2026-08-14)
 
 Pedido do usuário: o filtro de categoria da aba Dashboard só aceitava uma categoria por vez (mesmo padrão de Forma/Conta). Trocado por um combo de múltipla escolha (`seletorCategorias` em `ui/dashboard.js`) usando `<details>/<summary>` com checkboxes — não `<select multiple>` nativo, que exige Ctrl/Cmd+clique e é ruim em touch. O rótulo do `<summary>` mostra "Todas as categorias", o nome único quando só uma está marcada, ou "N categorias" quando há mais de uma.
 
@@ -447,6 +447,8 @@ Dois problemas reportados pelo usuário ao testar o combo da entrada anterior. (
 (2) Mais sério: marcar uma categoria fechava o dropdown, obrigando reabrir e marcar uma de cada vez — para desmarcar várias, o mesmo problema ao contrário. Causa raiz: o `change` de cada checkbox chamava `renderDashboard()` inteiro, que recriava o `<details>` do zero a cada clique (perdendo o estado `open` do navegador). Corrigido separando `renderDashboard` em duas partes: `painelFiltros` é montado UMA vez por entrada na aba, e só o painel de resultados (`renderResultados`, extraído como função própria) é re-renderizado a cada mudança de filtro de categoria — o `<details>` nunca é destruído, então continua aberto. `seletorCategorias` agora recebe um callback `aoMudar` em vez de chamar `renderDashboard` diretamente, e atualiza o texto do `<summary>` e o estado dos checkboxes diretamente via DOM.
 
 Também adicionado botão "Limpar seleção" dentro do dropdown (zera `filtros.categorias` de uma vez, sem precisar desmarcar categoria por categoria) — pedido pelo usuário como alternativa a desmarcar uma de cada vez.
+
+**v30 — terceiro bug no mesmo combo.** O usuário reportou que o alinhamento continuava errado mesmo depois do fix de `text-align`/`display` no `<summary>` (v29) — só que o problema real estava DENTRO da lista aberta, não no campo fechado: a regra genérica `input, select, textarea { width: 100% }` (`styles.css`, base do formulário) também alcançava os `<input type=checkbox>` do dropdown, esticando cada checkbox por quase toda a largura da linha e empurrando o texto do rótulo pro canto direito — lido como "alinhado à direita" porque visualmente era exatamente isso. Corrigido com `.combo-multi-item input { width: auto; flex: 0 0 auto; }`, mesmo padrão já usado em `.item-form-lote > input[type=checkbox]` para o mesmo tipo de estouro em outro lugar do app.
 
 ## Pendências conhecidas, fora de escopo
 

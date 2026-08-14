@@ -488,6 +488,7 @@ input[type=date] {
   text-overflow: ellipsis;
 }
 .combo-multi summary::-webkit-details-marker { display: none; }
+.combo-multi summary::marker { content: ''; }
 .combo-multi[open] summary { border-radius: 4px 4px 0 0; }
 .combo-multi-lista {
   position: absolute;
@@ -515,7 +516,10 @@ input[type=date] {
   cursor: pointer;
 }
 .combo-multi-item:hover { background: var(--linha); }
-.combo-multi-item input { margin: 0; }
+/* A regra genérica `input { width: 100% }` (linha ~194) estica o
+   checkbox e empurra o rótulo pro fim da linha, dando impressão de
+   texto alinhado à direita — visto em produção, 2026-08-14. */
+.combo-multi-item input { width: auto; flex: 0 0 auto; margin: 0; }
 .combo-multi-limpar {
   display: block;
   width: calc(100% - 20px);
