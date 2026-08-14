@@ -1,6 +1,6 @@
 # Conteúdo do Projeto — Livro de Gastos
 
-Histórico do projeto, decisões de design importantes e pendências conhecidas. Atualizado até v28 (2026-08-14).
+Histórico do projeto, decisões de design importantes e pendências conhecidas. Atualizado até v29 (2026-08-14).
 
 ## Origem
 
@@ -434,11 +434,19 @@ Pedido do usuário logo depois de entender o caso do vencimento errado (seção 
 
 Verificado com o cenário real do usuário: fatura 30/01 com 73 lançamentos + fatura 26/01 (vencimento errado) com as mesmas 73 duplicadas → excluir o documento de 26/01 deixa exatamente os 73 lançamentos do documento correto, sem tocar em nada mais.
 
-### Filtro múltiplo de categoria no Dashboard (v27→v28, 2026-08-14)
+### Filtro múltiplo de categoria no Dashboard (v27→v28→v29, 2026-08-14)
 
 Pedido do usuário: o filtro de categoria da aba Dashboard só aceitava uma categoria por vez (mesmo padrão de Forma/Conta). Trocado por um combo de múltipla escolha (`seletorCategorias` em `ui/dashboard.js`) usando `<details>/<summary>` com checkboxes — não `<select multiple>` nativo, que exige Ctrl/Cmd+clique e é ruim em touch. O rótulo do `<summary>` mostra "Todas as categorias", o nome único quando só uma está marcada, ou "N categorias" quando há mais de uma.
 
 Nenhuma mudança em `domain/transactions.js`: `filterTransactions` já aceitava `filtros.categorias` como array (mesmo padrão de `formas`/`contas`), só não havia UI que gravasse mais de um valor ali. `filtros.categorias` agora é passado tanto para `filtrosComMes` (tile + rosca) quanto `filtrosSemMes` (barras mensais), igual aos outros filtros da tela.
+
+### Combo múltiplo de categoria: alinhamento e dropdown fechando a cada marcação (v28→v29, 2026-08-14)
+
+Dois problemas reportados pelo usuário ao testar o combo da entrada anterior. (1) O texto do `<summary>` não estava alinhado à esquerda como os outros campos — corrigido com `text-align: left` + `display: block` em `.combo-multi summary` (`styles.css`), necessário porque `<summary>` tem comportamento de caixa próprio no navegador que ignora `text-align` sem isso.
+
+(2) Mais sério: marcar uma categoria fechava o dropdown, obrigando reabrir e marcar uma de cada vez — para desmarcar várias, o mesmo problema ao contrário. Causa raiz: o `change` de cada checkbox chamava `renderDashboard()` inteiro, que recriava o `<details>` do zero a cada clique (perdendo o estado `open` do navegador). Corrigido separando `renderDashboard` em duas partes: `painelFiltros` é montado UMA vez por entrada na aba, e só o painel de resultados (`renderResultados`, extraído como função própria) é re-renderizado a cada mudança de filtro de categoria — o `<details>` nunca é destruído, então continua aberto. `seletorCategorias` agora recebe um callback `aoMudar` em vez de chamar `renderDashboard` diretamente, e atualiza o texto do `<summary>` e o estado dos checkboxes diretamente via DOM.
+
+Também adicionado botão "Limpar seleção" dentro do dropdown (zera `filtros.categorias` de uma vez, sem precisar desmarcar categoria por categoria) — pedido pelo usuário como alternativa a desmarcar uma de cada vez.
 
 ## Pendências conhecidas, fora de escopo
 

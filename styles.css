@@ -473,12 +473,14 @@ input[type=date] {
 
 .combo-multi { position: relative; }
 .combo-multi summary {
+  display: block;
   background: var(--papel);
   border: 1px solid var(--linha);
   border-radius: 4px;
   padding: 9px 10px;
   font-size: 0.95rem;
   color: var(--tinta);
+  text-align: left;
   cursor: pointer;
   list-style: none;
   white-space: nowrap;
@@ -514,6 +516,15 @@ input[type=date] {
 }
 .combo-multi-item:hover { background: var(--linha); }
 .combo-multi-item input { margin: 0; }
+.combo-multi-limpar {
+  display: block;
+  width: calc(100% - 20px);
+  margin: 0 10px 4px;
+  padding: 6px 8px;
+  font-size: 0.82rem;
+  border-bottom: 1px dashed var(--linha);
+  border-radius: 0;
+}
 
 .lista-lancamentos {
   display: flex;

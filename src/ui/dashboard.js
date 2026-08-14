@@ -89,7 +89,7 @@ function barrasMensais(visiveisSemFiltroDeMes) {
   }));
 }
 
-function painelFiltros(ctx, transacoes) {
+function painelFiltros(ctx, transacoes, aoMudarCategorias) {
   const anos = [...new Set(transacoes.map((t) => String(t.data || '').slice(0, 4)).filter(Boolean))].sort();
   // `??` (não `||`): filtros.ano pode ser '' de propósito (usuário escolheu
   // "Todos os anos"), e isso é diferente de nunca ter sido definido.
@@ -130,7 +130,7 @@ function painelFiltros(ctx, transacoes) {
     campo('Mês', inpMes),
     campo('Forma', selForma),
     campo('Conta/cartão', selConta),
-    campo('Categoria', seletorCategorias(ctx.categorias)),
+    campo('Categoria', seletorCategorias(ctx.categorias, aoMudarCategorias)),
   ]);
 }
 
@@ -138,40 +138,52 @@ function painelFiltros(ctx, transacoes) {
 // gestos não óbvios no celular) — por isso um dropdown de checkboxes sobre
 // <details>/<summary>, que abre/fecha sem JS de posicionamento e funciona
 // igual em mouse e touch.
-function seletorCategorias(categorias) {
-  const selecionadas = filtros.categorias || [];
-  const rotulo = !selecionadas.length
+//
+// Cada clique NÃO passa por renderDashboard(): isso recriaria o <details> do
+// zero e o navegador fecharia o dropdown a cada marcação, obrigando o
+// usuário a reabrir uma categoria de cada vez para marcar várias (bug
+// reportado 2026-08-14). Em vez disso o próprio <details> se atualiza no
+// lugar (rótulo do <summary>, texto do botão "Limpar") e só o resultado
+// (tile/rosca/barras) é recalculado via `aoMudar`.
+function seletorCategorias(categorias, aoMudar) {
+  const rotuloDe = (selecionadas) => !selecionadas.length
     ? 'Todas as categorias'
     : selecionadas.length === 1
       ? (categorias.find((c) => c.id === selecionadas[0]) || {}).nome || selecionadas[0]
       : `${selecionadas.length} categorias`;
 
-  const detalhes = el('details', { class: 'combo-multi' }, [
-    el('summary', { text: rotulo }),
-    el('div', { class: 'combo-multi-lista' }, categorias.map((c) => {
-      const chk = el('input', {
-        type: 'checkbox', value: c.id,
-        ...(selecionadas.includes(c.id) ? { checked: 'checked' } : {}),
-      });
-      chk.addEventListener('change', async () => {
-        const atuais = new Set(filtros.categorias || []);
-        chk.checked ? atuais.add(c.id) : atuais.delete(c.id);
-        filtros.categorias = [...atuais];
-        await renderDashboard();
-      });
-      return el('label', { class: 'combo-multi-item' }, [chk, el('span', { text: c.nome })]);
-    })),
+  const resumo = el('summary', { text: rotuloDe(filtros.categorias || []) });
+  const btnLimpar = el('button', {
+    class: 'btn btn-mini combo-multi-limpar', type: 'button', text: 'Limpar seleção',
+  });
+  const caixas = categorias.map((c) => {
+    const chk = el('input', {
+      type: 'checkbox', value: c.id,
+      ...((filtros.categorias || []).includes(c.id) ? { checked: 'checked' } : {}),
+    });
+    chk.addEventListener('change', () => {
+      const atuais = new Set(filtros.categorias || []);
+      chk.checked ? atuais.add(c.id) : atuais.delete(c.id);
+      filtros.categorias = [...atuais];
+      resumo.textContent = rotuloDe(filtros.categorias);
+      aoMudar();
+    });
+    return { id: c.id, chk, item: el('label', { class: 'combo-multi-item' }, [chk, el('span', { text: c.nome })]) };
+  });
+  btnLimpar.addEventListener('click', () => {
+    filtros.categorias = [];
+    for (const { chk } of caixas) chk.checked = false;
+    resumo.textContent = rotuloDe(filtros.categorias);
+    aoMudar();
+  });
+
+  return el('details', { class: 'combo-multi' }, [
+    resumo,
+    el('div', { class: 'combo-multi-lista' }, [btnLimpar, ...caixas.map((c) => c.item)]),
   ]);
-  return detalhes;
 }
 
-export async function renderDashboard() {
-  const painel = document.getElementById('tabDashboard');
-  const [transacoes, categorias, formas, contas] = await Promise.all([
-    listTransactions(), listCategorias(), listFormas(), listAccounts(),
-  ]);
-  const ctx = { categorias, formas, contas };
-
+function renderResultados(painelResultados, transacoes, categorias) {
   // Tile e rosca respeitam TODOS os filtros, inclusive mês. As barras usam os
   // mesmos filtros de forma/conta/ano mas ignoram o filtro de mês — senão a
   // série colapsaria numa barra só (mesma razão de totaisPorMes não filtrar
@@ -181,9 +193,8 @@ export async function renderDashboard() {
   const visiveisComMes = filterTransactions(transacoes, filtrosComMes);
   const visiveisSemMes = filterTransactions(transacoes, filtrosSemMes);
 
-  painel.innerHTML = '';
-  painel.append(
-    painelFiltros(ctx, transacoes),
+  painelResultados.innerHTML = '';
+  painelResultados.append(
     tileTotal(visiveisComMes),
     // Todo número desta aba passa por sumDespesas/totaisPor*, que aplicam a
     // regra de ouro (contaComoGasto): só natureza 'despesa' e não previsto.
@@ -196,4 +207,22 @@ export async function renderDashboard() {
     el('h3', { text: 'Últimos meses' }),
     barrasMensais(visiveisSemMes)
   );
+}
+
+export async function renderDashboard() {
+  const painel = document.getElementById('tabDashboard');
+  const [transacoes, categorias, formas, contas] = await Promise.all([
+    listTransactions(), listCategorias(), listFormas(), listAccounts(),
+  ]);
+  const ctx = { categorias, formas, contas };
+
+  const painelResultados = el('div', { class: 'dash-resultados' });
+  // O filtro de categoria atualiza só `painelResultados` (ver seletorCategorias
+  // acima) para não recriar o <details> a cada marcação, o que fechava o
+  // dropdown e obrigava reabrir uma categoria por vez.
+  const atualizarResultados = () => renderResultados(painelResultados, transacoes, categorias);
+
+  painel.innerHTML = '';
+  painel.append(painelFiltros(ctx, transacoes, atualizarResultados), painelResultados);
+  atualizarResultados();
 }
