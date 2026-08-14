@@ -281,6 +281,12 @@ Pergunta recorrente de usuário testando duas fontes do mesmo documento (ex.: fa
 - **Compra com valor diferente**: o lançamento antigo mantém o valor velho. A conciliação passa a mostrar a MESMA compra em dois lugares (linha nova em "Na fatura, não no app", lançamento antigo em "No app, não na fatura") — o casamento é por texto+data+valor, então um valor diferente quebra o casamento e os dois lados aparecem como itens distintos.
 - **Ação de suporte**: se o usuário relatar sumiço/duplicação depois de reimportar, primeiro checar se há duas versões do mesmo documento importadas (vencimento igual, arquivos diferentes) antes de suspeitar de outra causa — é o comportamento esperado, não um bug, e a correção é manual (editar o lançamento antigo em Lançamentos).
 
+### 19. Reimportei "a mesma fatura" e TODOS os lançamentos duplicaram
+
+- **Causa mais provável**: o vencimento digitado (ou extraído) na segunda importação está DIFERENTE do vencimento da primeira, mesmo que só por um ou dois dias. `idDeterministicoDoDocumento` usa `contaId|tipo|vencimento` como chave — vencimentos diferentes viram DOIS documentos completamente distintos aos olhos do app, não uma reimportação da mesma fatura. Sem o aviso de "já foi importado" (que compara por esse mesmo id), toda linha vira lançamento novo, sem nenhuma relação com os já confirmados.
+- **Não é bug**: caso real confirmado com o usuário (2026-08-14) — fatura Visa importada em PDF com vencimento 30/01/2026, depois reimportada por planilha com vencimento digitado 26/01/2026 (erro de digitação). Resultado esperado e correto dado o desenho do sistema: duplicação total, porque para o app são duas faturas diferentes.
+- **Ação**: perguntar a data de vencimento usada nas duas importações e comparar dígito a dígito — é comum o erro ser sutil (dia trocado, mês/dia invertido). Não há validação cruzada hoje impedindo isso (o campo de vencimento na importação por planilha é um `<input type="date">` livre). Correção: apagar manualmente os lançamentos duplicados da importação com vencimento errado (aba Lançamentos) e, se necessário, apagar o `statement` incorreto antes de reimportar com a data certa.
+
 ## Checklist rápido de investigação técnica
 
 1. Reproduzir com **dado real** do usuário sempre que possível (backup/export), não com dado sintético inventado.

@@ -226,6 +226,8 @@ O mesmo pagamento aparece no EXTRATO (débito saindo da conta) e na FATURA segui
   - **Previsões de parcela futura SÃO recalculadas** a cada importação (`syncPredictions`), mas só das compras cuja `parcelaKey` está mencionada nas linhas do arquivo importado — nunca de compras alheias (bug corrigido em v25→v26, ver changelog).
 - **Em resumo**: trocar o documento-fonte de uma fatura pode criar DIVERGÊNCIAS VISÍVEIS nos baldes de conciliação (itens duplicados nos dois lados, por exemplo), mas nunca apaga dado silenciosamente. O caminho de correção sempre passa pela tela — nunca é automático.
 
+**Contraste — vencimento DIFERENTE não é "reimportar", é um documento novo.** Caso real relatado pelo usuário (2026-08-14): importou a fatura Visa em PDF com vencimento 30/01/2026, depois importou os mesmos lançamentos numa planilha com o vencimento digitado errado (26/01/2026). Resultado: TODOS os lançamentos duplicaram. Não é bug — é a consequência direta e correta de `idDeterministicoDoDocumento` incluir o vencimento na chave: `acc|fatura|2026-01-30` e `acc|fatura|2026-01-26` são dois ids diferentes, então o app nunca reconhece a segunda importação como a mesma fatura — não aparece o aviso de "já foi importado", o `statement` novo é salvo do zero ao lado do antigo, e todas as linhas viram lançamentos novos e paralelos aos já confirmados. O vencimento é o único dado que define a identidade de uma fatura no app; digitá-lo errado na tela de importação por planilha tem esse efeito, sem nenhum aviso preventivo hoje (o campo é um `<input type="date">` livre, sem validação cruzada contra faturas já existentes da mesma conta).
+
 ## Fluxo entre abas e origens de dado
 
 ```
