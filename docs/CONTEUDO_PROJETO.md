@@ -426,6 +426,7 @@ Corrigido restringindo `toRemoveIds` às `parcelaKey` presentes em `groups` (i.e
 
 Registradas aqui com o motivo de terem ficado de fora, para não serem confundidas com esquecimento:
 
+- **Campo `diaVencimento` do cadastro de cartão não tem consumidor** — previsto na spec original (2026-07-29) como "dia nominal de vencimento da fatura", mas nenhuma lógica do app lê `acc.diaVencimento` hoje; o único uso é reexibir o valor salvo no próprio formulário de edição (`cadastros-contas.js`). O vencimento que a conciliação e as previsões de parcela realmente usam vem de cada fatura individualmente (extraído do PDF ou digitado na tela de importação de planilha), nunca deste campo. Achado 2026-08-14 respondendo pergunta do usuário; decisão dele foi manter como está — é só um dado informativo sem efeito funcional, não um bug.
 - **Gráfico de gastos quebrado por forma de pagamento no Dashboard** — cogitado e descartado na Fase 3 por YAGNI. O agregador de dados (`totaisPorForma`) já existe em `domain/transactions.js` desde a Fase 1; falta só a visualização.
 - **Sincronização entre aparelhos** — decisão de design da spec original: o app é deliberadamente local-only, sem servidor. A única ponte entre instalações é o backup `.xlsx` manual.
 - **Identidade de parcela por texto exato (`parcelaKey`)** — herdada do app anterior; é uma solução heurística (descrição normalizada + data + total de parcelas), não uma chave garantidamente única. Mudar esse mecanismo quebraria a identidade de parcelas já gravadas em produção.
