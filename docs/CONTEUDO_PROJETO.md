@@ -1,6 +1,6 @@
 # Conteúdo do Projeto — Livro de Gastos
 
-Histórico do projeto, decisões de design importantes e pendências conhecidas. Atualizado até v30 (2026-08-14).
+Histórico do projeto, decisões de design importantes e pendências conhecidas. Atualizado até v31 (2026-08-15).
 
 ## Origem
 
@@ -449,6 +449,16 @@ Dois problemas reportados pelo usuário ao testar o combo da entrada anterior. (
 Também adicionado botão "Limpar seleção" dentro do dropdown (zera `filtros.categorias` de uma vez, sem precisar desmarcar categoria por categoria) — pedido pelo usuário como alternativa a desmarcar uma de cada vez.
 
 **v30 — terceiro bug no mesmo combo.** O usuário reportou que o alinhamento continuava errado mesmo depois do fix de `text-align`/`display` no `<summary>` (v29) — só que o problema real estava DENTRO da lista aberta, não no campo fechado: a regra genérica `input, select, textarea { width: 100% }` (`styles.css`, base do formulário) também alcançava os `<input type=checkbox>` do dropdown, esticando cada checkbox por quase toda a largura da linha e empurrando o texto do rótulo pro canto direito — lido como "alinhado à direita" porque visualmente era exatamente isso. Corrigido com `.combo-multi-item input { width: auto; flex: 0 0 auto; }`, mesmo padrão já usado em `.item-form-lote > input[type=checkbox]` para o mesmo tipo de estouro em outro lugar do app.
+
+### CSV de outro banco (planilha genérica): valor e data trocados por adivinhação de locale do SheetJS (v30→v31, 2026-08-15)
+
+Usuário testou a importação de extrato genérico com um CSV de um banco sem adaptador dedicado e relatou dois sintomas no mesmo arquivo: um valor `-16.000,00` foi lançado como R$ 16,00, um valor `-222,17` foi lançado como R$ 22.217,00, e algumas datas vieram com dia e mês invertidos (`02/07/2026` virou `07/02/2026`).
+
+**Investigação.** `parseMoneyBR` (`core/money.js`) e `dataParaISO` (`importers/generic-table.js`) já lidam corretamente com texto no formato BR — testados isoladamente com os dois valores exatos do relato, ambos parseiam certo. A suspeita seguinte (célula numérica nativa do Excel gravada numa escala diferente) também não bateu: o usuário confirmou que uma célula era numérica com 2 decimais e separador de milhar `.`, a outra tinha formato "Geral" — inconsistente demais para ser a causa de um padrão único. A causa raiz só apareceu analisando o arquivo real (CSV, não XLSX): `lerMatriz` lia CSV com `XLSX.read(texto, { type: 'string', cellDates: true })` e depois `sheet_to_json(..., { raw: true })`. Num CSV não existe tipo de célula — é tudo texto — então o SheetJS PRECISA adivinhar se cada célula é número ou data antes de aplicar `raw`/`cellDates`, e essa adivinhação usa convenção AMERICANA (ponto decimal): `"-16.000,00"` virava o número `-16` (só `.000` era lido como parte decimal, o resto descartado) e `"02/07/2026"` virava um serial de data com dia/mês trocados.
+
+**Fix.** Em `lerMatriz`, CSV passa a ler com `XLSX.read(texto, { type: 'string', raw: true })` (sem `cellDates`) — isso faz o parser de CSV do SheetJS preservar o texto EXATO de cada célula, sem tentar convertê-la para número/data. `.xlsx`/`.xls` reais continuam com `cellDates: true`, porque ali a célula já é nativamente tipada pelo próprio Excel, sem ambiguidade de locale — só CSV (texto puro) sofria a adivinhação errada.
+
+Teste de regressão em `tests/generic-table-csv-locale.test.js`, com fixture sintética (`tests/fixtures/extrato-csv-locale-br.js`, dados fictícios no mesmo formato do CSV real — nunca o arquivo do usuário, que não entra no repositório público) reproduzindo exatamente o padrão do bug: cabeçalho de conta antes da tabela, separador `;`, datas `dd/mm/aaaa`, valores BR com milhar e decimal. Verificado também rodando o arquivo real do usuário localmente (fora do repo): as 42 linhas do extrato caíram todas em julho de 2026 (nenhuma data invertida), soma de valores batendo com o extrato.
 
 ## Pendências conhecidas, fora de escopo
 

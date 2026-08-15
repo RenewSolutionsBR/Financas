@@ -133,13 +133,27 @@ async function detectar(arrayBuffer) {
   return 0.05;
 }
 
-async function lerMatriz(arrayBuffer, nomeArquivo) {
+// Exportada só para teste (tests/generic-table.test.js reproduz o bug real
+// de CSV com locale BR usando um arquivo de extrato real anonimizado) — não
+// é chamada de fora do próprio módulo em produção.
+export async function lerMatriz(arrayBuffer, nomeArquivo) {
   const isCsv = /\.csv$/i.test(nomeArquivo || '');
-  // `cellDates: true` + `raw: true`: data de verdade chega como Date (ver
-  // dataParaISO acima) e número como number, em vez da string de exibição
-  // no locale de quem salvou o arquivo.
+  // Em .xlsx/.xls, uma célula de data ou número já é NATIVAMENTE tipada pelo
+  // próprio Excel — não há ambiguidade de locale, então `cellDates: true` +
+  // `raw: true` no sheet_to_json (abaixo) é o caminho certo (ver dataParaISO).
+  //
+  // Em CSV não existe tipo de célula: é tudo texto, e o SheetJS PRECISA
+  // adivinhar se cada célula é número/data antes de aplicar `cellDates`. Essa
+  // adivinhação usa convenção AMERICANA (ponto decimal), então uma célula BR
+  // como "-16.000,00" virava o número -16 (lendo só ".000" como decimal e
+  // descartando o resto) e "02/07/2026" virava um serial de data errado —
+  // bug real medido com extrato bancário de outro banco (2026-08-15),
+  // reproduzido tanto no valor quanto na data trocada. Passar `raw: true`
+  // aqui no XLSX.read (não confundir com o `raw` do sheet_to_json abaixo)
+  // faz o parser de CSV preservar o texto exatamente como está no arquivo,
+  // que é o formato que parseMoneyBR/dataParaISO já sabem interpretar.
   const wb = isCsv
-    ? XLSX.read(new TextDecoder('utf-8').decode(arrayBuffer), { type: 'string', cellDates: true })
+    ? XLSX.read(new TextDecoder('utf-8').decode(arrayBuffer), { type: 'string', raw: true })
     : XLSX.read(arrayBuffer, { type: 'array', cellDates: true });
   const primeiraAba = wb.SheetNames[0];
   return XLSX.utils.sheet_to_json(wb.Sheets[primeiraAba], { header: 1, raw: true, defval: '' });

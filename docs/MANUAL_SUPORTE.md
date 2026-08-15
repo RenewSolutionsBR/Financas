@@ -1,6 +1,6 @@
 # Manual de Suporte e Assistência — Livro de Gastos
 
-Manual para quem vai dar suporte ao usuário (humano ou assistente de IA), não para o usuário final — para isso existe `MANUAL_USUARIO.md`. Aqui o objetivo é diferente: entender a lógica interna com profundidade suficiente para (1) diferenciar um bug real de uma interpretação errada do usuário ou de uma decisão de produto proposital, e (2) ter uma base de sintomas conhecidos para agilizar o diagnóstico. Atualizado até v30 (2026-08-14).
+Manual para quem vai dar suporte ao usuário (humano ou assistente de IA), não para o usuário final — para isso existe `MANUAL_USUARIO.md`. Aqui o objetivo é diferente: entender a lógica interna com profundidade suficiente para (1) diferenciar um bug real de uma interpretação errada do usuário ou de uma decisão de produto proposital, e (2) ter uma base de sintomas conhecidos para agilizar o diagnóstico. Atualizado até v31 (2026-08-15).
 
 Este documento tem dois capítulos deliberadamente separados:
 
@@ -300,11 +300,18 @@ Pergunta recorrente de usuário testando duas fontes do mesmo documento (ex.: fa
 - **Causa**: a regra genérica do formulário `input, select, textarea { width: 100% }` (`styles.css`) alcança qualquer `<input>` novo por padrão, inclusive checkboxes, que normalmente devem ter largura intrínseca (~13-16px). Já aconteceu duas vezes no projeto: em `.item-form-lote` (lote de "+lançar" da fatura) e no combo múltiplo de categoria do Dashboard (v30).
 - **Ação**: ao criar qualquer novo checkbox dentro de um contêiner flex, escopar explicitamente `width: auto; flex: 0 0 auto;` para aquele checkbox — não depender do reset genérico do formulário. Verificar com `getBoundingClientRect()`/`getComputedStyle()` no DevTools se o `width` computado do input bate com o esperado antes de suspeitar de `text-align`.
 
+### 22. Importação de CSV genérico troca valor e/ou inverte dia/mês da data, mas o mesmo arquivo em .xlsx funciona bem
+
+- **Sintoma**: importando extrato de um banco sem adaptador dedicado (planilha genérica), um valor como `-16.000,00` vira R$ 16,00, ou `-222,17` vira R$ 22.217,00; datas `dd/mm/aaaa` às vezes vêm com dia e mês invertidos. `parseMoneyBR`/`dataParaISO` testados isoladamente com o texto exato do arquivo funcionam certo — o bug não está neles.
+- **Causa (até v30)**: em CSV não existe tipo de célula — é tudo texto — então o `XLSX.read` do SheetJS precisa ADIVINHAR se cada célula é número/data antes de aplicar `raw`/`cellDates` (`lerMatriz`, `importers/generic-table.js`), e essa adivinhação usa convenção AMERICANA (ponto decimal): `"-16.000,00"` virava `-16` (só `.000` lido como decimal, resto descartado), e a data virava um serial de dia/mês trocado. `.xlsx`/`.xls` reais não têm esse problema — a célula já é nativamente tipada pelo próprio Excel, sem ambiguidade de locale.
+- **Ação**: confirmar v31+. O fix passa `raw: true` no `XLSX.read` do caminho CSV (sem `cellDates`), preservando o texto exato de cada célula. Se reaparecer, primeiro confirmar se é CSV (não `.xlsx`) — o bug é específico do parser de CSV do SheetJS — e comparar a string exibida (`raw: false` no `sheet_to_json`, só para diagnóstico) contra o valor que chega em `parseLinhasGenerico`.
+- **Diagnóstico rápido**: pedir o arquivo `.csv` real (ou uma amostra com 2-3 linhas problemáticas) em vez de tentar reproduzir com dado sintético — o comportamento do SheetJS depende de detalhes finos do arquivo (separador, presença de aspas, linhas de cabeçalho antes da tabela) que uma reprodução "razoável" pode não capturar. Teste de regressão com fixture sintética (dados fictícios, mesmo formato) em `tests/generic-table-csv-locale.test.js`.
+
 ## Checklist rápido de investigação técnica
 
 1. Reproduzir com **dado real** do usuário sempre que possível (backup/export), não com dado sintético inventado.
 2. Checar `APP_VERSION` primeiro, antes de qualquer outra coisa.
-3. Rodar `node tools/run-tests.mjs` (511+ testes de lógica pura) para confirmar que a base está íntegra antes de investigar um sintoma específico.
+3. Rodar `node tools/run-tests.mjs` (514+ testes de lógica pura) para confirmar que a base está íntegra antes de investigar um sintoma específico.
 4. Identificar a função de domínio responsável (a maior parte da lógica financeira mora em `domain/`, é pura, testável isoladamente em Node sem abrir navegador).
 5. Testar a função isolada com o dado real, comparando entrada/saída esperada.
 6. Se o sintoma persistir após 2 hipóteses testadas e descartadas, considerar se não é uma decisão de produto disfarçada de bug (voltar ao Capítulo 1, Pergunta 2) antes de insistir numa 3ª hipótese técnica.
