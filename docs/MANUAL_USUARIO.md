@@ -1,6 +1,6 @@
 # Manual do Usuário — Livro de Gastos
 
-Este manual explica como usar o aplicativo, aba por aba. Não é preciso conhecimento técnico para lê-lo. Atualizado até v30 (2026-08-14).
+Este manual explica como usar o aplicativo, aba por aba. Não é preciso conhecimento técnico para lê-lo. Atualizado até v32 (2026-08-15).
 
 > Uma versão ilustrada deste manual, com capturas de tela do app, está em [`manual-usuario.html`](manual-usuario.html) — abra esse arquivo direto no navegador.
 
@@ -41,6 +41,8 @@ Só lançamentos do tipo Despesa (e que não sejam uma previsão de parcela futu
 - **Conciliado**: uma linha do documento bateu com um lançamento que já existia no app.
 - **Só no documento**: apareceu na fatura/extrato mas ainda não tem lançamento correspondente. Há um botão "+ lançar" em cada item para criar o lançamento na hora, ou "+ lançar em lote" para vários de uma vez (disponível na conciliação de extrato).
 - **Só no app**: existe um lançamento seu que não apareceu no documento importado — vale checar se não é um lançamento duplicado ou com data/valor errados.
+
+Todos os grupos mostram a categoria de cada item, junto com data e valor.
 
 **Memória de classificação:** quando você corrige a categoria (ou a forma de pagamento) de um item vindo de um documento importado, o app memoriza essa escolha. Da próxima vez que uma descrição parecida aparecer, ele já sugere (ou aplica) a mesma categoria automaticamente. Essas regras podem ser revisadas na aba Cadastros, seção Regras.
 

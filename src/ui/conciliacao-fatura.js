@@ -217,17 +217,25 @@ async function lancarEmLoteFaturaInterno(selecionadas, ctx, aoConcluir) {
   await aoConcluir();
 }
 
-function itemMatched(par) {
+// `categorias` vem por parâmetro (não capturado do módulo) porque estas
+// duas funções são puras o bastante para não depender de estado externo —
+// mesmo padrão do restante do arquivo, que sempre recebe `ctx`/dados por
+// argumento em vez de globals.
+function nomeCategoria(categoriaId, categorias) {
+  return (categorias.find((c) => c.id === categoriaId) || {}).nome || 'A Classificar';
+}
+
+function itemMatched(par, categorias) {
   return el('div', { class: 'item-balde item-conciliado' }, [
     el('span', { class: 'item-descricao', text: `${par.fatura.descricao}${sufixoParcela(par.fatura)}` }),
-    el('span', { class: 'item-meta', text: `${formatDateBR(par.fatura.data)} · ${fmtBRL(par.fatura.valor)}` }),
+    el('span', { class: 'item-meta', text: `${formatDateBR(par.fatura.data)} · ${fmtBRL(par.fatura.valor)} · ${nomeCategoria(par.app.categoria, categorias)}` }),
   ]);
 }
 
-function itemApp(t) {
+function itemApp(t, categorias) {
   return el('div', { class: 'item-balde' }, [
     el('span', { class: 'item-descricao', text: `${t.descricao}${sufixoParcela(t)}` }),
-    el('span', { class: 'item-meta', text: `${formatDateBR(t.data)} · ${fmtBRL(t.valor)}` }),
+    el('span', { class: 'item-meta', text: `${formatDateBR(t.data)} · ${fmtBRL(t.valor)} · ${nomeCategoria(t.categoria, categorias)}` }),
   ]);
 }
 
@@ -258,14 +266,14 @@ export async function renderBaldesFatura(painel, fatura, faturasList, transactio
 
   painel.innerHTML = '';
   painel.append(
-    balde('Conciliado automaticamente', autoMatched.map(itemMatched), 'Nenhum item conciliado automaticamente.'),
-    balde('Conciliado', matched.map(itemMatched), 'Nenhum item conciliado.'),
+    balde('Conciliado automaticamente', autoMatched.map((par) => itemMatched(par, categorias)), 'Nenhum item conciliado automaticamente.'),
+    balde('Conciliado', matched.map((par) => itemMatched(par, categorias)), 'Nenhum item conciliado.'),
     el('div', { class: 'balde' }, [
       el('h3', { text: `Na fatura, não lançado no app (${faturaUnmatched.length})` }),
       linhasFormulario.length
         ? el('div', {}, [...linhasFormulario.map((lf) => lf.linhaEl), el('div', { class: 'acoes' }, [botaoLote])])
         : el('p', { class: 'vazio', text: 'Tudo da fatura já está lançado no app.' }),
     ]),
-    balde('No app, não na fatura', appUnmatched.map(itemApp), 'Nenhum lançamento do app ficou de fora da fatura.')
+    balde('No app, não na fatura', appUnmatched.map((t) => itemApp(t, categorias)), 'Nenhum lançamento do app ficou de fora da fatura.')
   );
 }

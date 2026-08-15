@@ -1,6 +1,6 @@
 # Manual de Suporte e Assistência — Livro de Gastos
 
-Manual para quem vai dar suporte ao usuário (humano ou assistente de IA), não para o usuário final — para isso existe `MANUAL_USUARIO.md`. Aqui o objetivo é diferente: entender a lógica interna com profundidade suficiente para (1) diferenciar um bug real de uma interpretação errada do usuário ou de uma decisão de produto proposital, e (2) ter uma base de sintomas conhecidos para agilizar o diagnóstico. Atualizado até v31 (2026-08-15).
+Manual para quem vai dar suporte ao usuário (humano ou assistente de IA), não para o usuário final — para isso existe `MANUAL_USUARIO.md`. Aqui o objetivo é diferente: entender a lógica interna com profundidade suficiente para (1) diferenciar um bug real de uma interpretação errada do usuário ou de uma decisão de produto proposital, e (2) ter uma base de sintomas conhecidos para agilizar o diagnóstico. Atualizado até v32 (2026-08-15).
 
 Este documento tem dois capítulos deliberadamente separados:
 
@@ -307,11 +307,18 @@ Pergunta recorrente de usuário testando duas fontes do mesmo documento (ex.: fa
 - **Ação**: confirmar v31+. O fix passa `raw: true` no `XLSX.read` do caminho CSV (sem `cellDates`), preservando o texto exato de cada célula. Se reaparecer, primeiro confirmar se é CSV (não `.xlsx`) — o bug é específico do parser de CSV do SheetJS — e comparar a string exibida (`raw: false` no `sheet_to_json`, só para diagnóstico) contra o valor que chega em `parseLinhasGenerico`.
 - **Diagnóstico rápido**: pedir o arquivo `.csv` real (ou uma amostra com 2-3 linhas problemáticas) em vez de tentar reproduzir com dado sintético — o comportamento do SheetJS depende de detalhes finos do arquivo (separador, presença de aspas, linhas de cabeçalho antes da tabela) que uma reprodução "razoável" pode não capturar. Teste de regressão com fixture sintética (dados fictícios, mesmo formato) em `tests/generic-table-csv-locale.test.js`.
 
+### 23. "No app, não no extrato" (ou "não na fatura") mostra lançamento de OUTRA conta
+
+- **Sintoma**: importou extrato/fatura da conta A, lançou tudo; importou extrato/fatura da conta B — lançamentos da conta A (que nunca tiveram chance de casar com nenhuma linha do documento da conta B) aparecem no balde "No app, não no extrato/fatura" ao ver a conta B, e vice-versa.
+- **Causa (até v31)**: `runReconciliationBank` (`domain/reconcile-bank.js`) filtrava por `contaId` no CASAMENTO (`t.contaId === extrato.contaId`), mas o `appUnmatched` final (`pool.filter(t => !t.used)`) não repetia esse filtro — qualquer lançamento não casado de QUALQUER conta sobrava ali, mesmo sem nenhuma chance real de casar (pertence a outro documento). `reconcile-card.js` (fatura) não tinha esse bug — só o de extrato.
+- **Ação**: confirmar v32+. O fix repete o mesmo filtro de conta (`!t.contaId || t.contaId === extrato.contaId`) no `appUnmatched`. Teste de regressão em `tests/reconcile-bank.test.js` ("lancamento de OUTRA conta que nao casa NAO aparece em appUnmatched desta conta").
+- **Não confundir com**: um lançamento SEM `contaId` definido (`null`) continua aparecendo em qualquer conta de propósito — é o comportamento correto para lançamento manual sem conta escolhida, não um bug.
+
 ## Checklist rápido de investigação técnica
 
 1. Reproduzir com **dado real** do usuário sempre que possível (backup/export), não com dado sintético inventado.
 2. Checar `APP_VERSION` primeiro, antes de qualquer outra coisa.
-3. Rodar `node tools/run-tests.mjs` (514+ testes de lógica pura) para confirmar que a base está íntegra antes de investigar um sintoma específico.
+3. Rodar `node tools/run-tests.mjs` (515+ testes de lógica pura) para confirmar que a base está íntegra antes de investigar um sintoma específico.
 4. Identificar a função de domínio responsável (a maior parte da lógica financeira mora em `domain/`, é pura, testável isoladamente em Node sem abrir navegador).
 5. Testar a função isolada com o dado real, comparando entrada/saída esperada.
 6. Se o sintoma persistir após 2 hipóteses testadas e descartadas, considerar se não é uma decisão de produto disfarçada de bug (voltar ao Capítulo 1, Pergunta 2) antes de insistir numa 3ª hipótese técnica.

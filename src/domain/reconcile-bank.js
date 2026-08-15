@@ -88,6 +88,14 @@ export function runReconciliationBank(extrato, transactions, accounts, apelidosT
     bucket.push({ extrato: linha, app: escolhido.t });
   });
 
-  const appUnmatched = pool.filter((t) => !t.used);
+  // Mesmo filtro de conta usado no casamento (linha acima): um lançamento
+  // de outra conta nunca deveria aparecer aqui só porque não casou com
+  // nenhuma linha DESTE extrato — ele pertence à conciliação da conta dele,
+  // não a esta. Sem este filtro, "No app, não no extrato" misturava
+  // lançamentos de todas as contas (bug real, 2026-08-15): importar um
+  // segundo extrato (conta B) fazia os lançamentos da conta A, que nunca
+  // tiveram chance de casar aqui, aparecerem como "pendentes" na tela da
+  // conta B, e vice-versa.
+  const appUnmatched = pool.filter((t) => !t.used && (!t.contaId || t.contaId === extrato.contaId));
   return { autoMatched, matched, extratoUnmatched, appUnmatched };
 }

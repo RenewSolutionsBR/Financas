@@ -106,6 +106,17 @@ describe('reconcile-bank: runReconciliationBank — 4 baldes e idempotencia', ()
     assertEqual(extratoUnmatched.length, 1);
   });
 
+  it('lancamento de OUTRA conta que nao casa NAO aparece em appUnmatched desta conta (bug real 2026-08-15)', () => {
+    // Sequência real do usuário: importou extrato do banco A, lançou tudo;
+    // importou extrato do banco B — os lançamentos do banco A (que nunca
+    // tiveram chance de casar com uma linha do extrato B) vazavam para o
+    // balde "No app, não no extrato" da conta B, e vice-versa.
+    const extrato = { contaId: 'acc_corrente_1', rows: [] };
+    const deOutraConta = { id: 't1', previsto: false, natureza: 'despesa', contaId: 'acc_corrente_OUTRA', data: '2026-05-05', valor: 50 };
+    const { appUnmatched } = runReconciliationBank(extrato, [deOutraConta], accounts, apelidos, []);
+    assertEqual(appUnmatched.length, 0, 'lancamento de outra conta pertence a conciliacao daquela conta, nao desta');
+  });
+
   it('lancamento SEM conta definida ainda casa (regra: extrato bate com contaId do lancamento OU lancamento sem conta)', () => {
     const extrato = { contaId: 'acc_corrente_1', rows: [linha({ descricao: 'COMPRA MERCADO', valor: 50, sinal: 'debito', data: '2026-05-05' })] };
     const t = { id: 't1', previsto: false, natureza: 'despesa', contaId: null, data: '2026-05-05', valor: 50 };

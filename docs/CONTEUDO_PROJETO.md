@@ -1,6 +1,6 @@
 # Conteúdo do Projeto — Livro de Gastos
 
-Histórico do projeto, decisões de design importantes e pendências conhecidas. Atualizado até v31 (2026-08-15).
+Histórico do projeto, decisões de design importantes e pendências conhecidas. Atualizado até v32 (2026-08-15).
 
 ## Origem
 
@@ -459,6 +459,14 @@ Usuário testou a importação de extrato genérico com um CSV de um banco sem a
 **Fix.** Em `lerMatriz`, CSV passa a ler com `XLSX.read(texto, { type: 'string', raw: true })` (sem `cellDates`) — isso faz o parser de CSV do SheetJS preservar o texto EXATO de cada célula, sem tentar convertê-la para número/data. `.xlsx`/`.xls` reais continuam com `cellDates: true`, porque ali a célula já é nativamente tipada pelo próprio Excel, sem ambiguidade de locale — só CSV (texto puro) sofria a adivinhação errada.
 
 Teste de regressão em `tests/generic-table-csv-locale.test.js`, com fixture sintética (`tests/fixtures/extrato-csv-locale-br.js`, dados fictícios no mesmo formato do CSV real — nunca o arquivo do usuário, que não entra no repositório público) reproduzindo exatamente o padrão do bug: cabeçalho de conta antes da tabela, separador `;`, datas `dd/mm/aaaa`, valores BR com milhar e decimal. Verificado também rodando o arquivo real do usuário localmente (fora do repo): as 42 linhas do extrato caíram todas em julho de 2026 (nenhuma data invertida), soma de valores batendo com o extrato.
+
+### "No app, não no extrato" misturava lançamentos de contas diferentes + categoria visível em todos os baldes (v31→v32, 2026-08-15)
+
+**Bug real reportado pelo usuário.** Sequência: importou extrato do Santander, lançou tudo; importou extrato de outro banco ("banco teste") — os lançamentos do Santander (que nunca tiveram chance de casar com nenhuma linha do extrato do banco teste) apareciam no balde "No app, não no extrato" DO BANCO TESTE, e vice-versa ao voltar pra conta Santander.
+
+**Causa raiz.** `runReconciliationBank` (`domain/reconcile-bank.js`) já filtrava por `contaId` no CASAMENTO (`candidatos = pool.filter(... t.contaId === extrato.contaId)`), mas o pool usado para montar `appUnmatched` no final (`pool.filter(t => !t.used)`) nunca aplicava esse mesmo filtro — qualquer lançamento de QUALQUER conta que não tivesse casado (por não ter chance nenhuma, já que pertence a outro extrato) sobrava ali. Fix: mesmo filtro de conta (`!t.contaId || t.contaId === extrato.contaId`) também no `appUnmatched`. Teste de regressão em `tests/reconcile-bank.test.js` cobrindo exatamente esse cenário — o teste já existente da mesma área (linha ~101) verificava `matched`/`extratoUnmatched` mas nunca `appUnmatched`, esse era o gap.
+
+**Pedido de UX, mesma sessão.** Os baldes "Conciliado", "Conciliado automaticamente" e "No app, não na fatura/extrato" (`conciliacao-fatura.js`, `conciliacao-extrato.js`) não mostravam a categoria do lançamento — só descrição, data e valor. Adicionada a categoria (resolvida por nome, com fallback "A Classificar") ao final da linha de metadados de cada item nesses baldes. O balde "Na fatura/extrato, não lançado no app" já tinha um select de categoria editável por linha (com selo "sugerido: X"), não precisou de mudança.
 
 ## Pendências conhecidas, fora de escopo
 

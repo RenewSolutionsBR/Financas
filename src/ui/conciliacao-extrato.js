@@ -59,17 +59,23 @@ function montarBarraFiltrosExtrato(formas, aoMudar) {
   ]);
 }
 
-function itemMatched(par) {
+// `categorias` por parâmetro, não capturado do módulo — mesmo padrão do
+// restante do arquivo (dados sempre vêm de `ctx`/argumento, nunca de global).
+function nomeCategoria(categoriaId, categorias) {
+  return (categorias.find((c) => c.id === categoriaId) || {}).nome || 'A Classificar';
+}
+
+function itemMatched(par, categorias) {
   return el('div', { class: 'item-balde item-conciliado' }, [
     el('span', { class: 'item-descricao', text: par.extrato.descricao }),
-    el('span', { class: 'item-meta', text: `${formatDateBR(par.extrato.data)} · ${fmtBRL(par.extrato.valor)}` }),
+    el('span', { class: 'item-meta', text: `${formatDateBR(par.extrato.data)} · ${fmtBRL(par.extrato.valor)} · ${nomeCategoria(par.app.categoria, categorias)}` }),
   ]);
 }
 
-function itemApp(t) {
+function itemApp(t, categorias) {
   return el('div', { class: 'item-balde' }, [
     el('span', { class: 'item-descricao', text: t.descricao }),
-    el('span', { class: 'item-meta', text: `${formatDateBR(t.data)} · ${fmtBRL(t.valor)}` }),
+    el('span', { class: 'item-meta', text: `${formatDateBR(t.data)} · ${fmtBRL(t.valor)} · ${nomeCategoria(t.categoria, categorias)}` }),
   ]);
 }
 
@@ -279,14 +285,14 @@ export async function renderBaldesExtrato(painel, extrato, transactions, account
   painel.innerHTML = '';
   painel.append(
     montarBarraFiltrosExtrato(formas, () => renderBaldesExtrato(painel, extrato, transactions, accounts, apelidosTitular, categorias, formas, regras, aoMudar)),
-    balde('Conciliado automaticamente', autoMatchedFiltrado.map(itemMatched), 'Nenhum item conciliado automaticamente.'),
-    balde('Conciliado', matchedFiltrado.map(itemMatched), 'Nenhum item conciliado.'),
+    balde('Conciliado automaticamente', autoMatchedFiltrado.map((par) => itemMatched(par, categorias)), 'Nenhum item conciliado automaticamente.'),
+    balde('Conciliado', matchedFiltrado.map((par) => itemMatched(par, categorias)), 'Nenhum item conciliado.'),
     el('div', { class: 'balde' }, [
       el('h3', { text: tituloBaldeNaoLancado(linhasFormulario.length, extratoUnmatched.length, !!(filtroNatureza || filtroForma)) }),
       linhasFormulario.length
         ? el('div', {}, [...linhasFormulario.map((lf) => lf.linhaEl), el('div', { class: 'acoes' }, [botaoLote])])
         : el('p', { class: 'vazio', text: 'Tudo do extrato já está lançado no app.' }),
     ]),
-    balde('No app, não no extrato', appUnmatchedFiltrado.map(itemApp), 'Nenhum lançamento do app ficou de fora do extrato.')
+    balde('No app, não no extrato', appUnmatchedFiltrado.map((t) => itemApp(t, categorias)), 'Nenhum lançamento do app ficou de fora do extrato.')
   );
 }
