@@ -1,6 +1,6 @@
 # Documentação Técnica — Livro de Gastos
 
-Este documento descreve a arquitetura do app para quem for ler, manter ou estender o código. Atualizado até v11 (2026-08-10).
+Este documento descreve a arquitetura do app para quem for ler, manter ou estender o código. Atualizado até v30 (2026-08-14).
 
 ## Visão geral
 
@@ -24,7 +24,7 @@ src/
 
 **`core/`** — utilitários sem conhecimento do domínio financeiro: formatação de datas e valores monetários (`dates.js`, `money.js`), geração de identificadores (`ids.js`), normalização de texto (`text.js`), o wrapper de acesso ao IndexedDB (`storage.js`) e a descrição do schema do banco (`db-schema.js`). `storage.js` é a **única** porta de entrada do IndexedDB no projeto — nenhum outro módulo, nem em `domain/`, nem em `ui/`, toca `indexedDB` diretamente. Isso mantém a lógica de transação, rollback e reabertura de conexão concentrada num único lugar.
 
-**`domain/`** — as regras do negócio: contas e cartões (`accounts.js`), formas de pagamento (`payment-methods.js`), categorias (`categories.js`), lançamentos (`transactions.js`), parcelas (`parcelas.js`), memória de classificação (`classification.js`), conciliação de fatura (`reconcile-card.js`) e de extrato (`reconcile-bank.js`), e a regra de registro único do pagamento de fatura (`pagamento-fatura.js`). A maior parte destes módulos é **pura**: recebe dados, devolve dados, não importa `storage.js` no corpo da lógica de decisão — só as funções de persistência no fim de cada arquivo (`list*`, `save*`, `remove*`) tocam o banco. Essa pureza é o que permite testar a lógica financeira inteira no Node, sem abrir navegador.
+**`domain/`** — as regras do negócio: contas e cartões (`accounts.js`), formas de pagamento (`payment-methods.js`), categorias (`categories.js`), lançamentos (`transactions.js`), parcelas (`parcelas.js`), memória de classificação (`classification.js`), conciliação de fatura (`reconcile-card.js`) e de extrato (`reconcile-bank.js`), a regra de registro único do pagamento de fatura (`pagamento-fatura.js`), o log técnico de auditoria (`audit-log.js`) e a exclusão de documento importado junto dos lançamentos que ele originou (`remover-documento.js`, v27). A maior parte destes módulos é **pura**: recebe dados, devolve dados, não importa `storage.js` no corpo da lógica de decisão — só as funções de persistência no fim de cada arquivo (`list*`, `save*`, `remove*`) tocam o banco. Essa pureza é o que permite testar a lógica financeira inteira no Node, sem abrir navegador.
 
 **`importers/`** — um adaptador por formato de arquivo (fatura Santander em PDF, extrato Santander em `.xls`, tabela genérica com mapeamento de colunas pelo usuário, backup `.xlsx`). Todo adaptador devolve linhas num formato normalizado único (documentado no topo de `importers/registry.js`), de forma que a conciliação e a UI nunca precisem saber de qual banco ou tipo de documento uma linha veio. Adicionar suporte a um banco novo é criar um arquivo em `importers/` e chamar `register()` — não exige tocar em `domain/` nem em `ui/`. Dentro de cada adaptador, a parte de *parsing* de texto/planilha já extraído é pura e testável em Node; só a extração bruta do PDF ou da planilha (que depende das bibliotecas vendorizadas) roda exclusivamente no navegador.
 
@@ -97,6 +97,26 @@ Exporta TODOS os stores (exceto `auditLog`, que tem exportação própria em `.j
 Fix: `datasetToSheets` divide qualquer valor serializado acima do limite seguro (`LIMITE_CELULA = 30000`) em colunas extras na mesma linha (`campo`, `campo__2`, `campo__3`, ...); `sheetsToDataset` reconstrói o valor original a partir dessas colunas antes de desserializar. Um backup exportado antes deste fix nunca tem coluna `__N` — a reconstrução é um no-op nesse caso, sem migração necessária. Um backup truncado em silêncio por uma versão anterior ao fix, no entanto, não tem conserto possível a partir do próprio arquivo — só reexportando da fonte original com a versão corrigida.
 
 `baixarBackup`/`exportarConciliacaoCompleta` (`ui/backup-comum.js`, `ui/conciliacao.js`) têm try/catch com toast de erro visível — antes desse endurecimento, qualquer exceção nessas funções fazia o botão "não fazer nada" sem nenhuma pista ao usuário.
+
+## Cache-busting de módulos (`index.html`, v24)
+
+O GitHub Pages manda `Cache-Control: max-age=600` em cada arquivo estático — por até 10 minutos após uma publicação, o navegador do usuário pode continuar servindo módulos JS antigos do cache do disco sem nem perguntar ao servidor, mesmo que o service worker use estratégia network-first (a requisição nem chega a ele, porque o navegador resolve do cache HTTP primeiro). Isso já causou investigações inteiras em v20, v22 e v23: `version.js` vinha novo (mostrando a versão certa no rodapé) enquanto o resto da árvore de módulos vinha velho.
+
+Fix (v24): um `<script type="module">` inline em `index.html`, executado antes de qualquer import de verdade, monta um **import map** que reescreve a URL de CADA módulo listado em `src/core/modulos.js` para incluir `?v=APP_VERSION`:
+
+```js
+const mapa = { imports: {} };
+for (const caminho of MODULOS) {
+  const url = new URL(caminho, document.baseURI).href;
+  mapa.imports[url] = `${url}?v=${APP_VERSION}`;
+}
+```
+
+Só a query string no import inicial NÃO bastava (testado em navegador): um módulo ES resolve seus próprios imports relativos sem herdar a query do módulo pai, então `app.js?v=v24` carregava, mas seus imports internos (`./domain/transactions.js`, etc.) voltavam a pedir a URL sem versão. O import map resolve isso porque casa pela URL **já resolvida** de cada módulo, não pelo texto do `import` — a árvore inteira ganha URL nova a cada publicação, não só o ponto de entrada.
+
+Três arquivos são buscados ANTES do import map existir (`index.html`, `src/version.js`, `src/core/modulos.js`) e por isso não são protegidos por ele — esses usam `cache: 'reload'` no handler `fetch` do service worker (`sw.js`), forçando o navegador a revalidar com o servidor sempre.
+
+`src/core/modulos.js` é gerado por `tools/gerar-modulos.mjs` a partir da lista real de arquivos em `src/` — é a fonte única tanto do import map quanto do `PRECACHE` do service worker. **Rodar `node tools/gerar-modulos.mjs` sempre que um arquivo for adicionado ou removido de `src/`** — esquecer isso deixa o módulo novo fora do precache (funciona local, mas falha offline) ou fora do import map (funciona na primeira visita, mas serve versão velha depois do próximo bump).
 
 ## Tratamento de erro visível nas telas
 

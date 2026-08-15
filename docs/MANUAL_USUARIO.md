@@ -1,6 +1,8 @@
 # Manual do Usuário — Livro de Gastos
 
-Este manual explica como usar o aplicativo, aba por aba. Não é preciso conhecimento técnico para lê-lo. Atualizado até v11 (2026-08-10).
+Este manual explica como usar o aplicativo, aba por aba. Não é preciso conhecimento técnico para lê-lo. Atualizado até v30 (2026-08-14).
+
+> Uma versão ilustrada deste manual, com capturas de tela do app, está em [`manual-usuario.html`](manual-usuario.html) — abra esse arquivo direto no navegador.
 
 O Livro de Gastos é um app de controle de gastos pessoais que roda inteiramente no seu navegador. Todos os dados ficam guardados só neste aparelho (no armazenamento local do navegador); nada é enviado para nenhum servidor. A única forma de levar seus dados para outro aparelho é pelo backup manual, explicado na seção Cadastros.
 
@@ -44,6 +46,8 @@ Só lançamentos do tipo Despesa (e que não sejam uma previsão de parcela futu
 
 **Pagamento de fatura:** o débito do pagamento da fatura, visto no extrato da conta, e a linha de crédito correspondente na fatura seguinte do cartão são o mesmo evento financeiro. O app reconhece isso e cria apenas um único lançamento para o pagamento, não importa qual dos dois documentos você importar primeiro.
 
+**Excluir este documento:** ao escolher um documento no seletor, aparece um botão para excluí-lo. Ele apaga o documento importado (fatura ou extrato) **e** os lançamentos que vieram dele, numa ação só — útil quando um documento foi importado com um dado errado (por exemplo, a data de vencimento digitada errada) e você quer refazer a importação do zero. Pagamentos de fatura ligados ao documento **não** são apagados automaticamente, porque um pagamento pode ter origem no extrato bancário, não só na fatura — o app avisa quantos ficaram de fora, para você revisar manualmente em Lançamentos se precisar. Essa ação não tem volta.
+
 **Exportar conciliação completa:** disponível no botão Ferramentas (grupo "Exportar para planilha"), gera uma planilha `.xlsx` com o status de conciliação de TODOS os lançamentos e documentos importados, faturas e extratos juntos — cada linha mostra se foi conciliada, se só aparece no documento, ou só no app, com a categoria já resolvida por nome. Útil para conferir tudo de uma vez fora do app.
 
 ## Aba Parcelas
@@ -56,6 +60,8 @@ Serve para você ter uma visão rápida do compromisso futuro assumido no cartã
 
 **Aviso "Datas estimadas"**: quando a parcela 1 de uma compra ainda não foi confirmada (você ainda não clicou "+ lançar" nela, na aba Conciliação), o app não tem o vencimento real da fatura para essa compra — as datas mostradas são uma estimativa. Um aviso aparece no grupo nesse caso; confirme a parcela 1 na Conciliação para que a data vire definitiva.
 
+**Total geral**: no topo da previsão mês a mês, uma linha "Total geral (N meses)" soma tudo que ainda falta pagar em todos os parcelamentos em aberto, de uma vez. É só uma soma dos meses listados logo acima — não é um valor novo nem entra no Dashboard.
+
 ## Aba Dashboard
 
 O painel de gastos. Mostra:
@@ -63,7 +69,9 @@ O painel de gastos. Mostra:
 - **Gráfico em rosca por categoria**: mostra a proporção de cada categoria de gasto no período.
 - **Barras mensais**: evolução do total de gastos nos últimos meses com dado registrado.
 
-**Filtros disponíveis**: ano, mês, forma de pagamento e conta/cartão. Eles se combinam — por exemplo, é possível ver só os gastos de um cartão específico em um mês específico.
+**Filtros disponíveis**: ano, mês, forma de pagamento, conta/cartão e categoria. Eles se combinam — por exemplo, é possível ver só os gastos de um cartão específico em um mês específico.
+
+O filtro de categoria aceita mais de uma escolha ao mesmo tempo: clique no campo para abrir a lista de categorias com caixinhas de marcar, escolha quantas quiser (o campo mostra "N categorias" quando há mais de uma marcada) e clique fora para fechar. O botão "Limpar seleção", no topo da lista, desmarca tudo de uma vez.
 
 ## Aba Cadastros
 

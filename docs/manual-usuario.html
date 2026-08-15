@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Manual do Usuário — Livro de Gastos</title>
+<style>
+  :root {
+    --papel: #f4efe4;
+    --papel-alt: #ece4d3;
+    --tinta: #2b2622;
+    --tinta-fraca: #6b6259;
+    --linha: #d9cfbc;
+    --destaque: #8a5a2b;
+    --erro: #8a2b2b;
+    --font-body: Georgia, 'Times New Roman', serif;
+    --font-mono: 'Courier New', monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--papel);
+    color: var(--tinta);
+    font-family: var(--font-body);
+    line-height: 1.6;
+  }
+  body {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 32px 20px 80px;
+  }
+  header.topo {
+    border-bottom: 2px solid var(--tinta);
+    padding-bottom: 20px;
+    margin-bottom: 28px;
+  }
+  header.topo h1 {
+    font-size: 2rem;
+    margin: 0 0 6px;
+  }
+  header.topo p.sub {
+    color: var(--tinta-fraca);
+    font-size: 0.95rem;
+    margin: 0;
+  }
+  nav.indice {
+    background: var(--papel-alt);
+    border: 1px solid var(--linha);
+    border-radius: 6px;
+    padding: 16px 20px;
+    margin-bottom: 36px;
+  }
+  nav.indice h2 {
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--tinta-fraca);
+    margin: 0 0 10px;
+  }
+  nav.indice ol {
+    columns: 2;
+    margin: 0;
+    padding-left: 20px;
+  }
+  nav.indice li { margin-bottom: 6px; break-inside: avoid; }
+  nav.indice a { color: var(--destaque); text-decoration: none; }
+  nav.indice a:hover { text-decoration: underline; }
+
+  section {
+    margin-bottom: 48px;
+    scroll-margin-top: 16px;
+  }
+  h2 {
+    font-size: 1.4rem;
+    border-bottom: 1px solid var(--linha);
+    padding-bottom: 8px;
+    margin-top: 0;
+  }
+  h3 {
+    font-size: 1.1rem;
+    color: var(--destaque);
+    margin-bottom: 6px;
+  }
+  p { margin: 0 0 14px; }
+  ul, ol { margin: 0 0 14px; padding-left: 22px; }
+  li { margin-bottom: 6px; }
+  strong { color: var(--tinta); }
+
+  .caixa {
+    background: var(--papel-alt);
+    border: 1px solid var(--linha);
+    border-left: 4px solid var(--destaque);
+    border-radius: 4px;
+    padding: 14px 18px;
+    margin: 0 0 16px;
+    font-size: 0.92rem;
+  }
+  .caixa.aviso { border-left-color: var(--erro); }
+  .caixa strong.rotulo {
+    display: block;
+    text-transform: uppercase;
+    font-size: 0.75rem;
+    letter-spacing: 0.05em;
+    color: var(--tinta-fraca);
+    margin-bottom: 4px;
+  }
+
+  .galeria {
+    display: flex;
+    gap: 18px;
+    overflow-x: auto;
+    padding: 6px 2px 14px;
+    margin: 0 0 8px;
+  }
+  .galeria figure {
+    flex: 0 0 auto;
+    margin: 0;
+    width: 220px;
+  }
+  .galeria img {
+    width: 100%;
+    border: 1px solid var(--linha);
+    border-radius: 8px;
+    display: block;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+  }
+  .galeria figcaption {
+    font-size: 0.78rem;
+    color: var(--tinta-fraca);
+    margin-top: 6px;
+    text-align: center;
+  }
+
+  .novo {
+    display: inline-block;
+    background: var(--destaque);
+    color: var(--papel);
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 2px 8px;
+    border-radius: 999px;
+    margin-left: 8px;
+    vertical-align: middle;
+  }
+
+  code {
+    font-family: var(--font-mono);
+    background: var(--papel-alt);
+    border: 1px solid var(--linha);
+    border-radius: 3px;
+    padding: 1px 5px;
+    font-size: 0.88em;
+  }
+
+  footer {
+    border-top: 1px solid var(--linha);
+    margin-top: 48px;
+    padding-top: 18px;
+    color: var(--tinta-fraca);
+    font-size: 0.85rem;
+    text-align: center;
+  }
+
+  @media (max-width: 560px) {
+    nav.indice ol { columns: 1; }
+    .galeria figure { width: 170px; }
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --papel: #201c18;
+      --papel-alt: #2a2521;
+      --tinta: #ece6da;
+      --tinta-fraca: #a89e8f;
+      --linha: #453e35;
+      --destaque: #d9a15c;
+      --erro: #d97a7a;
+    }
+  }
+</style>
+</head>
+<body>
+
+<header class="topo">
+  <h1>Manual do Usuário — Livro de Gastos</h1>
+  <p class="sub">Guia ilustrado de uso do app, aba por aba. Atualizado até <strong>v30</strong> (14/08/2026). Não é preciso conhecimento técnico para ler este manual.</p>
+</header>
+
+<nav class="indice">
+  <h2>Neste manual</h2>
+  <ol>
+    <li><a href="#primeira-execucao">Primeira execução</a></li>
+    <li><a href="#lancamentos">Aba Lançamentos</a></li>
+    <li><a href="#conciliacao">Aba Conciliação</a></li>
+    <li><a href="#parcelas">Aba Parcelas</a></li>
+    <li><a href="#dashboard">Aba Dashboard</a></li>
+    <li><a href="#cadastros">Aba Cadastros</a></li>
+    <li><a href="#ferramentas">Botão Ferramentas</a></li>
+    <li><a href="#duvidas">Dúvidas frequentes</a></li>
+  </ol>
+</nav>
+
+<p>O Livro de Gastos é um app de controle de gastos pessoais que roda inteiramente no seu navegador. Todos os dados ficam guardados só neste aparelho (no armazenamento local do navegador); nada é enviado para nenhum servidor. A única forma de levar seus dados para outro aparelho é pelo backup manual, explicado na seção Cadastros.</p>
+
+<section id="primeira-execucao">
+  <h2>Primeira execução</h2>
+  <p>Ao abrir o app pela primeira vez, ele oferece um assistente para cadastrar sua primeira conta corrente e seu primeiro cartão. Você também pode pular esse passo e cadastrar depois, na aba Cadastros. Se você já usava uma versão anterior do app, é possível importar um backup dela no botão Ferramentas, no alto da tela.</p>
+  <div class="galeria">
+    <figure>
+      <img src="img/assistente-cadastro.jpeg" alt="Tela do assistente de boas-vindas pedindo para cadastrar conta e cartão">
+      <figcaption>Assistente de primeira execução</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section id="lancamentos">
+  <h2>Aba Lançamentos</h2>
+  <p>É a tela de uso diário: aqui você registra cada gasto, receita, transferência ou pagamento de fatura.</p>
+
+  <h3>Como lançar algo novo</h3>
+  <ol>
+    <li>Preencha descrição, data, valor, categoria, forma de pagamento e a conta/cartão de onde saiu o dinheiro.</li>
+    <li>Escolha a "natureza" do lançamento: Despesa (um gasto normal), Receita (dinheiro entrando), Transferência (movimentação entre suas próprias contas) ou Pagamento de fatura.</li>
+    <li>Clique em Lançar.</li>
+  </ol>
+  <p>Só lançamentos do tipo Despesa (e que não sejam uma previsão de parcela futura) entram nas somas de gastos mostradas no Dashboard. Isso evita contar o mesmo dinheiro duas vezes — por exemplo, uma compra no cartão e o pagamento da fatura dela não são somados juntos.</p>
+
+  <div class="caixa">
+    <strong class="rotulo">Compra parcelada</strong>
+    Ao marcar a opção de parcelamento, o app cria a primeira parcela como lançamento real e as parcelas seguintes como previsão (aparecem em cinza/marcadas como "prevista"). Conforme as faturas forem importadas e conciliadas, essas previsões vão sendo confirmadas automaticamente.
+  </div>
+
+  <p><strong>Filtros:</strong> no topo da lista você pode filtrar por mês, forma de pagamento e conta/cartão, além de mostrar só os lançamentos classificados automaticamente pela memória do app (explicada na aba Conciliação).</p>
+  <p><strong>Editar e excluir:</strong> cada linha da lista tem botões para editar (✎) ou remover (✕) o lançamento.</p>
+
+  <div class="galeria">
+    <figure>
+      <img src="img/lancamento-1.jpeg" alt="Formulário de novo lançamento com campos de data, valor, descrição, categoria, forma e conta">
+      <figcaption>Formulário de novo lançamento</figcaption>
+    </figure>
+    <figure>
+      <img src="img/lancamento-2.jpeg" alt="Lista de lançamentos do mês com total do período no topo">
+      <figcaption>Lista de lançamentos e total do período</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section id="conciliacao">
+  <h2>Aba Conciliação</h2>
+  <p>É onde você importa documentos (fatura de cartão em PDF, extrato bancário) e confere se cada linha do documento já tem um lançamento correspondente no app, ou lança as que faltam.</p>
+
+  <h3>Como importar um documento</h3>
+  <ol>
+    <li>Escolha a conta ou cartão a que o documento pertence.</li>
+    <li>Escolha o arquivo (PDF de fatura ou planilha de extrato). O app tenta identificar sozinho o formato do arquivo; se não conseguir, você pode indicar manualmente qual banco/formato usar.</li>
+    <li>Confira o resumo antes de confirmar a importação.</li>
+  </ol>
+
+  <p><strong>Depois de importar</strong>, o app organiza os itens em grupos ("baldes"):</p>
+  <ul>
+    <li><strong>Conciliado (automático):</strong> o app já tinha uma confirmação automática de parcela e bateu.</li>
+    <li><strong>Conciliado:</strong> uma linha do documento bateu com um lançamento que já existia no app.</li>
+    <li><strong>Só no documento:</strong> apareceu na fatura/extrato mas ainda não tem lançamento correspondente. Há um botão "+ lançar" em cada item para criar o lançamento na hora, ou "+ lançar em lote" para vários de uma vez (disponível na conciliação de extrato).</li>
+    <li><strong>Só no app:</strong> existe um lançamento seu que não apareceu no documento importado — vale checar se não é um lançamento duplicado ou com data/valor errados.</li>
+  </ul>
+
+  <div class="galeria">
+    <figure>
+      <img src="img/conciliacao-1.jpeg" alt="Tela de conciliação com o seletor de documento e o botão Excluir este documento">
+      <figcaption>Seletor de documento e "Excluir este documento"</figcaption>
+    </figure>
+    <figure>
+      <img src="img/conciliacao-2.jpeg" alt="Grupo Conciliado e grupo Só no documento com botões de lançar">
+      <figcaption>Itens conciliados e pendentes de lançamento</figcaption>
+    </figure>
+    <figure>
+      <img src="img/conciliacao-3.jpeg" alt="Mais itens pendentes e o botão lançar em lote no fim da lista">
+      <figcaption>"+ lançar em lote" para vários itens de uma vez</figcaption>
+    </figure>
+  </div>
+
+  <p><strong>Memória de classificação:</strong> quando você corrige a categoria (ou a forma de pagamento) de um item vindo de um documento importado, o app memoriza essa escolha. Da próxima vez que uma descrição parecida aparecer, ele já sugere (ou aplica) a mesma categoria automaticamente. Essas regras podem ser revisadas na aba Cadastros, seção Regras.</p>
+
+  <p><strong>Pagamento de fatura:</strong> o débito do pagamento da fatura, visto no extrato da conta, e a linha de crédito correspondente na fatura seguinte do cartão são o mesmo evento financeiro. O app reconhece isso e cria apenas um único lançamento para o pagamento, não importa qual dos dois documentos você importar primeiro.</p>
+
+  <div class="caixa">
+    <strong class="rotulo">Excluir este documento <span class="novo">novidade v27</span></strong>
+    Ao escolher um documento no seletor, aparece um botão para excluí-lo (veja a primeira captura de tela acima). Ele apaga o documento importado <strong>e</strong> os lançamentos que vieram dele, numa ação só — útil quando um documento foi importado com um dado errado (por exemplo, a data de vencimento digitada errada) e você quer refazer a importação do zero.
+    <br><br>
+    Pagamentos de fatura ligados ao documento <strong>não</strong> são apagados automaticamente, porque um pagamento pode ter origem no extrato bancário, não só na fatura — o app avisa quantos ficaram de fora, para você revisar manualmente em Lançamentos se precisar. Essa ação não tem volta.
+  </div>
+
+  <p><strong>Exportar conciliação completa:</strong> disponível no botão Ferramentas (grupo "Exportar para planilha"), gera uma planilha <code>.xlsx</code> com o status de conciliação de TODOS os lançamentos e documentos importados, faturas e extratos juntos — cada linha mostra se foi conciliada, se só aparece no documento, ou só no app, com a categoria já resolvida por nome. Útil para conferir tudo de uma vez fora do app.</p>
+</section>
+
+<section id="parcelas">
+  <h2>Aba Parcelas</h2>
+  <p>Uma vitrine somente de consulta (não é possível editar nada aqui) que mostra:</p>
+  <ul>
+    <li>Quanto você tem previsto de parcelas futuras, mês a mês, somando todos os cartões.</li>
+    <li>O detalhamento de cada compra parcelada em aberto, agrupado por cartão.</li>
+  </ul>
+  <p>Serve para você ter uma visão rápida do compromisso futuro assumido no cartão de crédito.</p>
+
+  <div class="galeria">
+    <figure>
+      <img src="img/parcelas-1.jpeg" alt="Previsão de parcelas por mês com linha de Total geral e lista de parcelamentos em aberto">
+      <figcaption>Previsão mês a mês e Total geral</figcaption>
+    </figure>
+  </div>
+
+  <div class="caixa">
+    <strong class="rotulo">Aviso "Datas estimadas"</strong>
+    Quando a parcela 1 de uma compra ainda não foi confirmada (você ainda não clicou "+ lançar" nela, na aba Conciliação), o app não tem o vencimento real da fatura para essa compra — as datas mostradas são uma estimativa. Um aviso aparece no grupo nesse caso; confirme a parcela 1 na Conciliação para que a data vire definitiva.
+  </div>
+
+  <div class="caixa">
+    <strong class="rotulo">Total geral <span class="novo">novidade v21</span></strong>
+    No topo da previsão mês a mês, uma linha "Total geral (N meses)" soma tudo que ainda falta pagar em todos os parcelamentos em aberto, de uma vez. É só uma soma dos meses listados logo acima — não é um valor novo nem entra no Dashboard.
+  </div>
+</section>
+
+<section id="dashboard">
+  <h2>Aba Dashboard</h2>
+  <p>O painel de gastos. Mostra:</p>
+  <ul>
+    <li><strong>Total do período:</strong> soma de tudo que conta como gasto no mês ou ano selecionado.</li>
+    <li><strong>Gráfico em rosca por categoria:</strong> mostra a proporção de cada categoria de gasto no período.</li>
+    <li><strong>Barras mensais:</strong> evolução do total de gastos nos últimos meses com dado registrado.</li>
+  </ul>
+
+  <div class="galeria">
+    <figure>
+      <img src="img/dashboard-1.jpeg" alt="Painel Dashboard com filtros de ano, mês, forma, conta e categoria, total do período e início da rosca por categoria">
+      <figcaption>Filtros e total do período</figcaption>
+    </figure>
+    <figure>
+      <img src="img/dashboard-2.jpeg" alt="Rosca por categoria com legenda e barras mensais dos últimos meses">
+      <figcaption>Rosca por categoria e barras mensais</figcaption>
+    </figure>
+  </div>
+
+  <p><strong>Filtros disponíveis:</strong> ano, mês, forma de pagamento, conta/cartão e categoria. Eles se combinam — por exemplo, é possível ver só os gastos de um cartão específico em um mês específico.</p>
+
+  <div class="caixa">
+    <strong class="rotulo">Filtro de categoria por múltipla escolha <span class="novo">novidade v28</span></strong>
+    O filtro de categoria aceita mais de uma escolha ao mesmo tempo: clique no campo para abrir a lista de categorias com caixinhas de marcar, escolha quantas quiser (o campo mostra "N categorias" quando há mais de uma marcada) e clique fora para fechar. O botão "Limpar seleção", no topo da lista, desmarca tudo de uma vez sem precisar desmarcar categoria por categoria.
+  </div>
+</section>
+
+<section id="cadastros">
+  <h2>Aba Cadastros</h2>
+  <p>Reúne tudo que configura o app. Está dividida em seções:</p>
+
+  <h3>Contas &amp; Cartões</h3>
+  <p>Cadastre suas contas correntes e cartões de crédito. Um cartão pode ser marcado como "adicional" de outro (o cartão titular) — útil quando a fatura de um cartão titular também traz os gastos de um cartão adicional vinculado à mesma fatura. Contas e cartões não usados em nenhum lançamento podem ser excluídos; os que já têm histórico só podem ser desativados (ficam fora dos formulários de novos lançamentos, mas o histórico continua intacto).</p>
+
+  <h3>Formas de Pagamento</h3>
+  <p>Cadastre e organize as formas que você usa (cartão de crédito, débito, Pix, dinheiro, boleto, etc.). Cada forma tem um "tipo" que define, por exemplo, se ela concilia com fatura, com extrato, ou com nenhum dos dois. O campo "Conta padrão" preenche sozinho a conta/cartão ao lançar com essa forma — para formas do tipo Crédito, o combo mostra seus cartões; para as demais, suas contas bancárias.</p>
+
+  <div class="galeria">
+    <figure>
+      <img src="img/cadastro-1.jpeg" alt="Seção Contas e cartões e Formas de pagamento em Cadastros">
+      <figcaption>Contas &amp; cartões e formas de pagamento</figcaption>
+    </figure>
+    <figure>
+      <img src="img/cadastro-2.jpeg" alt="Seção Categorias com lista de categorias coloridas e início das Regras de classificação">
+      <figcaption>Categorias e início das regras</figcaption>
+    </figure>
+    <figure>
+      <img src="img/cadastro-3.jpeg" alt="Regras de classificação com botões Editar, Desativar, Excluir e Reaplicar regras a lançamentos existentes">
+      <figcaption>Regras de classificação</figcaption>
+    </figure>
+  </div>
+
+  <h3>Categorias</h3>
+  <p>As categorias de gasto usadas nos lançamentos e no Dashboard. A categoria "A Classificar" é fixa e não pode ser excluída — é o destino padrão de tudo que ainda não foi categorizado.</p>
+
+  <h3>Regras</h3>
+  <p>Lista as regras aprendidas (ou criadas manualmente) pela memória de classificação. Você pode editar, desativar ou excluir cada uma, ou reaplicá-las de uma vez aos lançamentos existentes.</p>
+</section>
+
+<section id="ferramentas">
+  <h2>Botão Ferramentas</h2>
+  <p>Fica no alto da tela, ao lado do nome do app, e está disponível de qualquer aba. Reúne tudo que não é do uso diário:</p>
+
+  <h3>Backup</h3>
+  <p>Exporta todos os seus dados para um arquivo <code>.xlsx</code>, que serve tanto como cópia de segurança quanto como forma de levar seus dados para outro aparelho ou navegador (importando o mesmo arquivo lá). Também é aqui que se importa um backup vindo de uma versão anterior do app.</p>
+
+  <h3>Exportar para planilha</h3>
+  <p>Gera a conciliação completa em <code>.xlsx</code> (todos os documentos de todas as contas) ou o log de auditoria em <code>.json</code>. Nenhum dos dois altera seus dados.</p>
+
+  <h3>Modelos de planilha</h3>
+  <p>Baixa planilhas prontas para você preencher fora do app — uma para fatura, uma para extrato e uma para lançamentos. Cada arquivo já vem com os títulos das colunas na ordem certa, duas linhas de exemplo (apague antes de importar) e uma aba "Instruções" explicando o formato de cada campo. Depois de preencher:</p>
+  <ul>
+    <li><strong>Fatura e extrato:</strong> importe pela aba Conciliação, escolhendo a conta/cartão e o arquivo. Use o botão "Usar ordem do modelo" para o app preencher sozinho de qual coluna vem cada dado. Para fatura, informe também a data de vencimento — é ela que distingue uma fatura da outra.</li>
+    <li><strong>Lançamentos:</strong> importe pelo próprio botão "Importar planilha de lançamentos", aqui em Ferramentas. Eles entram direto na aba Lançamentos, sem passar pela conciliação. A categoria e a forma de pagamento precisam estar escritas como você as cadastrou no app (acento e maiúscula não importam); se alguma não existir, o app avisa e pula só aquela linha.</li>
+  </ul>
+  <p>Antes de gravar, o app sempre mostra um resumo do que vai importar. Se alguma linha da planilha tiver <strong>a mesma data e o mesmo valor</strong> de algo já lançado, ela aparece destacada como possível duplicata — útil quando você importa o mesmo arquivo duas vezes sem querer, ou dois arquivos com meses que se sobrepõem. Aí você escolhe: cancelar, importar tudo mesmo assim, ou importar só as que são novas. Quando a descrição também for diferente, o app marca "(descrição diferente — confira)", porque pode ser só coincidência — dois cafés de R$ 5,00 no mesmo dia são gastos diferentes de verdade.</p>
+
+  <h3>Suporte</h3>
+  <p>O botão Diagnóstico mostra informações técnicas dos documentos importados, útil se for preciso investigar algum problema.</p>
+
+  <div class="caixa aviso">
+    <strong class="rotulo">Apagar dados</strong>
+    Apaga todas as transações, ou todos os dados do app. As duas ações não têm volta — exporte um backup antes.
+  </div>
+
+  <p>No rodapé do menu aparece a versão atual do app. Se algo parecer não estar funcionando como o esperado logo após uma atualização, feche e reabra o app (ou force a atualização da página) e confira se a versão mudou.</p>
+</section>
+
+<section id="duvidas">
+  <h2>Dúvidas frequentes</h2>
+
+  <p><strong>Meus dados estão seguros se eu limpar os dados do navegador?</strong><br>
+  Não — os dados ficam só no armazenamento local do navegador. Faça backups periódicos pelo botão Ferramentas → Backup.</p>
+
+  <p><strong>Por que um lançamento não aparece no total do Dashboard?</strong><br>
+  Só despesas efetivamente realizadas (não previsões de parcela futura) contam como gasto. Receitas, transferências entre suas contas e pagamentos de fatura aparecem na lista de lançamentos, mas nunca somam como gasto — isso evita contar o mesmo dinheiro duas vezes.</p>
+
+  <p><strong>O app funciona sem internet?</strong><br>
+  Sim, depois de aberto uma vez, o app funciona offline (é instalável como aplicativo no celular ou computador).</p>
+</section>
+
+<footer>
+  Livro de Gastos — manual gerado a partir de <code>MANUAL_USUARIO.md</code>, versão v30 (14/08/2026).
+</footer>
+
+</body>
+</html>

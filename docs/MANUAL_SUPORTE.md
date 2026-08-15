@@ -1,6 +1,6 @@
 # Manual de Suporte e Assistência — Livro de Gastos
 
-Manual para quem vai dar suporte ao usuário (humano ou assistente de IA), não para o usuário final — para isso existe `MANUAL_USUARIO.md`. Aqui o objetivo é diferente: entender a lógica interna com profundidade suficiente para (1) diferenciar um bug real de uma interpretação errada do usuário ou de uma decisão de produto proposital, e (2) ter uma base de sintomas conhecidos para agilizar o diagnóstico. Atualizado até v16 (2026-08-11).
+Manual para quem vai dar suporte ao usuário (humano ou assistente de IA), não para o usuário final — para isso existe `MANUAL_USUARIO.md`. Aqui o objetivo é diferente: entender a lógica interna com profundidade suficiente para (1) diferenciar um bug real de uma interpretação errada do usuário ou de uma decisão de produto proposital, e (2) ter uma base de sintomas conhecidos para agilizar o diagnóstico. Atualizado até v30 (2026-08-14).
 
 Este documento tem dois capítulos deliberadamente separados:
 
@@ -51,7 +51,7 @@ Decisões de produto conhecidas que costumam ser confundidas com bug:
 
 ## Pergunta 3: "eu corrigi mas continua igual" — antes de tudo, é cache?
 
-**Regra de ouro do suporte**: sempre que o usuário diz que um fix não funcionou, a PRIMEIRA coisa a checar é a versão do app exibida no rodapé do menu **Ferramentas** (`v16`, por exemplo), comparando com a versão do commit mais recente publicado. Isso já causou pelo menos 4 falsos alarmes de "bug não corrigido" documentados em `CONTEUDO_PROJETO.md`.
+**Regra de ouro do suporte**: sempre que o usuário diz que um fix não funcionou, a PRIMEIRA coisa a checar é a versão do app exibida no rodapé do menu **Ferramentas** (`v30`, por exemplo), comparando com a versão do commit mais recente publicado. Isso já causou pelo menos 4 falsos alarmes de "bug não corrigido" documentados em `CONTEUDO_PROJETO.md`.
 
 Como resolver:
 - **Computador/navegador desktop**: force-reload (`Ctrl+Shift+R` ou `Ctrl+F5`).
@@ -293,6 +293,12 @@ Pergunta recorrente de usuário testando duas fontes do mesmo documento (ex.: fa
 - **O que apaga**: o documento (statement) e os lançamentos comuns que vieram dele (identificados por `faturaVencimento`+`contaId` na fatura, `origemRef.statementId` no extrato — nunca por parcelaKey ou texto, então não corre risco de pegar lançamento de outra compra parecida).
 - **O que NÃO apaga automaticamente**: pagamentos de fatura (`natureza: pagamento_fatura`) ligados ao documento — o modal avisa quantos existem e pede revisão manual, porque um pagamento pode ter nascido do lado do extrato. Previsões de parcela também não são tocadas (somem sozinhas no próximo recálculo).
 - **Não existe** (até esta versão): exclusão em lote de vários documentos de uma vez, ou desfazer depois de confirmado.
+
+### 21. Checkbox dentro de um dropdown/lista aparece esticado, empurrando o rótulo para a direita
+
+- **Sintoma**: um `<input type=checkbox>` dentro de uma lista (ex.: dropdown de múltipla escolha) ocupa quase toda a largura da linha, e o texto ao lado fica visualmente "colado na direita" — fácil de confundir com um problema de `text-align`.
+- **Causa**: a regra genérica do formulário `input, select, textarea { width: 100% }` (`styles.css`) alcança qualquer `<input>` novo por padrão, inclusive checkboxes, que normalmente devem ter largura intrínseca (~13-16px). Já aconteceu duas vezes no projeto: em `.item-form-lote` (lote de "+lançar" da fatura) e no combo múltiplo de categoria do Dashboard (v30).
+- **Ação**: ao criar qualquer novo checkbox dentro de um contêiner flex, escopar explicitamente `width: auto; flex: 0 0 auto;` para aquele checkbox — não depender do reset genérico do formulário. Verificar com `getBoundingClientRect()`/`getComputedStyle()` no DevTools se o `width` computado do input bate com o esperado antes de suspeitar de `text-align`.
 
 ## Checklist rápido de investigação técnica
 
